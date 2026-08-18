@@ -30,3 +30,8 @@ pref("textTags.color", "#8e44ad");
 // Network (used by ranking / citation sources)
 pref("network.email", "");
 pref("network.cacheTTLHours", 168);
+
+// Read-status automation: also mark items WITHOUT any status as In Progress
+pref("statusAuto.markEmpty", false);
+// Strip Read_Status / Read_Status_Date / Rating lines from exported Extra
+pref("extra.stripOnExport", true);

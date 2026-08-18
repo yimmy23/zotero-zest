@@ -3,7 +3,7 @@ import { readingStore } from "../reading/store";
 import { cachedHeat } from "../reading/heat";
 import { getReadStatus } from "../reading/status";
 import { heatColor, heatOpacity } from "./reading";
-import { setTimeout, clearTimeout } from "../utils/window";
+import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
  * Optional decoration of the built-in Title column: reading heat as the

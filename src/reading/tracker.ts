@@ -1,8 +1,12 @@
 import { config } from "../../package.json";
 import { getPref, getNumPref } from "../utils/prefs";
-import { setInterval, clearInterval } from "../utils/window";
+import { setInterval, clearInterval } from "../utils/timers";
 import { readingStore, keyOfItem } from "./store";
-import { onReadingProgress, onReadingStarted } from "./statusAuto";
+import {
+  onReadingProgress,
+  onReadingStarted,
+  seedAutoStatus,
+} from "./statusAuto";
 
 /**
  * Reading-session tracker.
@@ -136,13 +140,14 @@ class ReadingTracker {
       idle = 0;
     }
     if (idle < limit) return false;
-    // Read Aloud keeps the user "active" without input (9.0+ audioStatus;
-    // may be undefined on some builds — then it simply doesn't exempt)
+    // Read Aloud *playing* (active && !paused, Zotero's own definition in
+    // tabs.js canUnload) keeps the user "active" without input; audioStatus
+    // may be undefined on some builds — then it simply doesn't exempt
     try {
       const tabID = reader?.tabID;
       const win = reader?._window;
       const tab = tabID && win?.Zotero_Tabs?._getTab?.(tabID)?.tab;
-      if (tab?.audioStatus?.active) return false;
+      if (tab?.audioStatus?.active && !tab.audioStatus.paused) return false;
     } catch {
       // ignore
     }
@@ -190,18 +195,23 @@ class ReadingTracker {
         : att;
       if (!target) return;
       const { pageIndex, pages } = ReadingTracker.readPosition(reader);
+      const key = keyOfItem(target);
+      const firstThisSession = !this.startedKeys.has(key);
+      if (firstThisSession) {
+        this.startedKeys.add(key);
+        // decide BEFORE crediting: an item that already satisfies the
+        // auto-Read threshold at session start must not be re-marked
+        seedAutoStatus(target);
+      }
       readingStore.addSample(
         target.libraryID,
         target.key,
+        att.key,
         pageIndex,
         seconds,
         pages,
       );
-      const key = keyOfItem(target);
-      if (!this.startedKeys.has(key)) {
-        this.startedKeys.add(key);
-        void onReadingStarted(target);
-      }
+      if (firstThisSession) void onReadingStarted(target);
       const now = Date.now();
       if ((this.lastProgressCheck.get(key) || 0) + 60_000 < now) {
         this.lastProgressCheck.set(key, now);

@@ -28,6 +28,8 @@ declare namespace _ZoteroTypes {
       "textTags.color": string;
       "network.email": string;
       "network.cacheTTLHours": number;
+      "statusAuto.markEmpty": boolean;
+      "extra.stripOnExport": boolean;
     };
   }
 }

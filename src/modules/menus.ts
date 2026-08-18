@@ -33,7 +33,7 @@ async function setStatusForAll(items: Zotero.Item[], status: string | null) {
     return;
   }
   await runBatch(
-    getString("menu-status"),
+    getString("menu-status", "label"),
     editable,
     async (item) => setReadStatus(item, status),
     {
@@ -52,7 +52,7 @@ async function setRatingForAll(items: Zotero.Item[], n: number) {
     return;
   }
   await runBatch(
-    getString("menu-rating"),
+    getString("menu-rating", "label"),
     editable,
     async (item) => setRating(item, n),
     {
@@ -68,11 +68,20 @@ async function clearReadingData(items: Zotero.Item[]) {
   const win = Zotero.getMainWindow();
   const ok = Services.prompt.confirm(
     win as any,
-    getString("menu-clear-reading"),
+    getString("menu-clear-reading", "label"),
     getString("clear-reading-confirm", { args: { count: items.length } }),
   );
   if (!ok) return;
-  for (const it of items) await readingStore.clearItem(it.libraryID, it.key);
+  try {
+    for (const it of items) await readingStore.clearItem(it.libraryID, it.key);
+  } catch (e) {
+    ztoolkit.log("[menus] clear reading data failed", e);
+    Services.prompt.alert(
+      win as any,
+      getString("menu-clear-reading", "label"),
+      String(e),
+    );
+  }
 }
 
 export function registerMenus() {

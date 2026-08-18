@@ -12,6 +12,7 @@ export type FluentMessageId =
   | 'column-status'
   | 'column-tags'
   | 'column-texttags'
+  | 'db-unavailable'
   | 'export-done'
   | 'export-nothing'
   | 'export-title'

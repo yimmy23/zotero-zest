@@ -60,6 +60,12 @@ export function statusColumn(): ColumnSpec {
       dot.title = getString("status-click-tip", {
         args: { next: statusLabel(nextStatus(status)) },
       });
+      // the row reacts to mousedown/mouseup/dblclick (select / open item):
+      // keep those from reaching the row so a quick double click on the dot
+      // never opens the PDF
+      for (const t of ["mousedown", "mouseup", "dblclick"]) {
+        dot.addEventListener(t, (ev: Event) => ev.stopPropagation());
+      }
       dot.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const item = rowItem(doc, index);

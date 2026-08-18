@@ -1,4 +1,4 @@
-import { getExtraLine, setExtraLine } from "../utils/extra";
+import { getExtraLine, setExtraLines } from "../utils/extra";
 
 /**
  * Read status stored in Extra, compatible with the Zotero Reading List
@@ -35,14 +35,18 @@ export async function setReadStatus(
 ): Promise<void> {
   if (!item.isRegularItem()) return;
   if (!status) {
-    await setExtraLine(item, STATUS_KEYS, null);
-    await setExtraLine(item, STATUS_DATE_KEYS, null);
+    await setExtraLines(item, [
+      [STATUS_KEYS, null],
+      [STATUS_DATE_KEYS, null],
+    ]);
     return;
   }
-  const changed = await setExtraLine(item, STATUS_KEYS, status);
-  if (changed) {
-    await setExtraLine(item, STATUS_DATE_KEYS, new Date().toISOString());
-  }
+  if (getReadStatus(item) === status) return;
+  // one save: status + date together (one modify notification, one sync bump)
+  await setExtraLines(item, [
+    [STATUS_KEYS, status],
+    [STATUS_DATE_KEYS, new Date().toISOString()],
+  ]);
 }
 
 /** next status in the cycle New → To Read → In Progress → Read → Not Reading → New */

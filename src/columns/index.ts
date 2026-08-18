@@ -11,6 +11,7 @@ import {
   unregisterAllColumns,
   refreshItems,
   refreshAllRows,
+  redrawAll,
   isRegistered,
   type ColumnSpec,
 } from "./registry";
@@ -93,8 +94,17 @@ export function registerAllColumns() {
   watchEnable(ratingColumn, "column.rating.enable");
   watchEnable(tagsColumn, "column.tags.enable");
   watchEnable(textTagsColumn, "column.textTags.enable");
+  // textTags.match changes dataProvider output → recompute; the others only
+  // change how cells are painted → repaint (a colour-picker drag emits a
+  // stream of pref writes; both helpers are debounced)
+  prefObservers.push(
+    Zotero.Prefs.registerObserver(
+      `${P}.textTags.match`,
+      () => refreshAllRows(),
+      true,
+    ),
+  );
   for (const p of [
-    "textTags.match",
     "textTags.color",
     "heat.color",
     "heat.opacity",
@@ -102,7 +112,7 @@ export function registerAllColumns() {
     "titleDecor.unreadBold",
   ]) {
     prefObservers.push(
-      Zotero.Prefs.registerObserver(`${P}.${p}`, () => refreshAllRows(), true),
+      Zotero.Prefs.registerObserver(`${P}.${p}`, () => redrawAll(), true),
     );
   }
 }

@@ -1,6 +1,6 @@
 import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
-import { readingStore, formatDuration } from "../reading/store";
+import { readingStore, formatDuration, pagesSeen } from "../reading/store";
 import { cachedHeat } from "../reading/heat";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 
@@ -48,7 +48,7 @@ export function readingColumn(): ColumnSpec {
           cell.title = getString("reading-cell-tip", {
             args: {
               time: formatDuration(rec.total),
-              read: rec.page.size,
+              read: pagesSeen(rec, 1),
               pages,
             },
           });

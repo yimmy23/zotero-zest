@@ -84,3 +84,5 @@ migrate-nothing = No legacy reading records found ({ $parents } legacy parents, 
 migrate-done = Merged { $merged } items · { $hours } h of reading
 migrate-report-line = Legacy parents: { $parents } · notes: { $notes } · parsed: { $parsed } · skipped: { $skipped } · files: { $files } · off-by-one fixed: { $offset } · unresolved keys: { $unresolved } · merged: { $merged } ({ $hours } h)
 migrate-legacy-kept = Legacy notes and files were left untouched. You can move the “Addon Item” to the trash yourself once you are happy with the result.
+
+db-unavailable = Zest could not open its reading database (zest.sqlite). Reading time is kept in memory and will be saved once the database is available; see the Error Console for details.

@@ -45,6 +45,9 @@ export function ratingColumn(): ColumnSpec {
         star.className = `zest-star${k <= n ? " on" : ""}`;
         star.textContent = "★";
         star.dataset.value = String(k);
+        for (const t of ["mousedown", "mouseup", "dblclick"]) {
+          star.addEventListener(t, (ev: Event) => ev.stopPropagation());
+        }
         star.addEventListener("click", (ev) => {
           ev.stopPropagation();
           const item = rowItem(doc, index);

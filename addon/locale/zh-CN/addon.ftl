@@ -84,3 +84,5 @@ migrate-nothing = 未找到旧版阅读记录（扫描了 { $parents } 个旧版
 migrate-done = 已合并 { $merged } 个条目 · 共 { $hours } 小时
 migrate-report-line = 旧版载体条目：{ $parents } · 笔记：{ $notes } · 解析成功：{ $parsed } · 跳过：{ $skipped } · 文件：{ $files } · 修正页码偏移：{ $offset } · 未能定位的条目：{ $unresolved } · 已合并：{ $merged }（{ $hours } 小时）
 migrate-legacy-kept = 旧版笔记与文件原样保留，未做任何修改；确认无误后可自行把“Addon Item”移入回收站。
+
+db-unavailable = Zest 无法打开阅读数据库（zest.sqlite）。阅读时长暂存在内存中，数据库可用后会自动写入；详情见错误控制台。

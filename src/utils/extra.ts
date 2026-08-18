@@ -15,11 +15,19 @@
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+const reCache = new Map<string, RegExp>();
+/** memoised (key arrays are module constants; no g/y flag so sharing is safe) */
 function lineRe(keys: string[]): RegExp {
-  return new RegExp(
-    `^\\s*(${keys.map(escapeRe).join("|")})\\s*:\\s*(.*?)\\s*$`,
-    "i",
-  );
+  const k = keys.join("\u0001");
+  let re = reCache.get(k);
+  if (!re) {
+    re = new RegExp(
+      `^\\s*(${keys.map(escapeRe).join("|")})\\s*:\\s*(.*?)\\s*$`,
+      "i",
+    );
+    reCache.set(k, re);
+  }
+  return re;
 }
 
 /** Read the first line matching any of `keys` (case-insensitive). */
@@ -102,6 +110,35 @@ export async function setExtraLine(
   }
   const next = upsertExtraText(extra, keys, value);
   if (next === null) return false;
+  item.setField("extra", next);
+  await item.saveTx({ skipSelect: true } as any);
+  return true;
+}
+
+/**
+ * Upsert several lines at once and save the item ONCE (skips the write when
+ * nothing changes). `entries` = [[keys, value|null], ...].
+ */
+export async function setExtraLines(
+  item: Zotero.Item,
+  entries: Array<[string[], string | null]>,
+): Promise<boolean> {
+  let extra: string;
+  try {
+    extra = (item.getField("extra") as string) || "";
+  } catch {
+    return false;
+  }
+  let next = extra;
+  let changed = false;
+  for (const [keys, value] of entries) {
+    const r = upsertExtraText(next, keys, value);
+    if (r !== null) {
+      next = r;
+      changed = true;
+    }
+  }
+  if (!changed) return false;
   item.setField("extra", next);
   await item.saveTx({ skipSelect: true } as any);
   return true;

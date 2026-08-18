@@ -10,6 +10,10 @@ import {
   devMark,
 } from "./modules/devEval";
 import { registerMenus, unregisterMenus } from "./modules/menus";
+import {
+  installExportPatch,
+  uninstallExportPatch,
+} from "./modules/exportPatch";
 import { registerStyles, unregisterStyles, applyRootFlags } from "./ui/styles";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
@@ -87,6 +91,7 @@ async function onStartup() {
     registerAllColumns();
   });
   step("menus", () => registerMenus());
+  step("exportPatch", () => installExportPatch());
   step("tracker", () => {
     if (getPref("tracker.enable")) readingTracker.start();
   });
@@ -157,6 +162,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 async function onShutdown() {
   readingTracker.stop();
+  uninstallExportPatch();
   unregisterMenus();
   unregisterColumns();
   for (const s of prefObservers) {

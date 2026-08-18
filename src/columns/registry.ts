@@ -1,6 +1,6 @@
 import { config } from "../../package.json";
 import { guard } from "../utils/guard";
-import { setTimeout, clearTimeout } from "../utils/window";
+import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
  * Thin, opinionated wrapper around `Zotero.ItemTreeManager.registerColumn`.
@@ -58,14 +58,24 @@ export function registerColumn(spec: ColumnSpec): boolean {
     ztoolkit.log("[columns] ItemTreeManager.registerColumn missing");
     return false;
   }
-  const dataProvider = guard(
-    `column:${spec.key}:data`,
-    (item: any, dataKey: string) => {
+  // Zotero requires a STRING from dataProvider (sort/type-to-find crash on
+  // undefined), so the failure path returns "" rather than guard()'s undefined.
+  const dataProvider = (item: any, dataKey: string): string => {
+    try {
       if (!(item instanceof Zotero.Item)) return "";
       const v = spec.dataProvider(item, dataKey);
       return typeof v === "string" ? v : v == null ? "" : String(v);
-    },
-  );
+    } catch (e) {
+      ztoolkit.log(`[column:${spec.key}] dataProvider failed`, e);
+      try {
+        Zotero.logError(e as any);
+      } catch {
+        // never throw
+      }
+      return "";
+    }
+  };
+
   const opts: any = {
     dataKey: spec.key,
     label: spec.label,
@@ -123,8 +133,16 @@ export function isRegistered(key: string): boolean {
 
 const pendingIDs = new Set<number>();
 let refreshTimer: number | undefined;
+let repaintTimer: number | undefined;
+let fullRefreshTimer: number | undefined;
 
-/** Re-run dataProvider + renderCell for these items (debounced, batched). */
+/**
+ * Re-run dataProvider + renderCell for these items (debounced, batched).
+ * Done locally per main window (row-cache invalidation + row repaint): our
+ * dataProviders read only the in-memory store, so no cross-component
+ * Notifier broadcast is needed — a global 'refresh' would re-render the
+ * item pane and re-select the item on every reading tick.
+ */
 export function refreshItems(ids: number[]) {
   for (const id of ids) if (id) pendingIDs.add(id);
   if (!pendingIDs.size) return;
@@ -132,39 +150,72 @@ export function refreshItems(ids: number[]) {
   refreshTimer = setTimeout(() => {
     const batch = [...pendingIDs];
     pendingIDs.clear();
-    try {
-      void Zotero.Notifier.trigger("refresh", "item", batch);
-    } catch (e) {
-      ztoolkit.log("[columns] refresh trigger failed", e);
+    let done = false;
+    for (const win of Zotero.getMainWindows()) {
+      try {
+        const view = (win as any).ZoteroPane?.itemsView;
+        if (!view?.tree) continue;
+        if (typeof view.invalidateRowCache === "function") {
+          view.invalidateRowCache(batch);
+        } else if (view._rowCache) {
+          for (const id of batch) delete view._rowCache[id];
+        }
+        for (const id of batch) {
+          const row =
+            typeof view.getRowIndexByID === "function"
+              ? view.getRowIndexByID(id)
+              : view._rowMap?.[id];
+          if (typeof row === "number") view.tree.invalidateRow(row);
+        }
+        done = true;
+      } catch (e) {
+        ztoolkit.log("[columns] local refresh failed", e);
+      }
+    }
+    if (!done) {
+      // no usable tree API (unexpected build) → fall back to Zotero's own event
+      try {
+        void Zotero.Notifier.trigger("refresh", "item", batch);
+      } catch (e) {
+        ztoolkit.log("[columns] refresh trigger failed", e);
+      }
     }
   }, 300);
 }
 
-/** Recompute + repaint every visible row of every main window's item tree. */
+/** Recompute + repaint every visible row of every main window's item tree (debounced). */
 export function refreshAllRows() {
-  for (const win of Zotero.getMainWindows()) {
-    try {
-      const view = (win as any).ZoteroPane?.itemsView;
-      if (!view) continue;
-      if (typeof view.invalidateRowCache === "function") {
-        view.invalidateRowCache(true);
-      } else if (view._rowCache) {
-        view._rowCache = {};
+  clearTimeout(fullRefreshTimer);
+  fullRefreshTimer = setTimeout(() => {
+    for (const win of Zotero.getMainWindows()) {
+      try {
+        const view = (win as any).ZoteroPane?.itemsView;
+        if (!view) continue;
+        if (typeof view.invalidateRowCache === "function") {
+          view.invalidateRowCache(true);
+        } else if (view._rowCache) {
+          view._rowCache = {};
+        }
+        view.tree?.invalidate?.();
+      } catch (e) {
+        ztoolkit.log("[columns] refreshAllRows failed", e);
       }
-      view.tree?.invalidate?.();
-    } catch (e) {
-      ztoolkit.log("[columns] refreshAllRows failed", e);
     }
-  }
+  }, 120);
 }
 
-/** Repaint only (renderCell re-runs, dataProvider does not). */
+/** Repaint only (renderCell re-runs, dataProvider does not), debounced. */
 export function redrawAll() {
-  try {
-    void Zotero.Notifier.trigger("redraw", "item", []);
-  } catch (e) {
-    ztoolkit.log("[columns] redraw failed", e);
-  }
+  clearTimeout(repaintTimer);
+  repaintTimer = setTimeout(() => {
+    for (const win of Zotero.getMainWindows()) {
+      try {
+        (win as any).ZoteroPane?.itemsView?.tree?.invalidate?.();
+      } catch (e) {
+        ztoolkit.log("[columns] redraw failed", e);
+      }
+    }
+  }, 120);
 }
 
 /* ------------------------------------------------------------------ */

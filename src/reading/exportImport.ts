@@ -15,14 +15,21 @@ import { readingStore, dayOf } from "./store";
  * Import merges by (libraryID,itemKey): "max" (idempotent) or "sum".
  */
 
+export interface ExportedAtt {
+  pages: number;
+  pages_seconds: Record<string, number>;
+}
 export interface ExportedItem {
   libraryID: number;
   itemKey: string;
   title?: string;
+  /** primary attachment's page count / page map (display view) */
   pages: number;
+  pages_seconds: Record<string, number>;
+  /** per-attachment maps; attKey '' = unattributed (legacy imports) */
+  attachments?: Record<string, ExportedAtt>;
   firstRead: number;
   lastRead: number;
-  pages_seconds: Record<string, number>;
   days: Record<string, number>;
 }
 
@@ -41,6 +48,12 @@ export function collectExport(): ExportedItem[] {
     if (!it.total) continue;
     const pages_seconds: Record<string, number> = {};
     for (const [i, s] of it.page) pages_seconds[String(i)] = s;
+    const attachments: Record<string, ExportedAtt> = {};
+    for (const [ak, a] of it.atts) {
+      const ps: Record<string, number> = {};
+      for (const [i, s] of a.page) ps[String(i)] = s;
+      attachments[ak] = { pages: a.pages, pages_seconds: ps };
+    }
     const days: Record<string, number> = {};
     for (const [d, s] of it.days) days[d] = s;
     out.push({
@@ -48,9 +61,10 @@ export function collectExport(): ExportedItem[] {
       itemKey: it.itemKey,
       title: titleOf(it.libraryID, it.itemKey),
       pages: it.pages,
+      pages_seconds,
+      attachments,
       firstRead: it.firstRead,
       lastRead: it.lastRead,
-      pages_seconds,
       days,
     });
   }
@@ -77,16 +91,21 @@ const csvCell = (v: unknown) => {
 };
 
 export function toCSV(items: ExportedItem[]): string {
-  const rows = ["libraryID,itemKey,title,kind,key,seconds"];
+  const rows = ["libraryID,itemKey,title,kind,key,seconds,attKey"];
   for (const it of items) {
     const base = `${it.libraryID},${it.itemKey},${csvCell(it.title || "")}`;
-    rows.push(`${base},meta,pages,${it.pages}`);
-    rows.push(`${base},meta,firstRead,${it.firstRead}`);
-    rows.push(`${base},meta,lastRead,${it.lastRead}`);
-    for (const [k, s] of Object.entries(it.pages_seconds))
-      rows.push(`${base},page,${k},${s}`);
+    rows.push(`${base},meta,firstRead,${it.firstRead},`);
+    rows.push(`${base},meta,lastRead,${it.lastRead},`);
+    const atts = it.attachments || {
+      "": { pages: it.pages, pages_seconds: it.pages_seconds },
+    };
+    for (const [ak, a] of Object.entries(atts)) {
+      rows.push(`${base},meta,pages,${a.pages},${ak}`);
+      for (const [k, s] of Object.entries(a.pages_seconds))
+        rows.push(`${base},page,${k},${s},${ak}`);
+    }
     for (const [k, s] of Object.entries(it.days))
-      rows.push(`${base},day,${k},${s}`);
+      rows.push(`${base},day,${k},${s},`);
   }
   return rows.join("\n") + "\n";
 }
@@ -135,7 +154,8 @@ export function fromCSV(text: string): ExportedItem[] {
     iTitle = col("title"),
     iKind = col("kind"),
     iK = col("key"),
-    iSec = col("seconds");
+    iSec = col("seconds"),
+    iAtt = col("attkey");
   if (iLib < 0 || iKey < 0 || iKind < 0 || iK < 0 || iSec < 0) {
     throw new Error(
       "CSV header must contain libraryID,itemKey,kind,key,seconds",
@@ -155,9 +175,10 @@ export function fromCSV(text: string): ExportedItem[] {
         itemKey,
         title: iTitle >= 0 ? r[iTitle] : "",
         pages: 0,
+        pages_seconds: {},
+        attachments: {},
         firstRead: 0,
         lastRead: 0,
-        pages_seconds: {},
         days: {},
       };
       map.set(id, it);
@@ -165,12 +186,14 @@ export function fromCSV(text: string): ExportedItem[] {
     const kind = (r[iKind] || "").trim();
     const key = (r[iK] || "").trim();
     const sec = Number(r[iSec]);
+    const ak = iAtt >= 0 ? (r[iAtt] || "").trim() : "";
+    const att = (it.attachments![ak] ??= { pages: 0, pages_seconds: {} });
     if (kind === "page") {
-      if (/^\d+$/.test(key) && sec > 0) it.pages_seconds[key] = sec;
+      if (/^(-1|\d+)$/.test(key) && sec > 0) att.pages_seconds[key] = sec;
     } else if (kind === "day") {
       if (/^\d{4}-\d{2}-\d{2}$/.test(key) && sec > 0) it.days[key] = sec;
     } else if (kind === "meta") {
-      if (key === "pages") it.pages = sec | 0;
+      if (key === "pages") att.pages = sec | 0;
       else if (key === "firstRead") it.firstRead = sec | 0;
       else if (key === "lastRead") it.lastRead = sec | 0;
     }
@@ -183,15 +206,32 @@ export function fromJSON(text: string): ExportedItem[] {
   const list: any[] = Array.isArray(data) ? data : data?.items;
   if (!Array.isArray(list)) throw new Error("not a zest-reading export");
   const out: ExportedItem[] = [];
+  const readPages = (src: any): Record<string, number> => {
+    const ps: Record<string, number> = {};
+    for (const [k, v] of Object.entries(src || {})) {
+      if (/^(-1|\d+)$/.test(k) && Number(v) > 0) ps[k] = Number(v);
+    }
+    return ps;
+  };
   for (const raw of list) {
     if (!raw || typeof raw !== "object") continue;
     const libraryID = Number(raw.libraryID);
     const itemKey = String(raw.itemKey || "");
     if (!Number.isInteger(libraryID) || !/^[A-Z0-9]{8}$/.test(itemKey))
       continue;
-    const pages_seconds: Record<string, number> = {};
-    for (const [k, v] of Object.entries(raw.pages_seconds || raw.page || {})) {
-      if (/^\d+$/.test(k) && Number(v) > 0) pages_seconds[k] = Number(v);
+    const attachments: Record<string, ExportedAtt> = {};
+    if (raw.attachments && typeof raw.attachments === "object") {
+      for (const [ak, a] of Object.entries<any>(raw.attachments)) {
+        attachments[ak] = {
+          pages: Number(a?.pages) | 0,
+          pages_seconds: readPages(a?.pages_seconds || a?.page),
+        };
+      }
+    } else {
+      attachments[""] = {
+        pages: Number(raw.pages) | 0,
+        pages_seconds: readPages(raw.pages_seconds || raw.page),
+      };
     }
     const days: Record<string, number> = {};
     for (const [k, v] of Object.entries(raw.days || {})) {
@@ -202,9 +242,10 @@ export function fromJSON(text: string): ExportedItem[] {
       itemKey,
       title: typeof raw.title === "string" ? raw.title : "",
       pages: Number(raw.pages) | 0,
+      pages_seconds: readPages(raw.pages_seconds || raw.page),
+      attachments,
       firstRead: Number(raw.firstRead) | 0,
       lastRead: Number(raw.lastRead) | 0,
-      pages_seconds,
       days,
     });
   }
@@ -220,19 +261,27 @@ export async function importItems(
   let seconds = 0;
   let n = 0;
   for (const it of items) {
+    const atts = it.attachments || {
+      "": { pages: it.pages, pages_seconds: it.pages_seconds },
+    };
     await readingStore.mergeRecord(
       {
         libraryID: it.libraryID,
         itemKey: it.itemKey,
-        pages: it.pages,
-        page: it.pages_seconds,
+        atts: Object.fromEntries(
+          Object.entries(atts).map(([ak, a]) => [
+            ak,
+            { pages: a.pages, page: a.pages_seconds },
+          ]),
+        ),
         days: it.days,
         firstRead: it.firstRead,
         lastRead: it.lastRead,
       },
       mode,
     );
-    for (const s of Object.values(it.pages_seconds)) seconds += s;
+    for (const a of Object.values(atts))
+      for (const s of Object.values(a.pages_seconds)) seconds += s;
     n++;
     onProgress?.(n, items.length);
   }
