@@ -125,6 +125,43 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
+    /* ---------- annotation locator cards ---------- */
+    .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }
+    .zest-annot-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+    .zest-annot-chip {
+      padding: 0 6px; border-radius: 4px; background-color: var(--fill-quinary);
+      color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846);
+    }
+    .zest-annot-card {
+      border-inline-start: 3px solid var(--zest-annot-line, var(--accent-blue));
+      border-radius: 4px; padding: 5px 8px;
+      background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .13);
+      cursor: default;
+    }
+    .zest-annot-card:hover { background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .23); }
+    .zest-annot-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+    .zest-annot-where {
+      flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-annot-copy {
+      appearance: none; border: 0; border-radius: 4px; padding: 0 5px; cursor: pointer;
+      background-color: transparent; color: var(--fill-secondary);
+    }
+    .zest-annot-copy:hover { background-color: var(--fill-quinary); }
+    .zest-annot-text { white-space: pre-wrap; }
+    .zest-annot-comment {
+      margin-top: 3px; padding-inline-start: 6px; color: var(--fill-secondary);
+      border-inline-start: 2px solid var(--fill-quinary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-annot-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .zest-annot-tag {
+      padding: 0 5px; border-radius: 4px; background-color: var(--fill-quinary);
+      font-size: calc(var(--zotero-font-size, 13px) * .846);
+    }
+    .zest-annot-empty { color: var(--fill-secondary); padding: 6px 0; font-size: calc(var(--zotero-font-size, 13px) * .923); }
+
     /* ---------- graph pane ---------- */
     .zest-graph-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-height: 1px; }
     .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }

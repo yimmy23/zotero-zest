@@ -25,6 +25,7 @@ import * as graphBuild from "../graph/build";
 import * as tagTreeUI from "../tags/nestedTree";
 import * as tagScope from "../tags/scope";
 import * as itemFilter from "../views/itemFilter";
+import * as annotSection from "../panes/annotSection";
 import * as columns from "../columns";
 import * as registry from "../columns/registry";
 import * as migrate from "../reading/migrate";
@@ -113,6 +114,7 @@ export function registerDevEval() {
             tagTreeUI,
             tagScope,
             itemFilter,
+            annotSection,
           });
           if (typeof result !== "string") {
             try {

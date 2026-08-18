@@ -26,6 +26,10 @@ import {
   uninstallAllTagTrees,
 } from "./tags/nestedTree";
 import { clearItemFilters } from "./views/itemFilter";
+import {
+  registerAnnotSection,
+  unregisterAnnotSection,
+} from "./panes/annotSection";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -107,6 +111,7 @@ async function onStartup() {
     await whenItemTreeReady();
     registerAllColumns();
   });
+  step("itemPane", () => registerAnnotSection());
   step("menus", () => registerMenus());
   step("exportPatch", () => installExportPatch());
   step("tracker", () => {
@@ -183,6 +188,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 async function onShutdown() {
   readingTracker.stop();
+  unregisterAnnotSection();
   uninstallAllTagTrees();
   clearItemFilters();
   uninstallGraphPanes();

@@ -304,4 +304,11 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 
 **折进阶段 D**：Authors 列接受旧变量 `${firstName} ${lastName} ${firstCreator}`、旧切片语法 `0:1, -1:`、`join` 默认 `", "` 并提供旧配置导入；信息面板的每页热力条可点击跳页（原「高能进度条」）；阅读统计面板注明数据来源与导出方式。
 
+**D10 · 与 Zotero 10 原生功能的关系（2026-08-18 用户拍板）**：Zest 只做 Zotero 10 的**扩展与优化**，不与原生功能冲突。落地约束：
+1. 任何**替换**原生界面的功能默认关闭、可一键切回，且只隐藏不删除原生节点（嵌套标签树 `nestedTags.show` 默认 false，只对 `#zotero-tag-selector` 设 `hidden`，原生 React 根永不移除）。
+2. 不占用原生已经在用的机制：筛选走 Zest 自己的 `getItems` 管线，**不碰** Zotero 10 的 `setFilter('advanced-search')`（那是高级搜索面板的槽位）、不改 `setFilter('tags')` 的语义、不替换 `getSearchObject`。
+3. 复用而非另建：阅读器主题写官方 `readerCustomThemes`（按 id 合并，保留用户自己的主题）；标签颜色 ≤9 仍走 `Zotero.Tags.setColor`，超出部分才用 Zest 本地规则；列一律走 `ItemTreeManager.registerColumn`。
+4. 不重复原生已有能力：附件预览、Recently Read、原生高级搜索、原生 emoji/彩色标签渲染一律沿用 Zotero 的实现，Zest 不另做一份。
+5. 视图组会写 Zotero 自己的 `treePrefs.json`，因此只在用户显式「应用视图」时写，且提供「恢复上一次布局」。
+
 **有意差异（写进 README「与原版的差异」）**：无 Shift+P 命令面板（功能分散到菜单/设置/列内交互）；不再可配奇偶/选中/悬停行底色（只用 Zotero 主题变量）；阅读记录不进文库（zest.sqlite + 导入导出）；也记录独立阅读器窗口与 EPUB；计时口径 = 120 s 无输入停表（原版 60 s 页面不动）；评级单击即写入；标签列跟随 Zotero 7+ 口径（彩色 + emoji）；`#标签` 正则无捕获组显示整个标签；期刊标签缺数据永远排最后；图谱跟随主题；视图组操作显式化；设置统一在「设置 → Zest」；附件图标不按扩展名替换；评分 Extra 键可选（默认 `rate`）；配色主色系为蓝（热力 `#66ADFF` 4 级台阶、徽章 `#4072E5`、星级 `--accent-blue`、待读 `--accent-azure`），不再是原版粉/紫，且热力由连续渐变改为 GitHub 式离散分级。

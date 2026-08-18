@@ -21,6 +21,7 @@ import {
 import { resolveTagStyle } from "./rules";
 import { setItemFilter, refreshItemView, canFilter } from "../views/itemFilter";
 import { showTagContextMenu } from "./menu";
+import { refreshAnnotSections } from "../panes/annotSection";
 
 /**
  * Nested tag tree — our own view of the tag selector.
@@ -413,6 +414,8 @@ export function clearSelection(win: Window) {
 }
 
 function applyTagFilter(state: TreeState) {
+  // the locator cards follow the same selection
+  refreshAnnotSections();
   const groups = [...state.selection.values()].map((set) => new Set(set));
   if (!groups.length) {
     setItemFilter("tags", null);

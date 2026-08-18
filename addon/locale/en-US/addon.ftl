@@ -144,3 +144,16 @@ tags-emoji-title = Tag emoji
 tags-emoji-label = Emoji shown in front of this branch (leave empty to remove)
 menu-tagtree =
     .label = Nested tag tree
+
+# ---- annotation cards ----
+anno-section-header =
+    .label = Annotation Finder
+anno-section-sidenav =
+    .tooltiptext = Zest annotation finder
+anno-page = Page { $page }
+anno-copy = Copy text
+anno-card-tip = Double-click to open this annotation in the reader
+anno-no-text = { $type } annotation — double-click to see it in context
+anno-empty-no-attachment = This item has no PDF or EPUB attachment
+anno-empty-no-annotation = No annotations yet
+anno-empty-filtered = No annotation matches the tags selected in the tag tree

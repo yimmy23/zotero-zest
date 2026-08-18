@@ -3,6 +3,15 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'anno-card-tip'
+  | 'anno-copy'
+  | 'anno-empty-filtered'
+  | 'anno-empty-no-annotation'
+  | 'anno-empty-no-attachment'
+  | 'anno-no-text'
+  | 'anno-page'
+  | 'anno-section-header'
+  | 'anno-section-sidenav'
   | 'annots-cell-tip'
   | 'batch-cancel-hint'
   | 'batch-cancelled'
@@ -127,7 +136,6 @@ export type FluentMessageId =
   | 'tags-emoji-label'
   | 'tags-emoji-title'
   | 'tags-empty'
-  | 'tags-search-placeholder'
   | 'tags-menu-color'
   | 'tags-menu-color-clear'
   | 'tags-menu-copy'
@@ -141,6 +149,7 @@ export type FluentMessageId =
   | 'tags-rename-label'
   | 'tags-rename-title'
   | 'tags-row-tip'
+  | 'tags-search-placeholder'
   | 'tags-selected'
   | 'tags-sort-az'
   | 'tags-sort-freq-asc'

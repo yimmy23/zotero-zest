@@ -144,3 +144,16 @@ tags-emoji-title = 标签 Emoji
 tags-emoji-label = 显示在该分支前的 Emoji（留空则移除）
 menu-tagtree =
     .label = 嵌套标签树
+
+# ---- annotation cards ----
+anno-section-header =
+    .label = 标注定位
+anno-section-sidenav =
+    .tooltiptext = Zest 标注定位
+anno-page = 第 { $page } 页
+anno-copy = 复制文本
+anno-card-tip = 双击在阅读器中打开这条标注
+anno-no-text = { $type } 类标注——双击在原文中查看
+anno-empty-no-attachment = 该条目没有 PDF / EPUB 附件
+anno-empty-no-annotation = 还没有标注
+anno-empty-filtered = 没有标注符合标签树中选中的标签
