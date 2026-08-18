@@ -278,3 +278,19 @@ stats-top = 读得最多
 stats-pages = { $pages } 页
 stats-nothing = 没有阅读
 stats-source-note = 数据来自 Zotero 数据目录下的 zest.sqlite——与「设置 → Zest → 阅读数据」里可导出的是同一份记录。
+
+# ---- annotation matrix ----
+menu-matrix =
+    .label = 标注矩阵…
+matrix-title = 标注矩阵
+matrix-search-placeholder = 搜索正文、批注、标签——空格为「且」，| 为「或」，-词 为排除
+matrix-all-colors = 全部颜色
+matrix-all-tags = 全部标签
+matrix-count = 显示 { $shown } / { $total }
+matrix-export-csv = 导出 CSV
+matrix-export-md = 导出 Markdown
+matrix-col-item = 条目
+matrix-col-page = 页
+matrix-col-text = 标注
+matrix-col-tags = 标签
+matrix-truncated = 仅显示前 { $shown } 条（共 { $total } 条）——请缩小搜索范围

@@ -12,6 +12,7 @@ import { runBatch } from "../ui/batch";
 import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
 import { openStatsDialog } from "../panes/statsDialog";
+import { openMatrix } from "../panes/annotMatrix";
 import { refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
 import {
@@ -311,6 +312,14 @@ export function registerMenus() {
             onCommand: () => openZestPreferences(),
           },
           { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-matrix"),
+            onCommand: () => {
+              const win = Zotero.getMainWindow();
+              if (win) openMatrix(win as unknown as Window);
+            },
+          },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-stats"),

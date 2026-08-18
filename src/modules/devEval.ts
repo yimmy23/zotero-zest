@@ -39,6 +39,7 @@ import * as cite from "../cite";
 import * as citeExtra from "../cite/extraFormat";
 import * as infoSection from "../panes/infoSection";
 import * as stats from "../panes/statsDialog";
+import * as matrix from "../panes/annotMatrix";
 import * as remark from "../columns/remark";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
@@ -147,6 +148,7 @@ export function registerDevEval() {
             citeExtra,
             infoSection,
             stats,
+            matrix,
             remark,
             viewGroups,
             typeFilter,

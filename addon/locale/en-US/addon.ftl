@@ -278,3 +278,19 @@ stats-top = Most read
 stats-pages = { $pages } pages
 stats-nothing = nothing read
 stats-source-note = Counted from zest.sqlite in your Zotero data directory — the same records you can export from Settings → Zest → Reading Data.
+
+# ---- annotation matrix ----
+menu-matrix =
+    .label = Annotation matrix…
+matrix-title = Annotation matrix
+matrix-search-placeholder = Search text, comments, tags — space = AND, | = OR, -word = exclude
+matrix-all-colors = All colours
+matrix-all-tags = All tags
+matrix-count = { $shown } of { $total }
+matrix-export-csv = Export CSV
+matrix-export-md = Export Markdown
+matrix-col-item = Item
+matrix-col-page = Page
+matrix-col-text = Annotation
+matrix-col-tags = Tags
+matrix-truncated = Showing the first { $shown } of { $total } — narrow the search to see the rest
