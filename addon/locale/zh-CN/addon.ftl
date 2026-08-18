@@ -200,3 +200,23 @@ reader-scheme-warm = 暖色（橙 · 红 · 洋红）
 reader-scheme-cool = 冷色（蓝 · 绿 · 紫）
 reader-themes-installed = 已添加 { $count } 个阅读器主题，可在阅读器「外观」菜单中选择
 reader-themes-removed = 已移除 { $count } 个 Zest 阅读器主题
+
+# ---- settings pane (rendered from JS) ----
+pref-key-save = 保存
+pref-rank-clear = 清空分级缓存
+pref-dataset-import = 导入数据集…
+pref-themes-install = 安装主题
+pref-config-export = 导出配置…
+pref-config-import = 导入配置…
+pref-key-plaintext = 以明文存储：无法使用登录管理器
+pref-key-saved = 密钥已存入登录管理器
+pref-datasets-empty = 还没有导入本地数据集
+pref-dataset-remove = 移除
+pref-dataset-empty = 该文件中没有可用的数据行
+pref-dataset-import-done = 已导入「{ $name }」：{ $rows } 本期刊、{ $fields } 个字段
+pref-views-empty = 还没有保存的列视图
+pref-view-rename = 重命名
+pref-view-remove = 删除
+pref-config-export-done = 已导出 { $prefs } 项设置、{ $views } 个视图、{ $rules } 条标签规则
+pref-config-import-done = 已导入 { $prefs } 项设置 · { $views } 个视图 · { $rules } 条标签规则 · 跳过 { $skipped } 项
+pref-rank-cleared = 已清空期刊缓存

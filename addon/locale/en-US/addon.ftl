@@ -200,3 +200,23 @@ reader-scheme-warm = Warm (orange · red · magenta)
 reader-scheme-cool = Cool (blue · green · purple)
 reader-themes-installed = { $count } reader themes are now available in the reader's Appearance menu
 reader-themes-removed = Removed { $count } Zest reader themes
+
+# ---- settings pane (rendered from JS) ----
+pref-key-save = Save
+pref-rank-clear = Clear ranking cache
+pref-dataset-import = Import dataset…
+pref-themes-install = Install themes
+pref-config-export = Export configuration…
+pref-config-import = Import configuration…
+pref-key-plaintext = Stored in plain text: the login manager was unavailable
+pref-key-saved = Key stored in the login manager
+pref-datasets-empty = No local dataset imported yet
+pref-dataset-remove = Remove
+pref-dataset-empty = No usable rows in that file
+pref-dataset-import-done = Imported “{ $name }”: { $rows } journals, { $fields } fields
+pref-views-empty = No saved column views yet
+pref-view-rename = Rename
+pref-view-remove = Delete
+pref-config-export-done = Exported { $prefs } preferences, { $views } views and { $rules } tag rules
+pref-config-import-done = Imported { $prefs } preferences · { $views } views · { $rules } tag rules · { $skipped } entries skipped
+pref-rank-cleared = Journal cache cleared

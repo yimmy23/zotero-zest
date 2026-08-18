@@ -30,6 +30,9 @@ import {
   installViewMenu,
   uninstallViewMenu,
   uninstallAllViewMenus,
+  installViewShortcuts,
+  uninstallViewShortcuts,
+  uninstallAllViewShortcuts,
 } from "./views/viewGroups";
 import {
   installCollectionCounts,
@@ -201,6 +204,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   installTitleDecor(w);
   installTagTree(w);
   installViewMenu(w);
+  installViewShortcuts(w);
   sweepCollectionBadges();
   installCollectionCounts(w);
   restoreGraphPane(w);
@@ -209,6 +213,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallCollectionCounts(win);
   uninstallViewMenu(win);
+  uninstallViewShortcuts(win);
   uninstallTagTree(win);
   hideGraphPane(win);
   uninstallTitleDecor(win);
@@ -221,6 +226,7 @@ async function onShutdown() {
   unregisterAnnotSection();
   uninstallAllTagTrees();
   uninstallAllViewMenus();
+  uninstallAllViewShortcuts();
   uninstallAllCollectionCounts();
   resetTypeFilter();
   clearItemFilters();

@@ -343,6 +343,48 @@ function buildMenu(win: Window): Element {
   return menu;
 }
 
+/* ------------------------------------------------------------------ */
+/* keyboard: Alt+, / Alt+. cycle views                                  */
+/* ------------------------------------------------------------------ */
+
+const keyHandlers = new Map<Window, (ev: KeyboardEvent) => void>();
+
+export function installViewShortcuts(win: Window) {
+  if (keyHandlers.has(win)) return;
+  const handler = guard("view shortcut", (ev: KeyboardEvent) => {
+    if (!ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    // ignore while typing
+    const target = ev.target as HTMLElement | null;
+    const tag = target?.tagName?.toLowerCase();
+    if (tag === "input" || tag === "textarea" || target?.isContentEditable)
+      return;
+    if (ev.key === "," || ev.code === "Comma") {
+      cycleView(win, -1);
+      ev.preventDefault();
+    } else if (ev.key === "." || ev.code === "Period") {
+      cycleView(win, 1);
+      ev.preventDefault();
+    }
+  });
+  win.addEventListener("keydown", handler, true);
+  keyHandlers.set(win, handler);
+}
+
+export function uninstallViewShortcuts(win: Window) {
+  const handler = keyHandlers.get(win);
+  if (!handler) return;
+  try {
+    win.removeEventListener("keydown", handler, true);
+  } catch {
+    // window gone
+  }
+  keyHandlers.delete(win);
+}
+
+export function uninstallAllViewShortcuts() {
+  for (const win of [...keyHandlers.keys()]) uninstallViewShortcuts(win);
+}
+
 /** Alt+, / Alt+. cycle through the saved views */
 export function cycleView(win: Window, delta: number) {
   const list = views();
