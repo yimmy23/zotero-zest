@@ -527,6 +527,11 @@ class ReadingStore {
     this.listeners.clear();
   }
 
+  /** every tracked item, for the statistics panel */
+  entries(): IterableIterator<[ReadingKey, ItemReading]> {
+    return this.items.entries();
+  }
+
   /** aggregate seconds per day across all items (calendar heatmap) */
   totalsByDay(): Map<string, number> {
     const out = new Map<string, number>();

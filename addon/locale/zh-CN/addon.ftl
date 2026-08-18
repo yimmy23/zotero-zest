@@ -263,3 +263,18 @@ info-status-none = 未设置
 info-abstract = 摘要
 info-open = 在其它平台打开
 info-heat-tip = 跳到第 { $page } 页
+
+# ---- reading statistics ----
+menu-stats =
+    .label = 阅读统计…
+stats-title = 阅读统计
+stats-total = 累计时长
+stats-days = 有阅读的天数
+stats-streak = 当前连续天数
+stats-longest = 最长连续天数
+stats-items = 读过的条目
+stats-best = 单日最多
+stats-top = 读得最多
+stats-pages = { $pages } 页
+stats-nothing = 没有阅读
+stats-source-note = 数据来自 Zotero 数据目录下的 zest.sqlite——与「设置 → Zest → 阅读数据」里可导出的是同一份记录。

@@ -12,11 +12,12 @@ def ev(code):
         data=json.dumps({"token": token, "code": code}).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read().decode()); return d.get("result") if d.get("ok") else "ERROR: " + str(d.get("error"))
-out = sys.argv[1]; sel = None; theme = None; prefs = False
+out = sys.argv[1]; sel = None; theme = None; prefs = False; stats = False
 for a in sys.argv[2:]:
     if a == "--dark": theme = 1
     elif a == "--light": theme = 0
     elif a == "--prefs": prefs = True
+    elif a == "--stats": stats = True
     else: sel = a
 pre = ""
 post = ""
@@ -36,5 +37,5 @@ ctx.drawWindow(win, x, y, w, h, 'rgb(255,255,255)');
 const dataURL = canvas.toDataURL('image/png');
 const bytes = Uint8Array.from(atob(dataURL.split(',')[1]), c => c.charCodeAt(0));
 await IOUtils.write(%s, bytes);
-""" % ("[...Services.wm.getEnumerator('zotero:pref')][0]" if prefs else "Zotero.getMainWindow()", json.dumps(sel), json.dumps(out)) + post + "return 'saved '+w+'x'+h+' @'+scale;"
+""" % ("[...Services.wm.getEnumerator('zotero:pref')][0]" if prefs else ("[...Services.wm.getEnumerator(null)].find(w=>w.document&&w.document.querySelector('.zest-stats'))" if stats else "Zotero.getMainWindow()"), json.dumps(sel), json.dumps(out)) + post + "return 'saved '+w+'x'+h+' @'+scale;"
 print(ev(code))

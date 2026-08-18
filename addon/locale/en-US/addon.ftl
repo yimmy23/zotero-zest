@@ -263,3 +263,18 @@ info-status-none = No status
 info-abstract = Abstract
 info-open = Open in
 info-heat-tip = Open at page { $page }
+
+# ---- reading statistics ----
+menu-stats =
+    .label = Reading statistics…
+stats-title = Reading statistics
+stats-total = Total time
+stats-days = Days with reading
+stats-streak = Current streak
+stats-longest = Longest streak
+stats-items = Items read
+stats-best = Best day
+stats-top = Most read
+stats-pages = { $pages } pages
+stats-nothing = nothing read
+stats-source-note = Counted from zest.sqlite in your Zotero data directory — the same records you can export from Settings → Zest → Reading Data.

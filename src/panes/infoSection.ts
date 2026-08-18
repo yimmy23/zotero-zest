@@ -47,12 +47,12 @@ export function registerInfoSection() {
     header: {
       l10nID: getLocaleID("info-section-header"),
       l10nArgs: JSON.stringify({ count: 0 }),
-      icon: `chrome://${config.addonRef}/content/icons/favicon.png`,
+      icon: `chrome://${config.addonRef}/content/icons/info.svg`,
     },
     sidenav: {
       l10nID: getLocaleID("info-section-sidenav"),
       l10nArgs: JSON.stringify({ count: 0 }),
-      icon: `chrome://${config.addonRef}/content/icons/20/annots.svg`,
+      icon: `chrome://${config.addonRef}/content/icons/20/info.svg`,
     },
     onInit: (props: any) => {
       try {
