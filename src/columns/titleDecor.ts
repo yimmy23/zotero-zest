@@ -22,8 +22,11 @@ const MARK = "__zestOrigRenderCell";
 const patched = new Map<Window, { proto: any; own: boolean }>();
 const waiters = new Map<Window, number>();
 
+/** unread = explicit New / To Read; items with no status only if opted in
+ *  (otherwise a fresh install would bold the whole library) */
 function isUnread(status: string): boolean {
-  return status === "" || status === "New" || status === "To Read";
+  if (status === "New" || status === "To Read") return true;
+  return status === "" && !!getPref("titleDecor.unreadIncludesEmpty");
 }
 
 function decorate(tree: any, index: number, cell: any) {

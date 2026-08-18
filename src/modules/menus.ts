@@ -19,6 +19,19 @@ import { runBatch } from "../ui/batch";
 
 const registered: string[] = [];
 
+/** the pane id returned by PreferencePanes.register (set from hooks) */
+export let prefPaneID = "";
+export function setPrefPaneID(id: string) {
+  prefPaneID = id;
+}
+export function openZestPreferences() {
+  try {
+    (Zotero.Utilities.Internal as any).openPreferences(prefPaneID || undefined);
+  } catch (e) {
+    ztoolkit.log("[menus] openPreferences failed", e);
+  }
+}
+
 function regularItems(context: any): Zotero.Item[] {
   return ((context?.items || []) as any[]).filter(
     (i) => i instanceof Zotero.Item && i.isRegularItem(),
@@ -169,6 +182,12 @@ export function registerMenus() {
         l10nID: getLocaleID("menu-root"),
         icon: `chrome://${config.addonRef}/content/icons/menu.svg`,
         menus: [
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-settings"),
+            onCommand: () => openZestPreferences(),
+          },
+          { menuType: "separator" },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-migrate"),

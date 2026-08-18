@@ -49,7 +49,57 @@
     <hbox align="center">
       <html:label data-l10n-id="pref-texttags-color"></html:label>
       <html:input type="color" preference="textTags.color"></html:input>
+      <html:label
+        data-l10n-id="pref-texttags-textcolor"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 8em"
+        preference="textTags.textColor"
+      ></html:input>
     </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rating-mark"></html:label>
+      <html:input
+        type="text"
+        style="width: 3em"
+        preference="rating.mark"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-rating-option"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 3em"
+        preference="rating.option"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-rating-color"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 7em"
+        preference="rating.color"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-rating-key"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <menulist preference="rating.extraKey" native="true">
+        <menupopup>
+          <menuitem label="rate" value="rate" />
+          <menuitem label="Rating" value="Rating" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <checkbox
+      preference="extra.stripOnExport"
+      data-l10n-id="pref-extra-strip"
+      native="true"
+    />
   </groupbox>
 
   <groupbox>
@@ -64,6 +114,12 @@
       data-l10n-id="pref-titledecor-unread"
       native="true"
     />
+    <checkbox
+      preference="titleDecor.unreadIncludesEmpty"
+      data-l10n-id="pref-titledecor-unread-empty"
+      native="true"
+      style="margin-inline-start: 20px"
+    />
     <hbox align="center">
       <html:label data-l10n-id="pref-heat-color"></html:label>
       <html:input type="color" preference="heat.color"></html:input>
@@ -73,7 +129,7 @@
       ></html:label>
       <html:input
         type="number"
-        min="0.1"
+        min="0"
         max="1"
         step="0.05"
         preference="heat.opacity"
@@ -101,6 +157,12 @@
       preference="statusAuto.enable"
       data-l10n-id="pref-statusauto-enable"
       native="true"
+    />
+    <checkbox
+      preference="statusAuto.markEmpty"
+      data-l10n-id="pref-statusauto-markempty"
+      native="true"
+      style="margin-inline-start: 20px"
     />
     <hbox align="center">
       <html:label data-l10n-id="pref-statusauto-threshold"></html:label>

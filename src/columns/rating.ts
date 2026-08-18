@@ -1,4 +1,5 @@
 import { getString } from "../utils/locale";
+import { getPref } from "../utils/prefs";
 import { getExtraLine, setExtraLine } from "../utils/extra";
 import { makeCell, rowItem, type ColumnSpec } from "./registry";
 
@@ -9,7 +10,16 @@ import { makeCell, rowItem, type ColumnSpec } from "./registry";
  * sets k, clicking the current top star lowers it by one (click 1 → clear).
  */
 
-export const RATING_KEYS = ["Rating", "rate"];
+/** read both spellings; write the one the pref says (default `rate`, the
+ *  zotero-style key most existing libraries already carry) unless the item
+ *  already has the other one (upsert keeps the existing key) */
+export const RATING_KEYS = ["rate", "Rating"];
+
+export function ratingWriteKeys(): string[] {
+  const k =
+    (getPref("rating.extraKey") as string) === "Rating" ? "Rating" : "rate";
+  return k === "rate" ? ["rate", "Rating"] : ["Rating", "rate"];
+}
 
 export function getRating(item: Zotero.Item): number {
   const v = getExtraLine(item, RATING_KEYS)?.value;
@@ -19,7 +29,11 @@ export function getRating(item: Zotero.Item): number {
 
 export async function setRating(item: Zotero.Item, n: number): Promise<void> {
   if (!item.isRegularItem()) return;
-  await setExtraLine(item, RATING_KEYS, n >= 1 && n <= 5 ? String(n) : null);
+  await setExtraLine(
+    item,
+    ratingWriteKeys(),
+    n >= 1 && n <= 5 ? String(n) : null,
+  );
 }
 
 export function ratingColumn(): ColumnSpec {
@@ -40,10 +54,14 @@ export function ratingColumn(): ColumnSpec {
       // unrated rows only reveal the empty stars on hover / selection
       box.className = n ? "zest-stars" : "zest-stars zest-stars-empty";
       box.title = getString("rating-tip");
+      const mark = (getPref("rating.mark") as string) || "★";
+      const option = (getPref("rating.option") as string) || mark;
+      const color = (getPref("rating.color") as string) || "";
+      if (color) box.style.setProperty("--zest-star-color", color);
       for (let k = 1; k <= 5; k++) {
         const star = doc.createElement("span");
         star.className = `zest-star${k <= n ? " on" : ""}`;
-        star.textContent = "★";
+        star.textContent = k <= n ? mark : option;
         star.dataset.value = String(k);
         for (const t of ["mousedown", "mouseup", "dblclick"]) {
           star.addEventListener(t, (ev: Event) => ev.stopPropagation());

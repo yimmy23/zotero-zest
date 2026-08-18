@@ -17,15 +17,23 @@ pref("column.tags.enable", true);
 pref("column.textTags.enable", true);
 
 // Reading heat (Reading column + optional title decoration)
-pref("heat.color", "#4a90e2");
-pref("heat.opacity", "0.6");
+pref("heat.color", "#FFC6D3");
+pref("heat.opacity", "0.7");
 pref("titleDecor.heat", true);
 pref("titleDecor.unreadBold", true);
+pref("titleDecor.unreadIncludesEmpty", false);
 
 // Tags
 pref("tags.hideInTitle", false);
 pref("textTags.match", "#");
 pref("textTags.color", "#8e44ad");
+pref("textTags.textColor", "auto");
+
+// Rating
+pref("rating.mark", "★");
+pref("rating.option", "★");
+pref("rating.color", "");
+pref("rating.extraKey", "rate");
 
 // Network (used by ranking / citation sources)
 pref("network.email", "");

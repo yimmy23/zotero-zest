@@ -3,7 +3,9 @@
  * `textTagsColumn.match` pref so users can paste their old rule):
  *
  *   "#"            tags starting with "#", shown without the prefix
- *   "~~/"          every tag NOT starting with "/", shown as-is
+ *   "~~/"          every tag NOT starting with "/", shown as-is (several
+ *                  characters after ~~ form a character class: "~~/#" =
+ *                  not starting with "/" nor "#", as in the original)
  *   "/^#(.+)/i"    JS regex; capture groups are joined for display,
  *                  no groups → whole tag
  */
@@ -48,12 +50,12 @@ export function parseTagRule(raw: string | undefined | null): TagMatcher {
       },
     };
   } else if (rule.startsWith("~~")) {
-    const prefix = rule.slice(2);
+    const chars = rule.slice(2);
     m = {
       rule,
-      prefix,
+      prefix: chars,
       negate: true,
-      test: (tag) => (prefix && tag.startsWith(prefix) ? null : tag),
+      test: (tag) => (chars && chars.includes(tag[0] ?? "") ? null : tag),
     };
   } else {
     const prefix = rule;
@@ -61,8 +63,9 @@ export function parseTagRule(raw: string | undefined | null): TagMatcher {
       rule,
       prefix,
       negate: false,
+      // remainder empty (tag equals the prefix) → nothing to show
       test: (tag) =>
-        tag.startsWith(prefix) ? tag.slice(prefix.length).trim() || tag : null,
+        tag.startsWith(prefix) ? tag.slice(prefix.length).trim() || null : null,
     };
   }
   if (cache.size > 50) cache.clear();

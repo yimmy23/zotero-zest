@@ -6,7 +6,7 @@ pref-column-reading =
 pref-column-status =
     .label = Status — read status (compatible with Zotero Reading List)
 pref-column-rating =
-    .label = Rating — 1–5 stars (stored in Extra)
+    .label = Rating — 1–5 (stored in Extra; click once to rate, click the current value to lower it)
 pref-column-tags =
     .label = Tags — coloured and emoji tags in their own column
 pref-tags-hide-in-title =
@@ -14,14 +14,23 @@ pref-tags-hide-in-title =
 pref-column-texttags =
     .label = #Tags — matching tags rendered as text badges
 pref-texttags-match = Match rule
-pref-texttags-match-hint = “#” = tags starting with #, shown without it · “~~/” = everything NOT starting with / · “/^#(.+)/” = regex, capture groups are shown
+pref-texttags-match-hint = “#” = tags starting with #, shown without it · “~~/” = everything NOT starting with / (several characters = none of them) · “/^#(.+)/” = regex; capture groups are shown, without groups the whole tag
 pref-texttags-color = Default badge colour (Zotero tag colours win when set)
+pref-texttags-textcolor = Text colour (auto = readable shade of the badge colour, or a CSS colour)
+pref-rating-mark = Rating symbol
+pref-rating-option = Empty symbol
+pref-rating-color = Colour (empty = theme accent)
+pref-rating-key = Extra key
+pref-extra-strip =
+    .label = Keep Read_Status / Rating lines out of exported bibliographies (BibTeX, RIS…)
 
 pref-group-heat = Reading Heat
 pref-titledecor-heat =
     .label = Also paint the reading heat behind the Title
 pref-titledecor-unread =
-    .label = Bold titles of unread items (no status, New, To Read)
+    .label = Bold titles of unread items (status New or To Read)
+pref-titledecor-unread-empty =
+    .label = …also items without any status
 pref-heat-color = Colour
 pref-heat-opacity = Opacity (0.1–1)
 
@@ -31,6 +40,8 @@ pref-tracker-enable =
 pref-tracker-idle = Stop counting after this many seconds without input
 pref-statusauto-enable =
     .label = Update read status automatically (start reading → In Progress; enough pages seen → Read)
+pref-statusauto-markempty =
+    .label = …also for items that have no status yet (writes Read_Status into their Extra field)
 pref-statusauto-threshold = Mark Read at % of pages seen
 pref-statusauto-minminutes = …and at least minutes read
 pref-tracker-storage-hint = Reading records are stored in zest.sqlite in your Zotero data directory (never in your library, never synced). Export/import them below.

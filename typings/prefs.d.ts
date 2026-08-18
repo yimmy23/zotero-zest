@@ -23,9 +23,15 @@ declare namespace _ZoteroTypes {
       "heat.opacity": string;
       "titleDecor.heat": boolean;
       "titleDecor.unreadBold": boolean;
+      "titleDecor.unreadIncludesEmpty": boolean;
       "tags.hideInTitle": boolean;
       "textTags.match": string;
       "textTags.color": string;
+      "textTags.textColor": string;
+      "rating.mark": string;
+      "rating.option": string;
+      "rating.color": string;
+      "rating.extraKey": string;
       "network.email": string;
       "network.cacheTTLHours": number;
       "statusAuto.markEmpty": boolean;

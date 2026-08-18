@@ -9,7 +9,7 @@ import {
   installStartupConsoleProbe,
   devMark,
 } from "./modules/devEval";
-import { registerMenus, unregisterMenus } from "./modules/menus";
+import { registerMenus, unregisterMenus, setPrefPaneID } from "./modules/menus";
 import {
   installExportPatch,
   uninstallExportPatch,
@@ -66,16 +66,15 @@ async function onStartup() {
   };
 
   step("locale", () => initLocale());
-  step(
-    "prefsPane",
-    () =>
-      void Zotero.PreferencePanes.register({
-        pluginID: config.addonID,
-        src: rootURI + "content/preferences.xhtml",
-        label: config.addonName,
-        image: `chrome://${config.addonRef}/content/icons/favicon.png`,
-      }),
-  );
+  step("prefsPane", async () => {
+    const id = await Zotero.PreferencePanes.register({
+      pluginID: config.addonID,
+      src: rootURI + "content/preferences.xhtml",
+      label: config.addonName,
+      image: `chrome://${config.addonRef}/content/icons/favicon.png`,
+    });
+    if (typeof id === "string") setPrefPaneID(id);
+  });
   // storage: open DB + load the in-memory index (async; columns refresh
   // themselves when the store reports the load)
   step("db", async () => {
