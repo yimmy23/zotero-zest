@@ -99,12 +99,17 @@ class JsonCache {
     sanitize: Sanitizer<T>,
     maxAgeMs = 0,
   ): { data: T; age: number } | undefined {
-    const e = this.ns.get(ns)?.entries.get(key);
-    if (!e) return undefined;
+    const space = this.ns.get(ns);
+    const e = space?.entries.get(key);
+    if (!e || !space) return undefined;
     const age = Date.now() - e.t;
     if (maxAgeMs > 0 && age > maxAgeMs) return undefined;
     const data = sanitize(e.d);
     if (data === null) return undefined;
+    // keep it a true LRU: a read moves the entry to the end of the map, so
+    // eviction drops the least recently USED entry, not the oldest write
+    space.entries.delete(key);
+    space.entries.set(key, e);
     return { data, age };
   }
 

@@ -159,6 +159,27 @@ export async function collectTagScope(
 }
 
 /**
+ * Tag lists are re-read for every selected branch during filtering, and each
+ * read walks the item's attachments, notes and annotations. One short-lived
+ * cache per filter pass keeps that O(items) instead of O(items × branches);
+ * it is dropped whenever the filter is re-applied.
+ */
+const tagCache = new Map<number, string[]>();
+
+export function clearTagCache() {
+  tagCache.clear();
+}
+
+function cachedTags(item: Zotero.Item, withChildren: boolean): string[] {
+  const hit = tagCache.get(item.id);
+  if (hit) return hit;
+  const tags = tagsOfItem(item, withChildren);
+  if (tagCache.size > 20000) tagCache.clear();
+  tagCache.set(item.id, tags);
+  return tags;
+}
+
+/**
  * Does this item (or one of its children) carry a tag under `prefix`?
  * "under" = exactly the prefix, or the prefix followed by the link symbol, so
  * "#Method" does not swallow "#Methodology".
@@ -170,7 +191,7 @@ export function itemHasPrefix(
   withChildren: boolean,
 ): boolean {
   if (!prefixes.length) return true;
-  const tags = tagsOfItem(item, withChildren);
+  const tags = cachedTags(item, withChildren);
   if (!tags.length) return false;
   for (const p of prefixes) {
     let hit = false;

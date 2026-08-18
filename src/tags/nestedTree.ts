@@ -9,6 +9,7 @@ import {
   itemHasPrefix,
   matchChildTags,
   selectedLibraryID,
+  clearTagCache,
 } from "./scope";
 import {
   buildTagTree,
@@ -445,8 +446,10 @@ function applyTagFilter(state: TreeState) {
   }
   const withChildren = matchChildTags();
   const link = linkSymbol();
-  const ok = setItemFilter("tags", (items) =>
-    items.filter((item) => {
+  const ok = setItemFilter("tags", (items) => {
+    // the per-item tag lists are only valid for one pass over the view
+    clearTagCache();
+    return items.filter((item) => {
       try {
         for (const names of groups) {
           if (!itemHasAny(item, names, withChildren, link)) return false;
@@ -455,8 +458,8 @@ function applyTagFilter(state: TreeState) {
       } catch {
         return true; // never hide an item because of our own error
       }
-    }),
-  );
+    });
+  });
   if (!ok) {
     ztoolkit.log("[tags] filtering unavailable on this Zotero build");
     return;
