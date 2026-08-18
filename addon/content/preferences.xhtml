@@ -227,4 +227,396 @@
       >Build __buildVersion__ · __buildTime__</description
     >
   </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-tags"></html:h2></label>
+    <checkbox
+      preference="nestedTags.show"
+      data-l10n-id="pref-nested-show"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-nested-link"></html:label>
+      <menulist preference="nestedTags.linkSymbol" native="true">
+        <menupopup>
+          <menuitem value="/" label="/" />
+          <menuitem value="+" label="+" />
+          <menuitem value="-" label="-" />
+          <menuitem value=":" label=":" />
+          <menuitem value="~" label="~" />
+          <menuitem value=">" label=">" />
+          <menuitem value="&lt;" label="&lt;" />
+        </menupopup>
+      </menulist>
+      <html:label
+        data-l10n-id="pref-nested-sort"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <menulist preference="nestedTags.sort" native="true">
+        <menupopup>
+          <menuitem value="az" data-l10n-id="pref-nested-sort-az" />
+          <menuitem value="za" data-l10n-id="pref-nested-sort-za" />
+          <menuitem
+            value="freq-desc"
+            data-l10n-id="pref-nested-sort-freq-desc"
+          />
+          <menuitem value="freq-asc" data-l10n-id="pref-nested-sort-freq-asc" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <checkbox
+      preference="nestedTags.showAllTags"
+      data-l10n-id="pref-nested-showall"
+      native="true"
+    />
+    <checkbox
+      preference="nestedTags.matchChildTags"
+      data-l10n-id="pref-nested-childtags"
+      native="true"
+    />
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-nested-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-rank"></html:h2></label>
+    <checkbox
+      preference="column.pubtags.enable"
+      data-l10n-id="pref-column-pubtags"
+      native="true"
+    />
+    <checkbox
+      preference="column.if.enable"
+      data-l10n-id="pref-column-if"
+      native="true"
+    />
+    <checkbox
+      preference="column.venue.enable"
+      data-l10n-id="pref-column-venue"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-fields"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="rank.fields"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-rank-fields-hint"
+    ></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-sortby"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="rank.sortBy"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-rank-sortby-hint"
+    ></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-map"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="rank.map"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-rank-map-hint"
+    ></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-colors"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="rank.colors"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-rank-colors-hint"
+    ></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-defaultcolor"></html:label>
+      <html:input type="color" preference="rank.defaultColor"></html:input>
+      <html:label
+        data-l10n-id="pref-rank-textcolor"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 8em"
+        preference="rank.textColor"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-rank-opacity"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 5em"
+        preference="rank.opacity"
+      ></html:input>
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-rank-ttl"></html:label>
+      <html:input
+        type="number"
+        min="0"
+        max="3650"
+        preference="rank.ttlDays"
+      ></html:input>
+    </hbox>
+    <checkbox
+      preference="rank.useEasyScholar"
+      data-l10n-id="pref-rank-easyscholar"
+      native="true"
+    />
+    <checkbox
+      preference="rank.useOpenAlex"
+      data-l10n-id="pref-rank-openalex"
+      native="true"
+    />
+    <checkbox
+      preference="rank.autoFetch"
+      data-l10n-id="pref-rank-autofetch"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-key-label"></html:label>
+      <html:input
+        type="password"
+        id="zest-pref-eskey"
+        style="flex: 1"
+      ></html:input>
+      <button
+        data-l10n-id="pref-key-save"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('key-save', { window })
+        "
+      />
+    </hbox>
+    <description id="zest-pref-keystatus" class="zest-pref-hint"></description>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-key-hint"
+    ></description>
+    <button
+      data-l10n-id="pref-rank-clear"
+      oncommand="
+        Zotero.__addonInstance__.hooks.onPrefsEvent('rank-clear', { window })
+      "
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-if-field"></html:label>
+      <html:input
+        type="text"
+        style="width: 8em"
+        preference="if.field"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-if-max"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="number"
+        min="1"
+        max="100"
+        preference="if.max"
+      ></html:input>
+    </hbox>
+    <checkbox
+      preference="if.progress"
+      data-l10n-id="pref-if-progress"
+      native="true"
+    />
+    <checkbox preference="if.info" data-l10n-id="pref-if-info" native="true" />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-if-color"></html:label>
+      <html:input type="color" preference="if.color"></html:input>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-datasets"></html:h2></label>
+    <hbox align="center">
+      <button
+        data-l10n-id="pref-dataset-import"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('dataset-import', {
+            window,
+          })
+        "
+      />
+    </hbox>
+    <vbox id="zest-pref-datasets"></vbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-datasets-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-annots"></html:h2></label>
+    <checkbox
+      preference="column.annots.enable"
+      data-l10n-id="pref-column-annots"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-annots-style"></html:label>
+      <menulist preference="annots.style" native="true">
+        <menupopup>
+          <menuitem value="bar" data-l10n-id="pref-annots-style-bar" />
+          <menuitem value="stack" data-l10n-id="pref-annots-style-stack" />
+          <menuitem value="circle" data-l10n-id="pref-annots-style-circle" />
+        </menupopup>
+      </menulist>
+      <html:label
+        data-l10n-id="pref-annots-color"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input type="color" preference="annots.color"></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-annots-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-views"></html:h2></label>
+    <vbox id="zest-pref-views"></vbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-views-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-graph"></html:h2></label>
+    <checkbox
+      preference="graph.visible"
+      data-l10n-id="pref-graph-visible"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-graph-mode"></html:label>
+      <menulist preference="graph.mode" native="true">
+        <menupopup>
+          <menuitem value="related" data-l10n-id="pref-graph-mode-related" />
+          <menuitem value="author" data-l10n-id="pref-graph-mode-author" />
+          <menuitem value="tag" data-l10n-id="pref-graph-mode-tag" />
+          <menuitem
+            value="collection"
+            data-l10n-id="pref-graph-mode-collection"
+          />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-graph-height"></html:label>
+      <html:input
+        type="number"
+        min="100"
+        max="2000"
+        preference="graph.height"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-graph-maxnodes"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="number"
+        min="10"
+        max="2000"
+        preference="graph.maxNodes"
+      ></html:input>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-collections"></html:h2></label>
+    <checkbox
+      preference="collectionCounts.enable"
+      data-l10n-id="pref-collections-enable"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-collections-mode"></html:label>
+      <menulist preference="collectionCounts.mode" native="true">
+        <menupopup>
+          <menuitem value="0" data-l10n-id="pref-collections-mode-0" />
+          <menuitem value="1" data-l10n-id="pref-collections-mode-1" />
+          <menuitem value="2" data-l10n-id="pref-collections-mode-2" />
+        </menupopup>
+      </menulist>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-reader"></html:h2></label>
+    <checkbox
+      preference="reader.schemes"
+      data-l10n-id="pref-reader-schemes"
+      native="true"
+    />
+    <hbox align="center">
+      <button
+        data-l10n-id="pref-themes-install"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('themes-install', {
+            window,
+          })
+        "
+      />
+      <button
+        data-l10n-id="pref-themes-remove"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('themes-remove', {
+            window,
+          })
+        "
+      />
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-reader-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-config"></html:h2></label>
+    <hbox align="center">
+      <button
+        data-l10n-id="pref-config-export"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('config-export', {
+            window,
+          })
+        "
+      />
+      <button
+        data-l10n-id="pref-config-import"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('config-import', {
+            window,
+          })
+        "
+      />
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-config-hint"
+    ></description>
+  </groupbox>
 </vbox>

@@ -270,7 +270,14 @@ export const zestConfig = new ConfigStore();
 
 const PREF_ROOT = `extensions.zotero.${config.addonRef}.`;
 /** never exported: credentials live in the login manager, not in a backup */
-const SECRET_SUFFIXES = ["secretkey", "apikey", "token", "password"];
+const SECRET_MARKERS = [
+  "secret",
+  "secretkey",
+  "apikey",
+  "api_key",
+  "token",
+  "password",
+];
 
 export interface ConfigBundle {
   kind: "zest-config";
@@ -283,7 +290,7 @@ export interface ConfigBundle {
 
 function isSecret(name: string) {
   const l = name.toLowerCase();
-  return SECRET_SUFFIXES.some((s) => l.endsWith(s) || l.includes(s));
+  return SECRET_MARKERS.some((s) => l.includes(s));
 }
 
 export function exportBundle(): ConfigBundle {

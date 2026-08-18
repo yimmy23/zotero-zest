@@ -15,6 +15,7 @@ import { readingTracker } from "../reading/tracker";
 import { zestDB } from "../core/db";
 import { cache } from "../core/storage";
 import { zestConfig } from "../core/config";
+import * as configModule from "../core/config";
 import * as annots from "../annots/density";
 import * as tagTree from "../tags/tree";
 import * as tagRules from "../tags/rules";
@@ -113,6 +114,7 @@ export function registerDevEval() {
             startupConsole,
             cache,
             zestConfig,
+            configModule,
             annots,
             tagTree,
             tagRules,

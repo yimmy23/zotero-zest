@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Screenshot the DEV Zotero main window (or a CSS-selected element) to PNG.
-Usage: scripts/dev-shot.py out.png [css-selector] [--dark|--light]
+Usage: scripts/dev-shot.py out.png [css-selector] [--dark|--light] [--prefs]
+--prefs shoots the Settings window instead of the main window.
 --dark/--light force the theme via ui.systemUsesDarkTheme (dev profile only) for the shot,
 then restore the pref.
 """
@@ -11,10 +12,11 @@ def ev(code):
         data=json.dumps({"token": token, "code": code}).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=120) as r:
         d = json.loads(r.read().decode()); return d.get("result") if d.get("ok") else "ERROR: " + str(d.get("error"))
-out = sys.argv[1]; sel = None; theme = None
+out = sys.argv[1]; sel = None; theme = None; prefs = False
 for a in sys.argv[2:]:
     if a == "--dark": theme = 1
     elif a == "--light": theme = 0
+    elif a == "--prefs": prefs = True
     else: sel = a
 pre = ""
 post = ""
@@ -22,7 +24,7 @@ if theme is not None:
     pre = f"Services.prefs.setIntPref('ui.systemUsesDarkTheme', {theme}); await Zotero.Promise.delay(1200);"
     post = "Services.prefs.clearUserPref('ui.systemUsesDarkTheme'); await Zotero.Promise.delay(300);"
 code = pre + """
-const win = Zotero.getMainWindow(); const doc = win.document;
+const win = %s; const doc = win.document;
 let x=0,y=0,w=win.innerWidth,h=win.innerHeight;
 const sel = %s;
 if (sel) { const el = doc.querySelector(sel); if (!el) return 'no element '+sel; const r = el.getBoundingClientRect(); x=r.left; y=r.top; w=r.width; h=r.height; }
@@ -34,5 +36,5 @@ ctx.drawWindow(win, x, y, w, h, 'rgb(255,255,255)');
 const dataURL = canvas.toDataURL('image/png');
 const bytes = Uint8Array.from(atob(dataURL.split(',')[1]), c => c.charCodeAt(0));
 await IOUtils.write(%s, bytes);
-""" % (json.dumps(sel), json.dumps(out)) + post + "return 'saved '+w+'x'+h+' @'+scale;"
+""" % ("[...Services.wm.getEnumerator('zotero:pref')][0]" if prefs else "Zotero.getMainWindow()", json.dumps(sel), json.dumps(out)) + post + "return 'saved '+w+'x'+h+' @'+scale;"
 print(ev(code))
