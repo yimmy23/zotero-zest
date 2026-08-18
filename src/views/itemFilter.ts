@@ -33,6 +33,21 @@ export function canFilter(): boolean {
   return typeof proto()?.getItems === "function";
 }
 
+/**
+ * Restore a wrapper left behind by a PREVIOUS instance of this plugin (a hot
+ * reload or an upgrade shuts the old copy down after the new one has already
+ * loaded, and the old copy's module state is gone). The original function is
+ * parked on the wrapper itself so any instance can undo it.
+ */
+function unwrapStale(p: any) {
+  let fn = p?.getItems;
+  let guard = 0;
+  while (fn && (fn as any).__zestOriginal && guard++ < 5) {
+    fn = (fn as any).__zestOriginal;
+    p.getItems = fn;
+  }
+}
+
 function install(): boolean {
   if (original) return true;
   const p = proto();
@@ -40,6 +55,7 @@ function install(): boolean {
     ztoolkit.log("[filter] CollectionTreeRow.getItems missing — no filtering");
     return false;
   }
+  unwrapStale(p);
   original = p.getItems;
   target = p;
   // NOTE: a plain function, not an arrow and not guardAsync — the wrapper is
@@ -91,11 +107,17 @@ function install(): boolean {
     }
   };
   (p.getItems as any).__zestWrapped = true;
+  (p.getItems as any).__zestOriginal = original;
   return true;
 }
 
 function uninstall() {
-  if (!original || !target) return;
+  const p = proto();
+  if (!original || !target) {
+    // nothing of ours is tracked, but a previous instance may still be wrapped
+    if (p) unwrapStale(p);
+    return;
+  }
   try {
     target.getItems = original;
   } catch (e) {
@@ -128,6 +150,9 @@ export function activeItemFilters(): string[] {
 export function clearItemFilters() {
   filters.clear();
   uninstall();
+  // belt and braces on shutdown: make sure no wrapper of ours survives
+  const p = proto();
+  if (p) unwrapStale(p);
 }
 
 /** re-run the current view through the pipeline, keeping the selection */

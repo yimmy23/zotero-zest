@@ -108,7 +108,12 @@ export function installCollectionCounts(win: Window) {
     ztoolkit.log("[counts] collectionsView.renderItem unavailable");
     return;
   }
-  const original = tree.renderItem.bind(tree);
+  // undo a wrapper left by a previous plugin instance (hot reload / upgrade)
+  let base = tree.renderItem;
+  let guard = 0;
+  while (base?.__zestOriginal && guard++ < 5) base = base.__zestOriginal;
+  tree.renderItem = base;
+  const original = base.bind(tree);
   const wrapped = (...args: any[]) => {
     const row = original(...args);
     try {
@@ -132,8 +137,9 @@ export function installCollectionCounts(win: Window) {
     }
     return row;
   };
+  (wrapped as any).__zestOriginal = base;
   tree.renderItem = wrapped;
-  patched.set(win, { win, tree, original });
+  patched.set(win, { win, tree, original: base });
   redraw(tree);
   startWatch();
 }
