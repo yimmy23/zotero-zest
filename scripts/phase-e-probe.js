@@ -229,17 +229,48 @@ const resolve = (value) => {
   probeEl.style.backgroundColor = value;
   return win.getComputedStyle(probeEl).backgroundColor;
 };
-// Zotero has its own appearance setting; ui.systemUsesDarkTheme does nothing
-// once the user (or a previous probe) picked light/dark explicitly
-const themePref = "browser.theme.toolbar-theme";
-const themeBefore = Services.prefs.getIntPref(themePref, 2);
-Services.prefs.setIntPref(themePref, 1);
-await delay(2000);
+// Zotero decides light/dark from three prefs together; flipping only one of
+// them does nothing, and the repaint lands a tick later than the write
+const themePrefs = [
+  "browser.theme.toolbar-theme",
+  "browser.theme.content-theme",
+  "ui.systemUsesDarkTheme",
+];
+const themeBefore = themePrefs.map((p) => {
+  try {
+    return Services.prefs.prefHasUserValue(p)
+      ? Services.prefs.getIntPref(p)
+      : null;
+  } catch {
+    return null;
+  }
+});
+const setTheme = async (dark) => {
+  Services.prefs.setIntPref("browser.theme.toolbar-theme", dark ? 0 : 1);
+  Services.prefs.setIntPref("browser.theme.content-theme", dark ? 0 : 1);
+  Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+  const want = dark;
+  for (let i = 0; i < 20; i++) {
+    await delay(250);
+    const fill = win
+      .getComputedStyle(doc.documentElement)
+      .getPropertyValue("--fill-primary");
+    // dark theme = light text
+    if (/rgba?\(\s*255/.test(fill) === want) return;
+  }
+};
+await setTheme(false);
 const light = resolve("var(--zest-accent-strong)");
-Services.prefs.setIntPref(themePref, 0);
-await delay(2000);
+await setTheme(true);
 const dark = resolve("var(--zest-accent-strong)");
-Services.prefs.setIntPref(themePref, themeBefore);
+themePrefs.forEach((p, i) => {
+  try {
+    if (themeBefore[i] === null) Services.prefs.clearUserPref(p);
+    else Services.prefs.setIntPref(p, themeBefore[i]);
+  } catch {
+    // restoring a pref must not fail the probe
+  }
+});
 await delay(1200);
 probeEl.remove();
 check("accent.strongFollowsTheme", light !== dark, `${light} | ${dark}`);

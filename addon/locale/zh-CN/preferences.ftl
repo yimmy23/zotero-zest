@@ -48,7 +48,7 @@ pref-tracker-storage-hint = 阅读记录保存在 Zotero 数据目录下的 zest
 
 pref-group-data = 阅读数据
 pref-btn-migrate =
-    .label = 导入旧版 zotero-style 数据…
+    .label = 导入旧插件的阅读数据…
 pref-btn-export-json =
     .label = 导出 JSON…
 pref-btn-export-csv =
@@ -57,7 +57,7 @@ pref-btn-import =
     .label = 导入…
 
 pref-group-about = 关于
-pref-about-text = Zest 是对 zotero-style 的从零重写（开源，AGPL-3.0），支持 Zotero 9～10。评级与阅读状态存于条目 Extra 字段；阅读记录存于插件自己的数据库。
+pref-about-text = Zest 把「阅读」放进条目列表：阅读时长、看过哪些页、状态、评级与期刊分区。评级与阅读状态存在条目的 Extra 字段（随 Zotero 同步，卸载后仍在）；阅读记录存在 Zotero 数据目录下插件自己的数据库中。开源，AGPL-3.0-or-later。
 
 pref-group-tags = 嵌套标签树
 pref-nested-show =

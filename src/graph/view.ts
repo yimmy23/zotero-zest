@@ -504,6 +504,27 @@ export class GraphView {
     return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
   }
 
+  /** true when the canvas background is dark, whatever produced it */
+  private static isDark(color: string, fallback: boolean): boolean {
+    const m = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(color);
+    let rgb: number[] | null = m
+      ? [Number(m[1]), Number(m[2]), Number(m[3])]
+      : null;
+    if (!rgb) {
+      const hex = /^#([0-9a-f]{6})$/i.exec(color.trim());
+      if (hex) {
+        const n = parseInt(hex[1], 16);
+        rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+      }
+    }
+    if (!rgb) return fallback;
+    const lin = rgb
+      .map((v) => v / 255)
+      .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+    return L < 0.35;
+  }
+
   private readTheme(): GraphTheme {
     const dark = !!this.darkQuery?.matches;
     let style: CSSStyleDeclaration | null;
@@ -521,6 +542,8 @@ export class GraphView {
         return fallback;
       }
     };
+    const background = read("--color-background", dark ? "#1e1e1e" : "#ffffff");
+    const darkBackground = GraphView.isDark(background, dark);
     return {
       // items follow the user's accent (the focus node one step deeper), and
       // the other kinds take fixed hues so a node's KIND is readable at a
@@ -532,9 +555,14 @@ export class GraphView {
       author: read("--accent-teal", "#59adc4"),
       tag: read("--accent-wood", "#cc7a52"),
       collection: read("--fill-secondary", "#6b7280"),
-      edge: read("--fill-quinary", dark ? "#4b5563" : "#d1d5db"),
+      // Edges used to take --fill-quinary (barely-there alpha) and were then
+      // drawn at stroke-opacity .3 — in the dark theme that is ~2% white on a
+      // near-black canvas, i.e. invisible. Derive them from the ACTUAL canvas
+      // background instead, so they hold up in both themes whatever Zotero's
+      // fill variables happen to be.
+      edge: darkBackground ? "rgba(255,255,255,.38)" : "rgba(0,0,0,.24)",
       label: read("--fill-primary", dark ? "#e6e6e6" : "#111827"),
-      background: read("--color-background", dark ? "#1e1e1e" : "#ffffff"),
+      background,
     };
   }
 
@@ -548,7 +576,9 @@ export class GraphView {
     for (const { el } of this.edgeEls) {
       el.setAttribute("stroke", theme.edge);
       el.setAttribute("stroke-width", "1.2");
-      el.setAttribute("stroke-opacity", "0.3");
+      // the colour already carries its alpha; dimming it again is what made
+      // the lines disappear
+      el.setAttribute("stroke-opacity", "1");
     }
     for (const node of this.data?.nodes || []) {
       const c = this.nodeEls.get(node.id);

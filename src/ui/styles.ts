@@ -218,8 +218,8 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
-    /* toolbar button (graph): Zotero's own chrome, one extra "on" state */
-    #zest-tb-graph.zest-tb-on {
+    /* toolbar button: Zotero's own chrome, one extra "graph is open" state */
+    #zest-tb-menu.zest-tb-on {
       background-color: var(--fill-quinary);
       border-radius: 5px;
     }

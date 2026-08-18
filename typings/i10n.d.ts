@@ -60,7 +60,6 @@ export type FluentMessageId =
   | 'graph-status'
   | 'graph-status-truncated'
   | 'graph-title'
-  | 'graph-toggle-tip'
   | 'if-cell-tip'
   | 'import-done'
   | 'import-mode-max'
@@ -104,6 +103,7 @@ export type FluentMessageId =
   | 'menu-export-json'
   | 'menu-graph'
   | 'menu-import'
+  | 'menu-layout'
   | 'menu-matrix'
   | 'menu-migrate'
   | 'menu-rating'
@@ -406,6 +406,7 @@ export type FluentMessageId =
   | 'views-empty'
   | 'views-menu'
   | 'views-previous'
+  | 'views-recommended'
   | 'views-restore'
   | 'views-untitled'
   | 'views-update';

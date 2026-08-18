@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20">
+  <!-- Zest: a "Z" whose three strokes step through the reading-heat scale -->
+  <path d="M6.5 8h19" stroke="#63CF8B" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M25 9.4 7.6 22.8" stroke="#3FB863" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <path d="M6.5 24h19" stroke="#2A9350" stroke-width="4" stroke-linecap="round" fill="none"/>
+</svg>

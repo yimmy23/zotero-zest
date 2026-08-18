@@ -48,7 +48,7 @@ pref-tracker-storage-hint = Reading records are stored in zest.sqlite in your Zo
 
 pref-group-data = Reading Data
 pref-btn-migrate =
-    .label = Import legacy zotero-style data…
+    .label = Import reading data from the old plugin…
 pref-btn-export-json =
     .label = Export JSON…
 pref-btn-export-csv =
@@ -57,7 +57,7 @@ pref-btn-import =
     .label = Import…
 
 pref-group-about = About
-pref-about-text = Zest is a from-scratch, open-source (AGPL-3.0) rewrite of zotero-style for Zotero 9–10. Ratings and read status live in the item's Extra field; reading records live in a plugin database.
+pref-about-text = Zest puts reading into the item list: time read, pages seen, status, rating and journal ranks. Ratings and read status live in the item's Extra field (they sync and survive uninstalling Zest); reading records live in a plugin database in your Zotero data directory. Open source, AGPL-3.0-or-later.
 
 pref-group-tags = Nested Tag Tree
 pref-nested-show =

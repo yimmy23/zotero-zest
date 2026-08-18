@@ -1,7 +1,13 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { registeredDataKey } from "../columns/registry";
 import { guard } from "../utils/guard";
-import { zestConfig, newId, type ViewGroup } from "../core/config";
+import {
+  zestConfig,
+  newId,
+  type ViewGroup,
+  type ViewGroupColumn,
+} from "../core/config";
 
 /**
  * View groups — named column layouts ("Screening", "Writing", "Grant") that
@@ -189,6 +195,48 @@ export async function applyView(
     ztoolkit.log("[views] apply failed", e);
     return false;
   }
+}
+
+/**
+ * The layout Zest is designed around, as one click.
+ *
+ * New users see a Zotero item list with none of the plugin's columns visible
+ * (Zotero remembers per-column visibility, and a fresh column starts where the
+ * user's saved layout left off), then wonder where the features went. This
+ * applies the arrangement the panels and columns were designed to be read
+ * together in — and because it goes through applyView, the previous layout is
+ * one undo away (Tools ▸ Zest ▸ Undo layout change).
+ */
+export async function applyRecommendedLayout(win: Window): Promise<boolean> {
+  // never hardcode the plugin's dataKeys: Zotero escapes them
+  // ("zest\\@zotero-zest\\.app-reading"), so ask the registry for the real one
+  const wanted: Array<[string, number]> = [
+    ["title", 320],
+    ["firstCreator", 150],
+    ["date", 60],
+    ["reading", 90],
+    ["status", 86],
+    ["rating", 88],
+    ["annots", 78],
+    ["pubtags", 120],
+    ["if", 84],
+    ["citations", 74],
+  ];
+  const native = new Set(["title", "firstCreator", "date"]);
+  const columns: ViewGroupColumn[] = [];
+  for (const [key, width] of wanted) {
+    const dataKey = native.has(key) ? key : registeredDataKey(key);
+    // a column the user turned off in Settings is simply not in the layout
+    if (!dataKey) continue;
+    columns.push({ dataKey, width, ordinal: columns.length });
+  }
+  return applyView(win, {
+    id: "zest-recommended",
+    name: getString("views-recommended"),
+    columns,
+    sortField: registeredDataKey("reading"),
+    sortDirection: -1,
+  });
 }
 
 export async function restorePreviousLayout(win: Window): Promise<boolean> {

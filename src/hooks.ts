@@ -29,11 +29,11 @@ import {
   uninstallGraphPanes,
 } from "./graph/pane";
 import {
-  installGraphButton,
-  syncGraphButtons,
-  uninstallGraphButton,
-  uninstallAllGraphButtons,
-} from "./graph/toolbarButton";
+  installToolbarMenu,
+  syncToolbarMenus,
+  uninstallToolbarMenu,
+  uninstallAllToolbarMenus,
+} from "./ui/toolbarMenu";
 import {
   installTagTree,
   uninstallTagTree,
@@ -269,7 +269,7 @@ async function onStartup() {
             if (want) showGraphPane(w);
             else hideGraphPane(w, false);
           }
-          syncGraphButtons();
+          syncToolbarMenus();
         },
         true,
       ),
@@ -346,7 +346,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   sweepCollectionBadgesIn(w);
   installCollectionCounts(w);
   restoreGraphPane(w);
-  installGraphButton(w);
+  installToolbarMenu(w);
   restoreSidebar(w);
 }
 
@@ -357,7 +357,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallTagTree(win);
   uninstallRevealGuard(win);
   hideGraphPane(win, false);
-  uninstallGraphButton(win);
+  uninstallToolbarMenu(win);
   hideSidebar(win, false);
   clearWindowFilters(win);
   uninstallTitleDecor(win);
@@ -379,7 +379,7 @@ async function onShutdown() {
   resetTypeFilter();
   clearItemFilters();
   uninstallGraphPanes();
-  uninstallAllGraphButtons();
+  uninstallAllToolbarMenus();
   uninstallSidebars();
   uninstallExportPatch();
   unregisterMenus();
