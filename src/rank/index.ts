@@ -227,16 +227,19 @@ export async function lookupJournal(
   push(lookupDataset(key, issn));
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
-  if (
-    getPref("rank.useEasyScholar") &&
-    name &&
-    (force || !easyScholarBlocked())
-  ) {
-    const es = await fetchEasyScholar(name, force);
-    if (es.values.length) push(es.values);
-    else if (es.error) {
+  if (getPref("rank.useEasyScholar") && name) {
+    if (!force && easyScholarBlocked()) {
+      // we did not even ask: the record must not be cached for 30 days as
+      // "this journal has no Chinese ranking"
       misses.push("easyscholar");
-      if (es.error === "network" || es.error === "rate") unreachable = true;
+      unreachable = true;
+    } else {
+      const es = await fetchEasyScholar(name, force);
+      if (es.values.length) push(es.values);
+      else if (es.error) {
+        misses.push("easyscholar");
+        if (es.error === "network" || es.error === "rate") unreachable = true;
+      }
     }
   }
 
