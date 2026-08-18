@@ -7,6 +7,8 @@ column-status = 状态
 column-rating = 评级
 column-tags = 标签
 column-texttags = #标签
+column-annots = 标注
+annots-cell-tip = { $count } 条标注 · 划线与批注共 { $chars } 字
 
 reading-cell-tip = 已读 { $time } · 看过 { $read } 页{ $pages }
 
@@ -88,3 +90,26 @@ migrate-report-line = 旧版载体条目：{ $parents } · 笔记：{ $notes } �
 migrate-legacy-kept = 旧版笔记与文件原样保留，未做任何修改；确认无误后可自行把“Addon Item”移入回收站。
 
 db-unavailable = Zest 无法打开阅读数据库（zest.sqlite）。阅读时长暂存在内存中，数据库可用后会自动写入；详情见错误控制台。
+
+# ---- graph ----
+graph-title = 图谱
+graph-mode-related = 相关
+graph-mode-related-tip = 按 Zotero「相关」关联的条目
+graph-mode-author = 作者
+graph-mode-author-tip = 共享作者的条目
+graph-mode-tag = 标签
+graph-mode-tag-tip = 共享标签的条目
+graph-mode-collection = 分类
+graph-mode-collection-tip = 同属一个分类的条目
+graph-reanalyse = 重新分析
+graph-reanalyse-tip = 用当前列表里的条目重建图谱
+graph-close = 关闭图谱
+graph-building = 正在构建…
+graph-failed = 图谱构建失败——详见错误控制台
+graph-status = { $items } 个条目 · { $nodes } 个节点 · { $edges } 条连线
+graph-status-truncated = { $items } 个条目 · { $nodes } 个节点 · { $edges } 条连线（已保留连接最多的部分）
+graph-menu-show = 在文库中显示
+graph-menu-open = 打开
+graph-menu-center = 以此条目为中心
+menu-graph =
+    .label = 图谱面板

@@ -5,6 +5,8 @@ import { statusColumn } from "./status";
 import { ratingColumn } from "./rating";
 import { tagsColumn } from "./tags";
 import { textTagsColumn } from "./textTags";
+import { annotationsColumn } from "./annotations";
+import { startAnnotationWatch, stopAnnotationWatch } from "../annots/density";
 import {
   registerColumn,
   unregisterColumn,
@@ -29,6 +31,7 @@ const SPECS: Array<() => ColumnSpec> = [
   ratingColumn,
   tagsColumn,
   textTagsColumn,
+  annotationsColumn,
 ];
 
 const prefObservers: symbol[] = [];
@@ -94,6 +97,10 @@ export function registerAllColumns() {
   watchEnable(ratingColumn, "column.rating.enable");
   watchEnable(tagsColumn, "column.tags.enable");
   watchEnable(textTagsColumn, "column.textTags.enable");
+  watchEnable(annotationsColumn, "column.annots.enable");
+  // annotation summaries are computed lazily; when a batch finishes (or the
+  // user annotates something) repaint exactly those rows
+  startAnnotationWatch((ids) => refreshItems(ids));
   // textTags.match changes dataProvider output → recompute; the others only
   // change how cells are painted → repaint (a colour-picker drag emits a
   // stream of pref writes; both helpers are debounced)
@@ -105,6 +112,8 @@ export function registerAllColumns() {
     ),
   );
   for (const p of [
+    "annots.style",
+    "annots.color",
     "textTags.color",
     "heat.color",
     "heat.opacity",
@@ -136,6 +145,7 @@ export function unregisterAll() {
     }
   }
   prefObservers.length = 0;
+  stopAnnotationWatch();
   unregisterAllColumns();
   uninstallTitleDecor();
 }

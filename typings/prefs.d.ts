@@ -19,6 +19,9 @@ declare namespace _ZoteroTypes {
       "column.rating.enable": boolean;
       "column.tags.enable": boolean;
       "column.textTags.enable": boolean;
+      "column.annots.enable": boolean;
+      "annots.style": string;
+      "annots.color": string;
       "heat.color": string;
       "heat.opacity": string;
       "titleDecor.heat": boolean;
@@ -36,6 +39,10 @@ declare namespace _ZoteroTypes {
       "network.cacheTTLHours": number;
       "statusAuto.markEmpty": boolean;
       "extra.stripOnExport": boolean;
+      "graph.visible": boolean;
+      "graph.mode": string;
+      "graph.height": number;
+      "graph.maxNodes": number;
     };
   }
 }

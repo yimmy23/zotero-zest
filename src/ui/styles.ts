@@ -58,6 +58,19 @@ export function registerStyles(win: Window) {
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:hover,
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:has(~ .zest-star:hover) { color: var(--zest-star-color, var(--accent-blue)); }
 
+    /* Annotations: histogram / colour stack / dots */
+    .virtualized-table .cell.zest-annots .zest-annot-bars {
+      flex: 0 0 auto; width: 44px; height: 11px; margin-inline-end: 5px; overflow: visible;
+      fill: var(--accent-blue); opacity: .85;
+    }
+    .virtualized-table .cell.zest-annots .zest-annot-stack {
+      flex: 0 0 auto; width: 44px; height: 8px; margin-inline-end: 5px; border-radius: 2px;
+      background-repeat: no-repeat; background-size: 100% 100%;
+    }
+    .virtualized-table .cell.zest-annots .zest-annot-dots { display: inline-flex; gap: 2px; margin-inline-end: 5px; }
+    .virtualized-table .cell.zest-annots .zest-annot-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .virtualized-table .cell.zest-annots > .cell-text { font-variant-numeric: tabular-nums; }
+
     /* Tags (native swatch markup) */
     .virtualized-table .cell.zest-tags .tag-swatch { margin-inline-end: 3px; }
     .virtualized-table .cell.zest-tags .tag-swatch.emoji { font-size: calc(var(--zotero-font-size, 13px) * .923); }
@@ -69,6 +82,33 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923); white-space: nowrap;
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
+
+    /* ---------- graph pane ---------- */
+    .zest-graph-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-height: 1px; }
+    .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }
+    .zest-graph-header {
+      display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-graph-title { font-weight: 600; }
+    .zest-graph-modes { display: inline-flex; gap: 2px; }
+    .zest-graph-mode {
+      appearance: none; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer;
+      background-color: transparent; color: var(--fill-secondary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-graph-mode:hover { background-color: var(--fill-quinary); }
+    .zest-graph-mode.active { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-graph-status { flex: 1 1 auto; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zest-graph-btn {
+      appearance: none; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer;
+      background-color: var(--fill-quinary); color: var(--fill-primary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-graph-btn:hover { background-color: var(--fill-quarternary, var(--fill-quinary)); }
+    .zest-graph-close { background-color: transparent; }
+    .zest-graph-canvas { flex: 1 1 auto; min-height: 0; position: relative; }
 
     /* Optional: hide swatches in the Title cell when the Tags column shows them */
     :root.zest-hide-title-swatches #zotero-items-tree .cell.primary .tag-swatch,

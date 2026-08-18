@@ -13,6 +13,15 @@
 import { readingStore } from "../reading/store";
 import { readingTracker } from "../reading/tracker";
 import { zestDB } from "../core/db";
+import { cache } from "../core/storage";
+import { zestConfig } from "../core/config";
+import * as annots from "../annots/density";
+import * as tagTree from "../tags/tree";
+import * as tagRules from "../tags/rules";
+import * as rankMap from "../rank/map";
+import * as rankNormalize from "../rank/normalize";
+import * as graphPane from "../graph/pane";
+import * as graphBuild from "../graph/build";
 import * as columns from "../columns";
 import * as registry from "../columns/registry";
 import * as migrate from "../reading/migrate";
@@ -89,6 +98,15 @@ export function registerDevEval() {
             exportImport,
             extra,
             startupConsole,
+            cache,
+            zestConfig,
+            annots,
+            tagTree,
+            tagRules,
+            rankMap,
+            rankNormalize,
+            graphPane,
+            graphBuild,
           });
           if (typeof result !== "string") {
             try {

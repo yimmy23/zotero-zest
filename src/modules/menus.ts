@@ -9,6 +9,7 @@ import {
 } from "../reading/exportImport";
 import { migrateLegacyUI } from "../reading/migrate";
 import { runBatch } from "../ui/batch";
+import { toggleGraphPane } from "../graph/pane";
 
 /**
  * Menus via the official `Zotero.MenuManager` (Zotero 8+; this plugin
@@ -186,6 +187,15 @@ export function registerMenus() {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-settings"),
             onCommand: () => openZestPreferences(),
+          },
+          { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-graph"),
+            onCommand: () => {
+              const win = Zotero.getMainWindow();
+              if (win) toggleGraphPane(win as unknown as Window);
+            },
           },
           { menuType: "separator" },
           {

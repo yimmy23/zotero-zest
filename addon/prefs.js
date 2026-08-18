@@ -15,6 +15,10 @@ pref("column.status.enable", true);
 pref("column.rating.enable", true);
 pref("column.tags.enable", true);
 pref("column.textTags.enable", true);
+// Annotations column: off by default (walking every attachment costs on first sort)
+pref("column.annots.enable", false);
+pref("annots.style", "bar");
+pref("annots.color", "");
 
 // Reading heat (Reading column + optional title decoration)
 pref("heat.color", "#66ADFF");
@@ -43,3 +47,9 @@ pref("network.cacheTTLHours", 168);
 pref("statusAuto.markEmpty", false);
 // Strip Read_Status / Read_Status_Date / Rating lines from exported Extra
 pref("extra.stripOnExport", true);
+
+// Graph pane (item-list bottom panel)
+pref("graph.visible", false);
+pref("graph.mode", "related");
+pref("graph.height", 400);
+pref("graph.maxNodes", 250);

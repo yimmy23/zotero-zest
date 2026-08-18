@@ -15,6 +15,11 @@ import {
   uninstallExportPatch,
 } from "./modules/exportPatch";
 import { registerStyles, unregisterStyles, applyRootFlags } from "./ui/styles";
+import {
+  restoreGraphPane,
+  hideGraphPane,
+  uninstallGraphPanes,
+} from "./graph/pane";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -158,9 +163,11 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   registerStyles(w);
   applyRootFlags(w, !!getPref("tags.hideInTitle"));
   installTitleDecor(w);
+  restoreGraphPane(w);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  hideGraphPane(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
   addon.data.dialog?.window?.close();
@@ -168,6 +175,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 async function onShutdown() {
   readingTracker.stop();
+  uninstallGraphPanes();
   uninstallExportPatch();
   unregisterMenus();
   unregisterColumns();

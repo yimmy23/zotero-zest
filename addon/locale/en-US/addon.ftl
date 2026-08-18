@@ -7,6 +7,8 @@ column-status = Status
 column-rating = Rating
 column-tags = Tags
 column-texttags = #Tags
+column-annots = Annotations
+annots-cell-tip = { $count } annotations · { $chars } characters highlighted or commented
 
 reading-cell-tip = { $time } read · { $read } pages seen{ $pages }
 
@@ -88,3 +90,26 @@ migrate-report-line = Legacy parents: { $parents } · notes: { $notes } · parse
 migrate-legacy-kept = Legacy notes and files were left untouched. You can move the “Addon Item” to the trash yourself once you are happy with the result.
 
 db-unavailable = Zest could not open its reading database (zest.sqlite). Reading time is kept in memory and will be saved once the database is available; see the Error Console for details.
+
+# ---- graph ----
+graph-title = Graph
+graph-mode-related = Related
+graph-mode-related-tip = Items linked through Zotero's "Related" field
+graph-mode-author = Authors
+graph-mode-author-tip = Items sharing an author
+graph-mode-tag = Tags
+graph-mode-tag-tip = Items sharing a tag
+graph-mode-collection = Collections
+graph-mode-collection-tip = Items sharing a collection
+graph-reanalyse = Re-analyse
+graph-reanalyse-tip = Rebuild the graph from the rows currently listed
+graph-close = Close the graph
+graph-building = Building…
+graph-failed = Could not build the graph — see the Error Console
+graph-status = { $items } items · { $nodes } nodes · { $edges } links
+graph-status-truncated = { $items } items · { $nodes } nodes · { $edges } links (trimmed to the most connected)
+graph-menu-show = Show in library
+graph-menu-open = Open
+graph-menu-center = Centre on this item
+menu-graph =
+    .label = Graph panel
