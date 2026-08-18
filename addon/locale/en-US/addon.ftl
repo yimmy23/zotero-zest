@@ -319,3 +319,4 @@ tabs-restore-session = Reopen a saved set
 tabs-session-delete = Delete
 tabs-hide-native = Hide Zotero's own tab bar
 tabs-close-sidebar = Close the sidebar
+tabs-restore-confirm = Reopen { $count } documents? Each one opens a reader tab.

@@ -20,6 +20,8 @@ import { displayFields, colorForRank, defaultRankColor } from "../rank/rank";
 import { citationOf, updateCitations } from "../cite";
 import { venueOf } from "../rank/normalize";
 import { formatAuthors } from "../authors/pipeline";
+import { etAlText } from "../columns/authors";
+import { bestAttachment, itemIsEditable } from "../utils/items";
 import { iconButton } from "../ui/icons";
 
 /**
@@ -130,11 +132,15 @@ function render(props: any) {
     return;
   }
   props.setEnabled?.(true);
+  // group libraries and read-only feeds render the section, but every write
+  // would fail silently — show the values, disable the controls
+  const editable = props.editable !== false && itemIsEditable(item);
 
   /* ---------- authors + venue ---------- */
   const authors = formatAuthors(item, {
     policy: { kind: "first", n: 3, etAl: "append" },
     rules: { order: "auto", given: "full", initialsDot: true },
+    etAlText: etAlText(),
   });
   if (authors.parts.length) {
     const r = row(doc, getString("info-authors"));
@@ -184,6 +190,7 @@ function render(props: any) {
     getString("info-refresh"),
     "zest-info-btn",
   );
+  refresh.disabled = !editable;
   refresh.addEventListener(
     "click",
     guard("info citations", () => {
@@ -223,6 +230,7 @@ function render(props: any) {
   statusBtn.textContent = status
     ? getString(statusStringID(status))
     : getString("info-status-none");
+  statusBtn.disabled = !editable;
   statusBtn.addEventListener(
     "click",
     guard("info status", () => {
@@ -234,7 +242,7 @@ function render(props: any) {
   stateRow.appendChild(statusBtn);
 
   const stars = doc.createElement("span");
-  stars.className = "zest-info-stars";
+  stars.className = editable ? "zest-info-stars" : "zest-info-stars disabled";
   const rating = getRating(item) || 0;
   for (let i = 1; i <= 5; i++) {
     const star = doc.createElement("span");
@@ -243,6 +251,7 @@ function render(props: any) {
     star.addEventListener(
       "click",
       guard("info rating", () => {
+        if (!editable) return;
         void setRating(item, i === rating ? i - 1 : i).then(() =>
           refreshInfoSections(),
         );
@@ -259,6 +268,7 @@ function render(props: any) {
   input.type = "text";
   input.value = remarkOf(item);
   input.placeholder = getString("remark-prompt");
+  input.disabled = !editable;
   input.addEventListener(
     "change",
     guard("info remark", () => {
@@ -350,18 +360,21 @@ function buildHeatStrip(
     seg.title = getString("info-heat-tip", { args: { page: pageIndex + 1 } });
     seg.addEventListener(
       "click",
-      guard("info heat jump", () => openAtPage(item, pageIndex)),
+      guard("info heat jump", () =>
+        openAtPage(item, pageIndex, rec.primaryAtt),
+      ),
     );
     wrap.appendChild(seg);
   });
   return wrap;
 }
 
-async function openAtPage(item: Zotero.Item, pageIndex: number) {
+async function openAtPage(item: Zotero.Item, pageIndex: number, attKey = "") {
   try {
-    const attID = item.getAttachments()[0];
-    if (!attID) return;
-    const attachment = Zotero.Items.get(attID) as Zotero.Item;
+    // the heat belongs to ONE attachment — open that one, not whichever
+    // attachment happens to sort first
+    const attachment = attachmentFor(item, attKey);
+    if (!attachment) return;
     const location = { pageIndex };
     const handlers = (Zotero as any).FileHandlers;
     if (handlers?.open) {
@@ -372,6 +385,19 @@ async function openAtPage(item: Zotero.Item, pageIndex: number) {
   } catch (e) {
     ztoolkit.log("[info] open at page failed", e);
   }
+}
+
+/** the attachment a reading record was measured on, else the best one */
+function attachmentFor(
+  item: Zotero.Item,
+  attKey: string,
+): Zotero.Item | undefined {
+  if (attKey) {
+    const id = Zotero.Items.getIDFromLibraryAndKey(item.libraryID, attKey);
+    const att = id ? Zotero.Items.get(id) : undefined;
+    if (att instanceof Zotero.Item) return att;
+  }
+  return bestAttachment(item);
 }
 
 function openLinks(item: Zotero.Item): Array<{ label: string; url: string }> {

@@ -71,7 +71,8 @@ function policyFor(preset: Preset): SelectPolicy {
   }
 }
 
-function etAlText(): string {
+/** Zotero's own localized "et al.", so the plugin never ships its own */
+export function etAlText(): string {
   try {
     return Zotero.getString("general.etAl") || "et al.";
   } catch {

@@ -70,6 +70,9 @@ export function setGroupCollapsed(id: string, collapsed: boolean) {
   });
 }
 
+/** the config store keeps the first N members on write, so cap here too */
+const MAX_MEMBERS = 500;
+
 export function assignToGroup(memberKey: string, groupID: string | null) {
   if (!memberKey) return;
   zestConfig.update((draft) => {
@@ -78,8 +81,34 @@ export function assignToGroup(memberKey: string, groupID: string | null) {
     }
     if (groupID) {
       const target = draft.tabGroups.find((g) => g.id === groupID);
-      if (target) target.members.push(memberKey);
+      // keep the newest: sanitizeKeyList truncates from the front, so a group
+      // at capacity would otherwise silently ignore every new member
+      if (target)
+        target.members = [...target.members, memberKey].slice(-MAX_MEMBERS);
     }
+  });
+}
+
+/** drop member keys whose item no longer exists (deleted, or moved library) */
+export function pruneGroups() {
+  const alive = (key: string) => {
+    const slash = key.indexOf("/");
+    if (slash <= 0) return false;
+    const libraryID = Number(key.slice(0, slash));
+    const itemKey = key.slice(slash + 1);
+    if (!Number.isInteger(libraryID) || !itemKey) return false;
+    try {
+      return !!Zotero.Items.getIDFromLibraryAndKey(libraryID, itemKey);
+    } catch {
+      // library gone
+      return false;
+    }
+  };
+  const groupsNow = groups();
+  const dead = groupsNow.some((g) => g.members.some((m) => !alive(m)));
+  if (!dead) return;
+  zestConfig.update((draft) => {
+    for (const g of draft.tabGroups) g.members = g.members.filter(alive);
   });
 }
 

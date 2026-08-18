@@ -17,7 +17,9 @@ export function citationsColumn(): ColumnSpec {
     dataProvider: (item) => {
       if (!item.isRegularItem()) return "";
       const info = citationOf(item);
-      return info ? numKey(info.count) : "";
+      // a fetched 0 is a real answer ("nobody has cited it yet") — only an
+      // item with no citation line at all is blank
+      return info ? numKey(info.count, 8, true) : "";
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "citations");

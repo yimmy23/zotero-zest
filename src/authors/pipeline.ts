@@ -231,16 +231,20 @@ export function select(
 
 export function formatName(c: NormalizedCreator, rules: NameRules): string {
   if (c.single) return c.family || c.given;
-  const cjk = CJK.has(c.script);
+  // each half decides for itself: "李 Ming" and "Wang 小明" are both real, and
+  // reading the whole name off the family name alone mangles them (no space,
+  // or Han characters initialised to "小.")
+  const famCJK = CJK.has(scriptOf(c.family));
+  const givCJK = CJK.has(scriptOf(c.given));
   const order =
     rules.order === "auto"
-      ? cjk
+      ? famCJK
         ? "family-given"
         : "given-family"
       : rules.order;
   let given = c.given;
   if (rules.given === "none") given = "";
-  else if (rules.given === "initials" && given && !cjk) {
+  else if (rules.given === "initials" && given && !givCJK) {
     given = given
       .split(/[\s-]+/)
       .filter(Boolean)
@@ -249,7 +253,7 @@ export function formatName(c: NormalizedCreator, rules: NameRules): string {
   }
   if (!given) return c.family;
   if (!c.family) return given;
-  const gap = cjk ? "" : " ";
+  const gap = famCJK && givCJK ? "" : " ";
   return order === "family-given"
     ? `${c.family}${gap}${given}`
     : `${given}${gap}${c.family}`;
@@ -308,18 +312,34 @@ export interface FormatOptions {
   omittedText?: string;
 }
 
+/**
+ * "First author only" and "Last author only" deliberately show one name, so a
+ * trailing "…" there reads as truncation rather than as a choice; the real
+ * count is in the cell tooltip. Only a policy that asked for a capped list
+ * ({kind:"first", n, etAl:"omit"}) gets the marker — "first+last" places its
+ * own marker inline, between the two names.
+ */
+function wantsOmittedMarker(policy: SelectPolicy): boolean {
+  return policy.kind === "first" && typeof policy.n === "number";
+}
+
 export function formatAuthors(
   item: Zotero.Item,
   options: FormatOptions,
 ): FormattedAuthors {
   const all = resolveRoles(item, options.roles);
   if (options.policy.kind === "advisor") {
-    const advisor = advisorOf(item);
+    // the advisor is a contributor, so the count has to come from the full
+    // creator list, not from the primary-role list `all` holds
+    const every = resolveRoles(item, { include: "all" });
+    const advisor = every.find(
+      (c) => c.role === "contributor" || c.role === "advisor",
+    );
     const text = advisor ? formatName(advisor, options.rules) : "";
     return {
       parts: text ? [{ text }] : [],
       sortKey: foldName(text),
-      total: all.length,
+      total: every.length,
     };
   }
   if (!all.length) return { parts: [], sortKey: "", total: 0 };
@@ -371,7 +391,7 @@ export function formatAuthors(
     parts.push({
       text: `${separatorFor(last?.script ?? "latin", "latin")}${options.etAlText ?? "et al."}`,
     });
-  } else if (omitted && options.policy.kind !== "first+last") {
+  } else if (omitted && wantsOmittedMarker(options.policy)) {
     parts.push({ text: ` ${omittedText}` });
   }
 

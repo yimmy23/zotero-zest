@@ -249,7 +249,13 @@ export function makeCell(
 }
 
 /** zero-padded numeric sort key; empty string for "no value" */
-export function numKey(n: number | undefined | null, width = 8): string {
-  if (n === undefined || n === null || !Number.isFinite(n) || n <= 0) return "";
+export function numKey(
+  n: number | undefined | null,
+  width = 8,
+  /** keep a real 0 as a sortable key — "not cited yet" is not "unknown" */
+  keepZero = false,
+): string {
+  if (n === undefined || n === null || !Number.isFinite(n)) return "";
+  if (n < 0 || (n === 0 && !keepZero)) return "";
   return String(Math.round(n)).padStart(width, "0");
 }

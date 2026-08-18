@@ -61,9 +61,11 @@ export interface ItemReading {
   total: number;
   firstRead: number; // epoch seconds, 0 = unknown
   lastRead: number; // epoch seconds
-  /** derived: primary attachment's pages / page map (see primaryView) */
+  /** derived: primary attachment's pages / page map (see recompute) */
   pages: number;
   page: Map<number, number>;
+  /** derived: key of the attachment the page map came from ("" = unknown) */
+  primaryAtt: string;
   /** render caches (invalidated on every update) */
   _heat?: string;
   _heatKey?: string;
@@ -132,6 +134,7 @@ function recompute(it: ItemReading) {
     for (const s of it.days.values()) total += s;
   }
   it.total = total;
+  it.primaryAtt = primaryKey;
   if (!primary) {
     it.page = new Map();
     it.pages = 0;
@@ -223,6 +226,7 @@ class ReadingStore {
         lastRead: 0,
         pages: 0,
         page: new Map(),
+        primaryAtt: "",
       };
       this.items.set(key, it);
     }

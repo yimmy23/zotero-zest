@@ -146,6 +146,9 @@ export function openStatsDialog(parent?: Window) {
   }
   if (openWindow && !openWindow.closed) {
     try {
+      // reading never stops while the window is open, so re-open means
+      // "show me the numbers now", not "raise the old snapshot"
+      renderStats(openWindow);
       openWindow.focus();
       return;
     } catch {
@@ -351,6 +354,9 @@ const STATS_CSS =
     }
   }
   body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
+  /* the chrome UA sheet sets user-select:none on the XUL root */
+  .zest-stats, .zest-stats * { user-select: text; -moz-user-select: text; }
+  .zest-flat-btn { user-select: none; -moz-user-select: none; }
 
   /* Flat by design: no native chrome, no bevels, no shadows. */
   .zest-flat-btn {

@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
+import { bestAttachment } from "../utils/items";
 import { getPref, setPref } from "../utils/prefs";
 import { guard } from "../utils/guard";
 import { setTimeout, clearTimeout } from "../utils/timers";
@@ -15,6 +16,7 @@ import {
   sessions,
   removeSession,
   itemKeyOf,
+  pruneGroups,
   type TabGroup,
 } from "./model";
 import { iconButton } from "../ui/icons";
@@ -89,11 +91,17 @@ export function showSidebar(win: Window) {
     return;
   }
   const doc = win.document;
-  const layout =
-    doc.getElementById("zotero-layout-switcher") ||
-    doc.getElementById("zotero-pane-stack");
-  if (!layout?.parentElement) {
-    ztoolkit.log("[tabs] no layout host");
+  // The sidebar has to live OUTSIDE the deck: #zotero-layout-switcher sits in
+  // #zotero-trees, which is the library tab's own deck page, so mounting there
+  // makes the bar vanish the moment a reader tab is selected. Verified on
+  // Zotero 10.0: #tabs-deck's parent is the anonymous hbox inside
+  // #zotero-pane-stack, and it holds the deck plus the context pane.
+  const deck =
+    ((win as any).Zotero_Tabs?.deck as HTMLElement | undefined) ||
+    doc.getElementById("tabs-deck");
+  const host = deck?.parentElement;
+  if (!deck || !host) {
+    ztoolkit.log("[tabs] no tab deck to mount beside");
     return;
   }
 
@@ -149,8 +157,8 @@ export function showSidebar(win: Window) {
   splitter.setAttribute("resizeafter", "closest");
   splitter.classList.add("zest-tabbar-splitter");
 
-  layout.parentElement.insertBefore(box as unknown as Node, layout);
-  layout.parentElement.insertBefore(splitter as unknown as Node, layout);
+  host.insertBefore(box as unknown as Node, deck);
+  host.insertBefore(splitter as unknown as Node, deck);
 
   const state: SidebarState = {
     win,
@@ -172,6 +180,9 @@ export function showSidebar(win: Window) {
   );
 
   applyNativeBarVisibility(win, !!getPref("tabs.hideNative"));
+  // items get deleted while the sidebar is closed; drop their group entries
+  // once, here, rather than on every render
+  pruneGroups();
   watch(win);
   setPref("tabs.sidebar", true);
   renderList(win);
@@ -209,6 +220,12 @@ export function uninstallSidebars() {
   for (const win of [...bars.keys()]) hideSidebar(win, false);
 }
 
+/** re-read `tabs.hideNative` and apply it to every window that has a sidebar */
+export function syncNativeBarVisibility() {
+  const hide = !!getPref("tabs.hideNative");
+  for (const win of bars.keys()) applyNativeBarVisibility(win, hide);
+}
+
 function applyNativeBarVisibility(win: Window, hide: boolean) {
   try {
     win.document.documentElement?.classList.toggle(
@@ -239,8 +256,14 @@ function readTabs(win: Window): TabInfo[] {
   for (const tab of T?._tabs ?? []) {
     let item: Zotero.Item | undefined;
     try {
-      const reader = (Zotero.Reader as any).getByTabID?.(tab.id);
-      const attachmentID = reader?.itemID;
+      // `tab.data.itemID` is written by Zotero_Tabs.add() and round-trips
+      // through session.json, so it is there for reader, reader-unloaded and
+      // note tabs alike; a live reader is only a fallback. Without it, every
+      // tab restored at startup (all of them are `reader-unloaded`) would look
+      // item-less and drop out of its group.
+      const attachmentID =
+        (tab as any).data?.itemID ??
+        (Zotero.Reader as any).getByTabID?.(tab.id)?.itemID;
       if (attachmentID) {
         const attachment = Zotero.Items.get(attachmentID) as Zotero.Item;
         item = ((attachment as any)?.parentItem as Zotero.Item) || attachment;
@@ -277,9 +300,11 @@ export function renderList(win: Window) {
   const list = state.list;
   list.textContent = "";
 
-  const tabs = readTabs(win).filter(
-    (t) => !state.query || t.title.toLowerCase().includes(state.query),
-  );
+  const tabs = readTabs(win)
+    // the library tab is not a document; Zotero always keeps it and it cannot
+    // be closed or grouped, so it does not belong in the list
+    .filter((t) => t.type !== "library")
+    .filter((t) => !state.query || t.title.toLowerCase().includes(state.query));
   const all = groups();
   const grouped = new Map<string, TabInfo[]>();
   const ungrouped: TabInfo[] = [];
@@ -431,26 +456,46 @@ function closeTab(win: Window, id: string) {
 function moveTab(win: Window, draggedID: string, targetID: string) {
   const T = (win as any).Zotero_Tabs;
   try {
-    const index = T._tabs.findIndex((t: any) => t.id === targetID);
-    if (index < 0) return;
-    T.move(draggedID, index);
+    const tabs = T._tabs ?? [];
+    const from = tabs.findIndex((t: any) => t.id === draggedID);
+    const to = tabs.findIndex((t: any) => t.id === targetID);
+    if (from < 0 || to < 0 || from === to) return;
+    // Zotero's move() removes the tab first and then splices, decrementing the
+    // index when it moves forward — so "drop onto row N" is index N when
+    // dragging up, and N + 1 when dragging down.
+    T.move(draggedID, from < to ? to + 1 : to);
   } catch (e) {
     ztoolkit.log("[tabs] move failed", e);
   }
   scheduleRender(win, 60);
 }
 
-function closeOthers(win: Window, keepID: string) {
+/** close a set of tabs in one call when Zotero accepts an array (10 does) */
+function closeMany(win: Window, ids: string[]) {
+  if (!ids.length) return;
   const T = (win as any).Zotero_Tabs;
-  for (const tab of [...(T._tabs ?? [])]) {
-    if (tab.id === keepID || tab.type === "library") continue;
-    try {
-      T.close(tab.id);
-    } catch {
-      // already gone
+  try {
+    T.close(ids);
+  } catch {
+    for (const id of ids) {
+      try {
+        T.close(id);
+      } catch {
+        // already gone
+      }
     }
   }
-  scheduleRender(win, 60);
+  scheduleRender(win, 80);
+}
+
+function closeOthers(win: Window, keepID: string) {
+  const T = (win as any).Zotero_Tabs;
+  closeMany(
+    win,
+    [...(T._tabs ?? [])]
+      .filter((tab: any) => tab.id !== keepID && tab.type !== "library")
+      .map((tab: any) => tab.id),
+  );
 }
 
 function closeToTheRight(win: Window, fromID: string) {
@@ -458,15 +503,13 @@ function closeToTheRight(win: Window, fromID: string) {
   const tabs = [...(T._tabs ?? [])];
   const index = tabs.findIndex((t: any) => t.id === fromID);
   if (index < 0) return;
-  for (const tab of tabs.slice(index + 1)) {
-    if (tab.type === "library") continue;
-    try {
-      T.close(tab.id);
-    } catch {
-      // already gone
-    }
-  }
-  scheduleRender(win, 60);
+  closeMany(
+    win,
+    tabs
+      .slice(index + 1)
+      .filter((tab: any) => tab.type !== "library")
+      .map((tab: any) => tab.id),
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -668,9 +711,22 @@ function openAt(win: Window, popup: any, x: number, y: number) {
   }
 }
 
+/** how many tabs a restore may open without asking */
+const RESTORE_WARN_AT = 12;
+
 async function restoreSession(win: Window, sessionID: string) {
   const session = sessions().find((s) => s.id === sessionID);
   if (!session) return;
+  if (session.items.length > RESTORE_WARN_AT) {
+    const ok = Services.prompt.confirm(
+      win as any,
+      getString("tabs-restore-session"),
+      getString("tabs-restore-confirm", {
+        args: { count: session.items.length },
+      }),
+    );
+    if (!ok) return;
+  }
   for (const key of session.items) {
     try {
       const [libraryID, itemKey] = key.split("/");
@@ -682,9 +738,14 @@ async function restoreSession(win: Window, sessionID: string) {
       const item = Zotero.Items.get(id as number) as Zotero.Item;
       const attachmentID = item.isAttachment()
         ? item.id
-        : (item.getAttachments()[0] as number | undefined);
+        : bestAttachment(item)?.id;
       if (!attachmentID) continue;
-      await Zotero.Reader.open(attachmentID);
+      // open in the background and pace the loop: opening a dozen readers as
+      // fast as possible freezes the window while each one loads
+      await Zotero.Reader.open(attachmentID, undefined, {
+        openInBackground: true,
+      });
+      await Zotero.Promise.delay(150);
     } catch (e) {
       ztoolkit.log("[tabs] restore item failed", e);
     }

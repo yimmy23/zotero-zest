@@ -161,11 +161,15 @@ export function render(win: Window) {
   search.className = "zest-matrix-search zest-flat-input";
   search.placeholder = getString("matrix-search-placeholder");
   search.value = filters.query;
+  let searchTimer = 0;
   search.addEventListener(
     "input",
     guard("matrix search", () => {
       filters.query = search.value;
-      paint();
+      // typing rebuilds the whole table; coalesce keystrokes so a long query
+      // does not repaint once per character
+      win.clearTimeout(searchTimer);
+      searchTimer = win.setTimeout(() => paint(), 140);
     }),
   );
   bar.appendChild(search);
@@ -173,6 +177,9 @@ export function render(win: Window) {
   const colorSelect = doc.createElement("select");
   colorSelect.className = "zest-matrix-select zest-flat-select";
   const colors = [...new Set(rows.map((r) => r.color).filter(Boolean))];
+  // the annotation set changes between renders; a filter whose value is gone
+  // would silently match nothing, so drop it instead of showing an empty table
+  if (filters.color && !colors.includes(filters.color)) filters.color = "";
   const colorOptions: Array<[string, string]> = [
     ["", getString("matrix-all-colors")],
     ...colors.map((c): [string, string] => [c, c]),
@@ -196,6 +203,7 @@ export function render(win: Window) {
   const tagSelect = doc.createElement("select");
   tagSelect.className = "zest-matrix-select zest-flat-select";
   const tags = [...new Set(rows.flatMap((r) => r.tags))].sort();
+  if (filters.tag && !tags.includes(filters.tag)) filters.tag = "";
   const tagOptions: Array<[string, string]> = [
     ["", getString("matrix-all-tags")],
     ...tags.map((t): [string, string] => [t, t]),
@@ -421,6 +429,10 @@ const MATRIX_CSS =
     }
   }
   body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
+  /* the chrome UA sheet sets user-select:none on the XUL root, so highlight
+     text in a dialog is unselectable until it is turned back on */
+  .zest-matrix, .zest-matrix * { user-select: text; -moz-user-select: text; }
+  .zest-flat-btn, .zest-matrix-select { user-select: none; -moz-user-select: none; }
 
   /* Flat by design: no native chrome, no bevels, no shadows. */
   .zest-flat-btn {

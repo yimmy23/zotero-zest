@@ -1,5 +1,9 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+  <html:link
+    rel="stylesheet"
+    href="chrome://__addonRef__/content/preferences.css"
+  />
 </linkset>
 <vbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
   <groupbox>
@@ -458,7 +462,7 @@
         "
       />
     </hbox>
-    <vbox id="zest-pref-datasets"></vbox>
+    <vbox id="zest-pref-datasets" class="zest-pref-list"></vbox>
     <description
       class="zest-pref-hint"
       data-l10n-id="pref-datasets-hint"
@@ -495,7 +499,7 @@
 
   <groupbox>
     <label><html:h2 data-l10n-id="pref-group-views"></html:h2></label>
-    <vbox id="zest-pref-views"></vbox>
+    <vbox id="zest-pref-views" class="zest-pref-list"></vbox>
     <description
       class="zest-pref-hint"
       data-l10n-id="pref-views-hint"

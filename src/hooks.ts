@@ -18,12 +18,18 @@ import { registerStyles, unregisterStyles, applyRootFlags } from "./ui/styles";
 import {
   restoreGraphPane,
   hideGraphPane,
+  showGraphPane,
+  isGraphVisible,
+  refreshGraphPanes,
   uninstallGraphPanes,
 } from "./graph/pane";
 import {
   installTagTree,
   uninstallTagTree,
   uninstallAllTagTrees,
+  isTreeShown,
+  setTreeShown,
+  refreshAllTagTrees,
 } from "./tags/nestedTree";
 import { clearItemFilters, clearWindowFilters } from "./views/itemFilter";
 import {
@@ -43,7 +49,14 @@ import {
 } from "./views/collectionCounts";
 import { resetTypeFilter } from "./views/typeFilter";
 import { installColorSchemes } from "./reader/colorSchemes";
-import { restoreSidebar, hideSidebar, uninstallSidebars } from "./tabs/sidebar";
+import {
+  restoreSidebar,
+  showSidebar,
+  hideSidebar,
+  isSidebarOpen,
+  syncNativeBarVisibility,
+  uninstallSidebars,
+} from "./tabs/sidebar";
 import {
   registerAnnotSection,
   unregisterAnnotSection,
@@ -177,6 +190,69 @@ async function onStartup() {
       Zotero.Prefs.registerObserver(
         `${P}.collectionCounts.mode`,
         () => syncCollectionCounts(),
+        true,
+      ),
+      // the tab sidebar, the tag tree and the graph read their prefs once, at
+      // mount — without these the settings-pane checkboxes only take effect
+      // after a restart
+      Zotero.Prefs.registerObserver(
+        `${P}.tabs.sidebar`,
+        () => {
+          const want = !!getPref("tabs.sidebar");
+          for (const win of Zotero.getMainWindows()) {
+            const w = win as unknown as Window;
+            if (want === isSidebarOpen(w)) continue;
+            if (want) showSidebar(w);
+            else hideSidebar(w, false);
+          }
+        },
+        true,
+      ),
+      Zotero.Prefs.registerObserver(
+        `${P}.tabs.hideNative`,
+        () => syncNativeBarVisibility(),
+        true,
+      ),
+      Zotero.Prefs.registerObserver(
+        `${P}.nestedTags.show`,
+        () => {
+          const want = isTreeShown();
+          for (const win of Zotero.getMainWindows()) {
+            setTreeShown(win as unknown as Window, want);
+          }
+        },
+        true,
+      ),
+      ...[
+        "nestedTags.linkSymbol",
+        "nestedTags.sort",
+        "nestedTags.showAllTags",
+        "nestedTags.matchChildTags",
+      ].map((p) =>
+        Zotero.Prefs.registerObserver(
+          `${P}.${p}`,
+          () => refreshAllTagTrees(),
+          true,
+        ),
+      ),
+      ...["graph.mode", "graph.height", "graph.maxNodes"].map((p) =>
+        Zotero.Prefs.registerObserver(
+          `${P}.${p}`,
+          () => refreshGraphPanes(),
+          true,
+        ),
+      ),
+      Zotero.Prefs.registerObserver(
+        `${P}.graph.visible`,
+        () => {
+          const want = !!getPref("graph.visible");
+          for (const win of Zotero.getMainWindows()) {
+            const w = win as unknown as Window;
+            if (want === isGraphVisible(w)) continue;
+            if (want) showGraphPane(w);
+            else hideGraphPane(w, false);
+          }
+        },
         true,
       ),
       Zotero.Prefs.registerObserver(

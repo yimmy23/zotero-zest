@@ -1,0 +1,35 @@
+/* Settings pane styling.
+   The pane is injected into Zotero's own preferences window, so it inherits
+   that window's fonts and colours; everything here is layout and de-emphasis
+   only, expressed in Zotero's CSS variables so light and dark both work. */
+
+.zest-pref-hint {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin: 2px 0 6px 0;
+  white-space: pre-wrap;
+}
+
+.zest-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--fill-quinary, rgba(128, 128, 128, 0.18));
+}
+
+.zest-pref-row:last-child {
+  border-bottom: 0;
+}
+
+.zest-pref-row > span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zest-pref-list {
+  max-height: 180px;
+  overflow-y: auto;
+}

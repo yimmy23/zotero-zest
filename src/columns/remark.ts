@@ -6,6 +6,11 @@ import { makeCell, rowItem, type ColumnSpec } from "./registry";
 
 export const REMARK_KEYS = ["Remark", "remark", "简记"];
 
+/** a remark lives in Extra, so it needs a regular item the user may write to */
+function canEditRemark(item: Zotero.Item | null): boolean {
+  return !!item && item.isRegularItem() && item.isEditable();
+}
+
 export function remarkOf(item: Zotero.Item): string {
   return getExtraLine(item, REMARK_KEYS)?.value || "";
 }
@@ -32,16 +37,22 @@ export function remarkColumn(): ColumnSpec {
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "remark");
       textSpan.textContent = data || "";
-      cell.title = data
-        ? `${data}\n\n${getString("remark-tip")}`
-        : getString("remark-tip");
+      // notes, attachments and read-only rows have no remark to edit, so they
+      // keep Zotero's own double-click (open the item) and are not advertised
+      // as editable
+      const editable = canEditRemark(rowItem(doc, index));
+      cell.title = editable
+        ? data
+          ? `${data}\n\n${getString("remark-tip")}`
+          : getString("remark-tip")
+        : data || "";
       cell.addEventListener(
         "dblclick",
         guard("remark edit", (ev: Event) => {
+          const item = rowItem(doc, index);
+          if (!canEditRemark(item) || !item) return;
           ev.stopPropagation();
           ev.preventDefault();
-          const item = rowItem(doc, index);
-          if (!item) return;
           const win = doc.defaultView as any;
           const out = { value: remarkOf(item) };
           const ok = Services.prompt.prompt(

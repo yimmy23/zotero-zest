@@ -319,3 +319,4 @@ tabs-restore-session = 重新打开已保存的集合
 tabs-session-delete = 删除
 tabs-hide-native = 隐藏 Zotero 自带的标签栏
 tabs-close-sidebar = 关闭侧栏
+tabs-restore-confirm = 重新打开 { $count } 个文档？每个都会打开一个阅读器标签页。

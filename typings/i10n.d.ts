@@ -346,6 +346,7 @@ export type FluentMessageId =
   | 'tabs-menu'
   | 'tabs-move-to-group'
   | 'tabs-new-group'
+  | 'tabs-restore-confirm'
   | 'tabs-restore-session'
   | 'tabs-save-session'
   | 'tabs-search'
