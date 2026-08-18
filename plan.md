@@ -356,4 +356,13 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 
 **easyScholar 实测（用户提供真实密钥，仅存于隔离 dev profile 的登录管理器）**：Nature 返回 24 个数据集（`sciUp=综合性期刊1区`、`sciif=56.1`、`sci=Q1`…）；中华医学杂志返回 `cscd=核心库`、`pku=1`、`zhongguokejihexin` 等；密钥未出现在 Zotero 的 debug 日志、错误控制台或导出的配置包中。默认展示字段无命中时，回落顺序为 CN 常用索引（cscd/pku/cssci/…）→ OpenAlex `oa2yr`。
 
-**验收探针**：`scripts/phase-d-probe.js` —— Zotero 10.0 与 9.0.6 均 **22/22 通过**。
+**验收探针**：`scripts/phase-d-probe.js` —— Zotero 10.0 **22/22 通过**（9.0.6 本机已随自动更新升到 10.0，用户拍板不再单独回归 9）。
+
+**阶段 D 对抗审查（42 个 agent × 41 条原始发现 → 逐条反驳 → 30 条确认，全部修复；commits `7a5d05f`、`72a5af1`）**
+- **侧栏挂载点（critical）**：`#zotero-layout-switcher` 位于 `#zotero-trees`，即 library 标签页自己的 deck 页 —— 一切到阅读器标签页侧栏就消失。改挂 `#tabs-deck` 同级（其父为 `#zotero-pane-stack` 内的匿名 hbox）。
+- **标签页 → 条目解析（major）**：`Zotero.Reader.getByTabID` 只认已加载的阅读器，而重启后所有标签页都是 `reader-unloaded`，分组全部失效。改读 `tab.data.itemID`（由 `Zotero_Tabs.add()` 写入并经 session.json 往返），阅读器查找降级为兜底。
+- **`Zotero_Tabs.move` 语义（major）**：前移时内部先删后插会自减索引 —— 向下拖永远差一位、且无法拖到末尾。向下移动改传 `to + 1`。
+- **XUL `<menuitem>` 的 Fluent 必须是属性形式**（major）：13 条值形式字符串（含全部三个作者下拉框）渲染为空白，已批量转为 `.label`；设置面板同时补上样式表（`.zest-pref-hint` 用了 21 次却无定义）。
+- **偏好实时生效（major）**：`tabs.*` / `nestedTags.*` / `graph.*` 只在挂载时读一次，设置页的开关要重启才生效 → 补齐 `Zotero.Prefs.registerObserver`。
+- **Extra 是用户的**（major，上一提交）：`withCitationLine` 会删掉 Extra 里所有空行、且未锚定的模式会把「3 citations still missing…」这类正文当成引文行删除 → 模式整行锚定、保留空行与非引文行。
+- 其余：信息面板尊重只读条目、热力条打开被统计的那个附件而非第一个、引文数 0 不再是空单元格、简记列不再抢走 Zotero 自己的双击、会话恢复后台打开并限速（>12 个先询问）、批量关闭一次调用、分组成员清理与满员丢最旧、matrix 丢弃下拉里已不存在的过滤值并给搜索防抖、两个对话框恢复文字可选中（chrome UA 样式表默认 `user-select:none`）、统计窗口重开时重算。
