@@ -157,3 +157,13 @@ anno-no-text = { $type } 类标注——双击在原文中查看
 anno-empty-no-attachment = 该条目没有 PDF / EPUB 附件
 anno-empty-no-annotation = 还没有标注
 anno-empty-filtered = 没有标注符合标签树中选中的标签
+
+# ---- journal rank columns ----
+column-pubtags = 期刊标签
+column-if = 影响因子
+column-venue = 期刊 / 来源
+if-cell-tip = { $field } = { $value }（来源：{ $source }）
+rank-menu-refresh =
+    .label = 刷新所选条目的期刊数据
+rank-refresh-done = 已更新 { $count } 本期刊
+rank-no-key = 未填写 easyScholar 密钥——只使用本地数据集与 OpenAlex

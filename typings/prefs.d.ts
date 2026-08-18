@@ -48,6 +48,26 @@ declare namespace _ZoteroTypes {
       "nestedTags.sort": string;
       "nestedTags.showAllTags": boolean;
       "nestedTags.matchChildTags": boolean;
+      "column.pubtags.enable": boolean;
+      "column.if.enable": boolean;
+      "column.venue.enable": boolean;
+      "rank.fields": string;
+      "rank.sortBy": string;
+      "rank.map": string;
+      "rank.colors": string;
+      "rank.defaultColor": string;
+      "rank.textColor": string;
+      "rank.opacity": string;
+      "rank.ttlDays": number;
+      "rank.useEasyScholar": boolean;
+      "rank.useOpenAlex": boolean;
+      "rank.autoFetch": boolean;
+      "secret.easyscholar": string;
+      "if.field": string;
+      "if.max": number;
+      "if.progress": boolean;
+      "if.info": boolean;
+      "if.color": string;
     };
   }
 }

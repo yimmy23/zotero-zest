@@ -157,3 +157,13 @@ anno-no-text = { $type } annotation — double-click to see it in context
 anno-empty-no-attachment = This item has no PDF or EPUB attachment
 anno-empty-no-annotation = No annotations yet
 anno-empty-filtered = No annotation matches the tags selected in the tag tree
+
+# ---- journal rank columns ----
+column-pubtags = Publication Tags
+column-if = IF
+column-venue = Venue
+if-cell-tip = { $field } = { $value } (source: { $source })
+rank-menu-refresh =
+    .label = Refresh journal data for the selected items
+rank-refresh-done = Updated { $count } journals
+rank-no-key = No easyScholar key set — using local datasets and OpenAlex only

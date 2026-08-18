@@ -60,3 +60,26 @@ pref("nestedTags.linkSymbol", "/");
 pref("nestedTags.sort", "az");
 pref("nestedTags.showAllTags", false);
 pref("nestedTags.matchChildTags", true);
+
+// Journal rank / impact factor
+pref("column.pubtags.enable", true);
+pref("column.if.enable", false);
+pref("column.venue.enable", false);
+pref("rank.fields", "sciUp, sciif, sci");
+pref("rank.sortBy", "");
+pref("rank.map", "");
+pref("rank.colors", "");
+pref("rank.defaultColor", "");
+pref("rank.textColor", "auto");
+pref("rank.opacity", "0.15");
+pref("rank.ttlDays", 30);
+pref("rank.useEasyScholar", true);
+pref("rank.useOpenAlex", true);
+pref("rank.autoFetch", true);
+pref("secret.easyscholar", "");
+// IF column
+pref("if.field", "sciif");
+pref("if.max", 15);
+pref("if.progress", true);
+pref("if.info", true);
+pref("if.color", "");

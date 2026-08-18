@@ -6,6 +6,13 @@ import { ratingColumn } from "./rating";
 import { tagsColumn } from "./tags";
 import { textTagsColumn } from "./textTags";
 import { annotationsColumn } from "./annotations";
+import {
+  publicationTagsColumn,
+  impactFactorColumn,
+  venueColumn,
+} from "./pubTags";
+import { startRankService, stopRankService } from "../rank";
+import { loadDatasets } from "../rank/sources/localDataset";
 import { startAnnotationWatch, stopAnnotationWatch } from "../annots/density";
 import {
   registerColumn,
@@ -32,6 +39,9 @@ const SPECS: Array<() => ColumnSpec> = [
   tagsColumn,
   textTagsColumn,
   annotationsColumn,
+  publicationTagsColumn,
+  impactFactorColumn,
+  venueColumn,
 ];
 
 const prefObservers: symbol[] = [];
@@ -98,20 +108,37 @@ export function registerAllColumns() {
   watchEnable(tagsColumn, "column.tags.enable");
   watchEnable(textTagsColumn, "column.textTags.enable");
   watchEnable(annotationsColumn, "column.annots.enable");
+  watchEnable(publicationTagsColumn, "column.pubtags.enable");
+  watchEnable(impactFactorColumn, "column.if.enable");
+  watchEnable(venueColumn, "column.venue.enable");
+  // journal ranks resolve in the background; repaint the rows that were waiting
+  startRankService((ids) => refreshItems(ids));
+  void loadDatasets();
   // annotation summaries are computed lazily; when a batch finishes (or the
   // user annotates something) repaint exactly those rows
   startAnnotationWatch((ids) => refreshItems(ids));
   // textTags.match changes dataProvider output → recompute; the others only
   // change how cells are painted → repaint (a colour-picker drag emits a
   // stream of pref writes; both helpers are debounced)
-  prefObservers.push(
-    Zotero.Prefs.registerObserver(
-      `${P}.textTags.match`,
-      () => refreshAllRows(),
-      true,
-    ),
-  );
   for (const p of [
+    "textTags.match",
+    "rank.fields",
+    "rank.sortBy",
+    "rank.map",
+  ]) {
+    prefObservers.push(
+      Zotero.Prefs.registerObserver(`${P}.${p}`, () => refreshAllRows(), true),
+    );
+  }
+  for (const p of [
+    "rank.colors",
+    "rank.defaultColor",
+    "rank.textColor",
+    "rank.opacity",
+    "if.max",
+    "if.progress",
+    "if.info",
+    "if.color",
     "annots.style",
     "annots.color",
     "textTags.color",
@@ -146,6 +173,7 @@ export function unregisterAll() {
   }
   prefObservers.length = 0;
   stopAnnotationWatch();
+  stopRankService();
   unregisterAllColumns();
   uninstallTitleDecor();
 }

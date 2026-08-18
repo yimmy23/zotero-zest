@@ -52,11 +52,11 @@ export function registerStyles(win: Window) {
     /* Rating stars: CSS-only hover preview */
     .virtualized-table .cell.zest-rating .zest-stars { display: inline-flex; flex: 0 0 auto; gap: 0; line-height: 1; letter-spacing: 0; }
     .virtualized-table .cell.zest-rating .zest-star { color: var(--fill-quinary); cursor: pointer; font-size: calc(var(--zotero-font-size, 13px) * .9); }
-    .virtualized-table .cell.zest-rating .zest-star.on { color: var(--zest-star-color, var(--accent-blue)); }
+    .virtualized-table .cell.zest-rating .zest-star.on { color: var(--zest-star-color, var(--accent-yellow)); }
     .virtualized-table .row:not(:hover):not(.selected) .cell.zest-rating .zest-stars-empty { opacity: 0; }
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star { color: var(--fill-quinary); }
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:hover,
-    .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:has(~ .zest-star:hover) { color: var(--zest-star-color, var(--accent-blue)); }
+    .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:has(~ .zest-star:hover) { color: var(--zest-star-color, var(--accent-yellow)); }
 
     /* Annotations: histogram / colour stack / dots */
     .virtualized-table .cell.zest-annots .zest-annot-bars {
@@ -82,6 +82,17 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923); white-space: nowrap;
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
+
+    /* Journal rank badges + impact-factor bar */
+    .virtualized-table .cell.zest-pubtags .zest-rank-badge { font-variant-numeric: tabular-nums; }
+    .virtualized-table .cell.zest-if .zest-if-track {
+      flex: 0 0 auto; width: 34px; height: 6px; margin-inline-end: 6px; border-radius: 1em;
+      background-color: var(--fill-quinary); overflow: hidden;
+    }
+    .virtualized-table .cell.zest-if .zest-if-bar {
+      display: block; height: 100%; border-radius: 1em; background-color: var(--accent-blue);
+    }
+    .virtualized-table .cell.zest-if > .cell-text { font-variant-numeric: tabular-nums; }
 
     /* ---------- nested tag tree ---------- */
     /* Zotero styles #zotero-tag-selector with display:flex, which beats the

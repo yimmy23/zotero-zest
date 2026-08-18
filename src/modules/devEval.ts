@@ -26,6 +26,10 @@ import * as tagTreeUI from "../tags/nestedTree";
 import * as tagScope from "../tags/scope";
 import * as itemFilter from "../views/itemFilter";
 import * as annotSection from "../panes/annotSection";
+import * as rank from "../rank";
+import * as rankRank from "../rank/rank";
+import * as dataset from "../rank/sources/localDataset";
+import * as secrets from "../core/secrets";
 import * as columns from "../columns";
 import * as registry from "../columns/registry";
 import * as migrate from "../reading/migrate";
@@ -115,6 +119,10 @@ export function registerDevEval() {
             tagScope,
             itemFilter,
             annotSection,
+            rank,
+            rankRank,
+            dataset,
+            secrets,
           });
           if (typeof result !== "string") {
             try {

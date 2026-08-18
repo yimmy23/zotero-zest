@@ -11,6 +11,7 @@ import { migrateLegacyUI } from "../reading/migrate";
 import { runBatch } from "../ui/batch";
 import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
+import { refreshJournal } from "../rank";
 
 /**
  * Menus via the official `Zotero.MenuManager` (Zotero 8+; this plugin
@@ -73,6 +74,38 @@ async function setRatingForAll(items: Zotero.Item[], n: number) {
     {
       confirmMessage: getString("batch-confirm-count", {
         args: { count: editable.length },
+      }),
+    },
+  );
+}
+
+async function refreshJournalsFor(items: Zotero.Item[]) {
+  if (!items.length) return;
+  // one request per JOURNAL, not per item — dedupe before the batch
+  const byJournal = new Map<string, Zotero.Item>();
+  for (const it of items) {
+    let key: string;
+    try {
+      key = String(
+        it.getField("publicationTitle") || it.getField("ISSN") || "",
+      );
+    } catch {
+      key = "";
+    }
+    if (!key || byJournal.has(key)) continue;
+    byJournal.set(key, it);
+  }
+  const targets = [...byJournal.values()];
+  if (!targets.length) return;
+  await runBatch(
+    getString("rank-menu-refresh", "label"),
+    targets,
+    async (item) => {
+      await refreshJournal(item);
+    },
+    {
+      confirmMessage: getString("batch-confirm-count", {
+        args: { count: targets.length },
       }),
     },
   );
@@ -162,6 +195,12 @@ export function registerMenus() {
             ],
           },
           { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("rank-menu-refresh"),
+            onCommand: (_ev: any, ctx: any) =>
+              void refreshJournalsFor(regularItems(ctx)),
+          },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-clear-reading"),
