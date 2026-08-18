@@ -1,13 +1,19 @@
 import type { ItemReading } from "./store";
+import { HEAT_COLOR_DEFAULT, HEAT_LEVELS } from "../ui/palette";
 
 /**
  * Per-page reading heat → CSS gradient (used as cell/title background).
  *
- * Model (kept from zotero-style so old and new users see the same picture):
- * alpha_i = t_i / max(60 s, mean + (max - mean) / 2), clamped to [0, 1],
- * multiplied by the user opacity. Pages are bucketed to ≤ MAX_BUCKETS
- * segments so a 600-page book does not produce a 600-stop gradient, and
- * runs of equal alpha are merged.
+ * Intensity (kept from zotero-style so numbers mean the same thing):
+ * t_i = time_i / max(60 s, mean + (max - mean) / 2), clamped to [0, 1].
+ *
+ * Rendering follows the GitHub / Codex contribution graph: t is quantised to
+ * four discrete steps (HEAT_LEVELS) instead of a smooth ramp, so "read a
+ * little" and "read a lot" are told apart at a glance in a 90 px column.
+ * Alpha compositing (rather than opaque shades) keeps the strip correct over
+ * selected/hovered rows and in dark mode. Pages are bucketed to ≤ MAX_BUCKETS
+ * segments so a 600-page book does not produce a 600-stop gradient, and runs
+ * of equal level are merged.
  */
 
 const MAX_BUCKETS = 160;
@@ -50,20 +56,31 @@ export function heatAlphas(rec: ItemReading, buckets = MAX_BUCKETS): number[] {
   return sums.map((s) => Math.min(1, s / norm));
 }
 
+/** continuous intensity → GitHub-style step (0 = untouched, 1..4) */
+export function heatLevel(t: number): number {
+  if (t <= 0.005) return 0;
+  return Math.min(
+    HEAT_LEVELS.length,
+    Math.max(1, Math.ceil(t * HEAT_LEVELS.length)),
+  );
+}
+
 export function heatGradient(
   rec: ItemReading,
   color: string,
   opacity: number,
 ): string {
-  const rgb = hexToRgb(color) || [74, 144, 226];
+  const rgb = hexToRgb(color) || hexToRgb(HEAT_COLOR_DEFAULT)!;
   const alphas = heatAlphas(rec);
   if (!alphas.length) return "";
   const n = alphas.length;
+  const levels = alphas.map(heatLevel);
   const stops: string[] = [];
   let runStart = 0;
   for (let i = 1; i <= n; i++) {
-    if (i === n || Math.abs(alphas[i] - alphas[runStart]) > 0.02) {
-      const a = alphas[runStart] * opacity;
+    if (i === n || levels[i] !== levels[runStart]) {
+      const lvl = levels[runStart];
+      const a = lvl ? HEAT_LEVELS[lvl - 1] * opacity : 0;
       const s = ((runStart / n) * 100).toFixed(2);
       const e = ((i / n) * 100).toFixed(2);
       stops.push(

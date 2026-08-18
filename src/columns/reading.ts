@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { readingStore, formatDuration, pagesSeen } from "../reading/store";
 import { cachedHeat } from "../reading/heat";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
+import { HEAT_COLOR_DEFAULT, HEAT_OPACITY_DEFAULT } from "../ui/palette";
 
 /**
  * "Reading" column: total time read (sortable) over a per-page heat strip.
@@ -11,11 +12,11 @@ import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
  */
 
 export function heatColor(): string {
-  return (getPref("heat.color") as string) || "#4a90e2";
+  return (getPref("heat.color") as string) || HEAT_COLOR_DEFAULT;
 }
 export function heatOpacity(): number {
   const v = Number(getPref("heat.opacity"));
-  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.6;
+  return Number.isFinite(v) && v >= 0 && v <= 1 ? v : HEAT_OPACITY_DEFAULT;
 }
 
 export function readingColumn(): ColumnSpec {

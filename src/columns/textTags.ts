@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { parseTagRule } from "../tags/match";
 import { hexToRgb } from "../reading/heat";
 import { readableTextColor } from "../ui/color";
+import { BADGE_COLOR_DEFAULT } from "../ui/palette";
 import { makeCell, rowItem, type ColumnSpec } from "./registry";
 
 /**
@@ -23,7 +24,7 @@ export function textTagsOf(item: Zotero.Item): TextTag[] {
     string,
     { color: string; position: number }
   >;
-  const dflt = (getPref("textTags.color") as string) || "#8e44ad";
+  const dflt = (getPref("textTags.color") as string) || BADGE_COLOR_DEFAULT;
   const out: TextTag[] = [];
   let tags: Array<{ tag: string }>;
   try {

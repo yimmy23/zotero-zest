@@ -17,7 +17,7 @@ pref("column.tags.enable", true);
 pref("column.textTags.enable", true);
 
 // Reading heat (Reading column + optional title decoration)
-pref("heat.color", "#FFC6D3");
+pref("heat.color", "#66ADFF");
 pref("heat.opacity", "0.7");
 pref("titleDecor.heat", true);
 pref("titleDecor.unreadBold", true);
@@ -26,7 +26,7 @@ pref("titleDecor.unreadIncludesEmpty", false);
 // Tags
 pref("tags.hideInTitle", false);
 pref("textTags.match", "#");
-pref("textTags.color", "#8e44ad");
+pref("textTags.color", "#4072E5");
 pref("textTags.textColor", "auto");
 
 // Rating
