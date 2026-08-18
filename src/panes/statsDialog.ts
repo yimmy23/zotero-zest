@@ -35,6 +35,21 @@ interface Stats {
   itemCount: number;
 }
 
+/** close our window on shutdown — an orphan window outlives the plugin */
+export function closeStatsDialog() {
+  openWindow = null;
+  // Sweep by marker rather than trusting the stored reference: a window opened
+  // moments earlier (or by a previous plugin instance after a reload) may not
+  // be the object we still hold, and an orphan window outlives the plugin.
+  for (const win of (Services.wm as any).getEnumerator("") as any) {
+    try {
+      if (win?.document?.querySelector?.(".zest-stats")) win.close();
+    } catch {
+      // already closing
+    }
+  }
+}
+
 export function collectStats(): Stats {
   const byDay = readingStore.totalsByDay();
   let totalSeconds = 0;

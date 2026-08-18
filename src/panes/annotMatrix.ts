@@ -26,6 +26,21 @@ interface MatrixRow extends CardAnnotation {
 let openWindow: Window | null = null;
 let rows: MatrixRow[] = [];
 
+/** close our window on shutdown — an orphan window outlives the plugin */
+export function closeMatrix() {
+  openWindow = null;
+  // Sweep by marker rather than trusting the stored reference: a window opened
+  // moments earlier (or by a previous plugin instance after a reload) may not
+  // be the object we still hold, and an orphan window outlives the plugin.
+  for (const win of (Services.wm as any).getEnumerator("") as any) {
+    try {
+      if (win?.document?.querySelector?.(".zest-matrix")) win.close();
+    } catch {
+      // already closing
+    }
+  }
+}
+
 export function collectMatrix(items: Zotero.Item[]): MatrixRow[] {
   const out: MatrixRow[] = [];
   for (const item of items) {

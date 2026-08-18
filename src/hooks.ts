@@ -52,6 +52,8 @@ import {
   registerInfoSection,
   unregisterInfoSection,
 } from "./panes/infoSection";
+import { closeStatsDialog } from "./panes/statsDialog";
+import { closeMatrix } from "./panes/annotMatrix";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -244,6 +246,8 @@ async function onShutdown() {
   readingTracker.stop();
   unregisterAnnotSection();
   unregisterInfoSection();
+  closeStatsDialog();
+  closeMatrix();
   uninstallAllTagTrees();
   uninstallAllViewMenus();
   uninstallAllViewShortcuts();
