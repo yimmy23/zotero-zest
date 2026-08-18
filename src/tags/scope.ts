@@ -106,7 +106,11 @@ export async function collectTagScope(
   const counts = new Map<string, number>();
   const itemIDs = new Map<string, Set<number>>();
 
-  for (const item of viewItems) {
+  for (let i = 0; i < viewItems.length; i++) {
+    const item = viewItems[i];
+    // yield every 200 items: walking attachments/notes/annotations of a large
+    // collection would otherwise freeze the UI thread for seconds
+    if (i % 200 === 199) await Zotero.Promise.delay(0);
     for (const tag of tagsOfItem(item, withChildren)) {
       if (matcher.test(tag) === null) continue;
       inView.add(tag);

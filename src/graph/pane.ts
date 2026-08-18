@@ -197,6 +197,8 @@ export function hideGraphPane(win: Window, persist = true) {
   try {
     (state.box as unknown as HTMLElement).remove();
     (state.splitter as unknown as HTMLElement).remove();
+    // the node context menu lives in the window's popupset
+    win.document.getElementById(`${config.addonRef}-graph-menu`)?.remove();
   } catch {
     // window closing
   }

@@ -152,7 +152,7 @@ function typeFilterMenus(): any[] {
     items.push({
       menuType: "menuitem",
       label: count ? `${label} (${count})` : label,
-      isChecked: () => activeTypes().includes(type),
+      isChecked: () => activeTypes(win).includes(type),
       onCommand: () => void toggleType(win, type),
     });
   }

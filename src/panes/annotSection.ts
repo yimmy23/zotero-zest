@@ -194,7 +194,11 @@ function renderCards(props: any) {
   props.setEnabled?.(true);
 
   const all = collectAnnotations(item);
-  const prefixes = selectedTagNames();
+  // the tag selection is per window; a second main window must not follow the
+  // first one's tree
+  const win = (props.doc?.defaultView || body.ownerDocument?.defaultView) as
+    Window | undefined;
+  const prefixes = selectedTagNames(win);
   const shown = all.filter((a) => matchesPrefixes(a.tags, prefixes));
 
   props.setSectionSummary?.(shown.length ? String(shown.length) : "");

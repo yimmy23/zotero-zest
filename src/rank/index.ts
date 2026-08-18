@@ -227,8 +227,12 @@ export async function lookupJournal(
   push(lookupDataset(key, issn));
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
-  if (getPref("rank.useEasyScholar") && name && !easyScholarBlocked()) {
-    const es = await fetchEasyScholar(name);
+  if (
+    getPref("rank.useEasyScholar") &&
+    name &&
+    (force || !easyScholarBlocked())
+  ) {
+    const es = await fetchEasyScholar(name, force);
     if (es.values.length) push(es.values);
     else if (es.error) {
       misses.push("easyscholar");

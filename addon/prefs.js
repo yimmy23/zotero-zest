@@ -62,7 +62,8 @@ pref("nestedTags.showAllTags", false);
 pref("nestedTags.matchChildTags", true);
 
 // Journal rank / impact factor
-pref("column.pubtags.enable", true);
+// off by default: enabling it starts journal lookups for every visible row
+pref("column.pubtags.enable", false);
 pref("column.if.enable", false);
 pref("column.venue.enable", false);
 pref("rank.fields", "sciUp, sciif, sci");
@@ -75,7 +76,9 @@ pref("rank.opacity", "0.15");
 pref("rank.ttlDays", 30);
 pref("rank.useEasyScholar", true);
 pref("rank.useOpenAlex", true);
-pref("rank.autoFetch", true);
+// off by default: fetching journal ranks talks to third-party APIs, so the
+// user opts in (local datasets and the cache work without it)
+pref("rank.autoFetch", false);
 pref("secret.easyscholar", "");
 // IF column
 pref("if.field", "sciif");

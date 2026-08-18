@@ -9,14 +9,27 @@ import { setItemFilter, refreshItemView, canFilter } from "./itemFilter";
  * competing with them: every filter narrows, none of them replaces the others.
  */
 
-let active = new Set<string>();
+/** window → selected item types (the filter registry is per window too) */
+const active = new Map<Window, Set<string>>();
 
-export function activeTypes(): string[] {
-  return [...active];
+function typesOf(win: Window): Set<string> {
+  let set = active.get(win);
+  if (!set) {
+    set = new Set();
+    active.set(win, set);
+  }
+  return set;
 }
 
-export function typeFilterActive(): boolean {
-  return active.size > 0;
+export function activeTypes(win?: Window): string[] {
+  if (win) return [...typesOf(win)];
+  const out = new Set<string>();
+  for (const set of active.values()) for (const t of set) out.add(t);
+  return [...out];
+}
+
+export function typeFilterActive(win: Window): boolean {
+  return typesOf(win).size > 0;
 }
 
 export function canTypeFilter(): boolean {
@@ -46,7 +59,7 @@ export function typesInView(
     ztoolkit.log("[typeFilter] scan failed", e);
   }
   // keep already-selected types listed even when the filter hid them
-  for (const t of active) if (!counts.has(t)) counts.set(t, 0);
+  for (const t of typesOf(win)) if (!counts.has(t)) counts.set(t, 0);
   return [...counts.entries()]
     .map(([type, count]) => ({ type, label: localizedType(type), count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
@@ -61,24 +74,27 @@ export function localizedType(type: string): string {
 }
 
 export async function toggleType(win: Window, type: string) {
-  if (active.has(type)) active.delete(type);
-  else active.add(type);
+  const set = typesOf(win);
+  if (set.has(type)) set.delete(type);
+  else set.add(type);
   await apply(win);
 }
 
 export async function clearTypeFilter(win: Window) {
-  if (!active.size) return;
-  active = new Set();
+  const set = active.get(win);
+  if (!set?.size) return;
+  set.clear();
   await apply(win);
 }
 
 async function apply(win: Window) {
-  if (!active.size) {
+  const set = typesOf(win);
+  if (!set.size) {
     setItemFilter(win, "type", null);
     await refreshItemView(win);
     return;
   }
-  const wanted = new Set(active);
+  const wanted = new Set(set);
   const ok = setItemFilter(win, "type", (items) =>
     items.filter((item) => {
       try {
@@ -95,18 +111,19 @@ async function apply(win: Window) {
   await refreshItemView(win);
 }
 
-export function typeFilterSummary(): string {
-  if (!active.size) return "";
+export function typeFilterSummary(win: Window): string {
+  const set = typesOf(win);
+  if (!set.size) return "";
   return getString("typefilter-active", {
     args: {
-      types: [...active].map(localizedType).join(", "),
-      count: active.size,
+      types: [...set].map(localizedType).join(", "),
+      count: set.size,
     },
   });
 }
 
 export function resetTypeFilter() {
-  active = new Set();
+  active.clear();
   for (const w of Zotero.getMainWindows() as unknown as Window[]) {
     setItemFilter(w, "type", null);
   }

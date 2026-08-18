@@ -69,12 +69,12 @@ const RANKABLE_VENUE_FIELDS = [
   "publicationTitle",
   "proceedingsTitle",
   "conferenceName",
-  "repository",
 ];
 
 /** the venue as shown in the Venue column: broader, display only */
 const DISPLAY_VENUE_FIELDS = [
   ...RANKABLE_VENUE_FIELDS,
+  "repository",
   "bookTitle",
   "encyclopediaTitle",
   "dictionaryTitle",

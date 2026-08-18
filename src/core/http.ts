@@ -23,6 +23,18 @@ interface RequestOptions {
   noCache?: boolean;
   /** max bytes of the request body Zotero.HTTP may write to debug logs (0 = none) */
   logBodyLength?: number;
+  /**
+   * Safe stand-in for the URL in OUR log lines. Set it whenever the real URL
+   * carries a credential; requests that set it are never cached, because the
+   * cache is keyed by URL and would hold the secret in memory.
+   */
+  displayURL?: string;
+  /**
+   * The URL carries a credential. Such a request is sent with a bare
+   * XMLHttpRequest instead of `Zotero.HTTP.request`, because Zotero logs every
+   * request URL to the debug console and its redaction only covers `key=`.
+   */
+  secret?: boolean;
 }
 
 interface CacheEntry {
@@ -36,6 +48,8 @@ const MAX_CACHE_ENTRIES = 500;
 const MAX_ENTRY_BYTES = 2 * 1024 * 1024;
 const MAX_CACHE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT = 15000;
+/** never sleep longer than this on a Retry-After, however big it says */
+const MAX_RETRY_WAIT = 60000;
 const HOST_LIMITS: Record<string, number> = {
   "api.crossref.org": 3,
   "api.semanticscholar.org": 2,
@@ -72,6 +86,14 @@ class HostGate {
 /** cached marker for "this lookup failed recently" */
 const NULL_SENTINEL = Object.freeze({ __refsNull: true });
 const NULL_TTL = 10 * 60 * 1000;
+
+/** hide credentials in anything we log or use as a cache key */
+export function redactURL(url: string): string {
+  return url.replace(
+    /([?&])(secret_?key|api_?key|apikey|token|password|mailto)=[^&]*/gi,
+    "$1$2=***",
+  );
+}
 
 class Http {
   private cache = new Map<string, CacheEntry>();
@@ -145,8 +167,8 @@ class Http {
     url: string,
     options: RequestOptions = {},
   ): Promise<T | null> {
-    const key = `${method} ${url} ${options.body || ""}`;
-    if (options.noCache) {
+    const key = `${method} ${redactURL(url)} ${options.body || ""}`;
+    if (options.noCache || options.displayURL) {
       return this.doRequest(method, url, options);
     }
     const cached = this.cacheGet(key);
@@ -184,6 +206,10 @@ class Http {
       // every path that falls through to the delay assigns retryWait first
       let retryWait!: number;
       try {
+        if (options.secret) {
+          const out = await rawRequest(method, url, options);
+          return out;
+        }
         const xhr = await Zotero.HTTP.request(method, url, {
           headers: options.headers,
           body: options.body,
@@ -201,17 +227,33 @@ class Http {
         }
         if ((status === 429 || status >= 500) && attempt < maxRetries) {
           const retryAfter = Number(xhr.getResponseHeader?.("Retry-After"));
-          retryWait = retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
-          ztoolkit.log(`[http] ${status} ${url}, retry in ${retryWait}ms`);
+          const asked =
+            retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
+          if (asked > MAX_RETRY_WAIT) {
+            // a server asking us to wait an hour must not park the queue
+            ztoolkit.log(
+              `[http] ${status} asked for ${asked}ms — giving up instead`,
+            );
+            return null;
+          }
+          retryWait = asked;
+          ztoolkit.log(
+            `[http] ${status} ${options.displayURL ?? redactURL(url)}, retry in ${retryWait}ms`,
+          );
         } else {
-          ztoolkit.log(`[http] ${method} ${url} -> ${status}`);
+          ztoolkit.log(
+            `[http] ${method} ${options.displayURL ?? redactURL(url)} -> ${status}`,
+          );
           return null;
         }
       } catch (e) {
         if (attempt < maxRetries) {
           retryWait = 1000 * 2 ** attempt;
         } else {
-          ztoolkit.log(`[http] ${method} ${url} failed`, e);
+          ztoolkit.log(
+            `[http] ${method} ${options.displayURL ?? redactURL(url)} failed`,
+            e,
+          );
           return null;
         }
       } finally {
@@ -253,10 +295,72 @@ class Http {
   }
 }
 
+/**
+ * Minimal XHR for credential-bearing requests: same contract as the Zotero
+ * helper (resolve the parsed body, or null), but nothing is logged.
+ */
+async function rawRequest(
+  method: "GET" | "POST",
+  url: string,
+  options: RequestOptions,
+): Promise<any> {
+  return new Promise((resolve) => {
+    let xhr: XMLHttpRequest;
+    try {
+      xhr = new (
+        Components.Constructor(
+          "@mozilla.org/xmlextras/xmlhttprequest;1",
+          "nsIXMLHttpRequest",
+        ) as any
+      )();
+    } catch {
+      resolve(null);
+      return;
+    }
+    try {
+      xhr.open(method, url, true);
+      xhr.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+      for (const [k, v] of Object.entries(options.headers || {})) {
+        xhr.setRequestHeader(k, v);
+      }
+      xhr.onload = () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          resolve(null);
+          return;
+        }
+        if ((options.responseType ?? "json") === "json") {
+          try {
+            resolve(JSON.parse(xhr.responseText || "null"));
+          } catch {
+            resolve(null);
+          }
+        } else {
+          resolve(xhr.responseText);
+        }
+      };
+      xhr.onerror = () => resolve(null);
+      xhr.ontimeout = () => resolve(null);
+      xhr.send(options.body ?? undefined);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export const http = new Http();
 
-/** polite-pool email for Crossref / OpenAlex / Unpaywall */
+/**
+ * Polite-pool email for Crossref / OpenAlex / Unpaywall — empty when the user
+ * has not given one. Callers must then omit the parameter entirely: sending a
+ * constant fake address is not what the polite pool asks for, and it would
+ * make every Zest user look like one client.
+ */
 export function politeEmail(): string {
-  const email = (getPref("network.email") as string)?.trim();
-  return email || "zotero-zest@mailinator.com";
+  return ((getPref("network.email") as string) || "").trim();
+}
+
+/** `?mailto=…` when the user set an address, otherwise nothing */
+export function politeParam(prefix: "?" | "&" = "&"): string {
+  const email = politeEmail();
+  return email ? `${prefix}mailto=${encodeURIComponent(email)}` : "";
 }

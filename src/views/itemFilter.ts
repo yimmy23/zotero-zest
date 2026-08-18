@@ -113,15 +113,19 @@ function install(): boolean {
         if (Array.isArray(next)) out = next;
       }
       if (!children.length) return out;
-      // a child whose parent was filtered out must go too: the item tree
-      // reinstates the parent row for any child left in the set
+      // A child whose parent we filtered out must go too — the item tree
+      // reinstates the parent row for any child left in the set. A child whose
+      // parent was never in the set (Trash shows deleted children of live
+      // parents, quick search matches children directly) is kept as it was.
+      const present = new Set(top.map((i) => i.id));
       const kept = new Set(out.map((i) => i.id));
       const keptChildren = children.filter((c) => {
         try {
           const topItem = (c as any).topLevelItem;
-          return topItem ? kept.has(topItem.id) : true;
+          if (!topItem) return true;
+          return !present.has(topItem.id) || kept.has(topItem.id);
         } catch {
-          return false;
+          return true;
         }
       });
       return keptChildren.length ? out.concat(keptChildren) : out;

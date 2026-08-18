@@ -35,6 +35,12 @@ export const EMPTY_SUMMARY: AnnotSummary = {
 const BUCKETS = 40;
 
 const summaries = new Map<number, AnnotSummary>();
+/**
+ * annotation id → the regular item it belongs to. Zotero's `delete` event only
+ * carries `{libraryID, key}` and the annotation is already unloaded by then, so
+ * the mapping has to be remembered while the annotation still exists.
+ */
+const annotOwner = new Map<number, number>();
 const queue = new Set<number>();
 let queueTimer: number | undefined;
 let notifierID: string | undefined;
@@ -87,6 +93,7 @@ async function drain() {
 
 /** synchronous computation for ONE item (all its PDF/EPUB attachments) */
 export function computeSummary(item: Zotero.Item): AnnotSummary {
+  const owner = item.id;
   let count = 0;
   let chars = 0;
   let maxPage = -1;
@@ -110,6 +117,7 @@ export function computeSummary(item: Zotero.Item): AnnotSummary {
     for (const a of anns) {
       try {
         if ((a as any).deleted) continue;
+        annotOwner.set(a.id, owner);
         count++;
         chars +=
           (((a as any).annotationText as string) || "").length +
@@ -161,6 +169,7 @@ export function invalidate(itemIDs: number[]) {
 
 export function invalidateAll() {
   summaries.clear();
+  annotOwner.clear();
 }
 
 /**
@@ -186,17 +195,13 @@ export function startAnnotationWatch(refresh: (ids: number[]) => void) {
               if (parent) parents.add(parent);
               continue;
             }
-            // a deleted annotation is already gone → use the event's extraData
-            const ex = extraData?.[rawID];
-            const pk = ex?.parentItemKey ?? ex?.parentKey;
-            const lib = ex?.libraryID ?? 1;
-            if (pk) {
-              const attID = Zotero.Items.getIDFromLibraryAndKey(lib, pk);
-              if (attID) {
-                const att = Zotero.Items.get(attID as number) as Zotero.Item;
-                const pid = (att as any)?.parentItemID;
-                if (pid) parents.add(pid as number);
-              }
+            // a deleted annotation is already unloaded and Zotero's payload
+            // only has {libraryID, key} — use the owner we remembered while
+            // the annotation still existed
+            const owner = annotOwner.get(id);
+            if (owner) {
+              parents.add(owner);
+              annotOwner.delete(id);
             }
           } catch {
             // ignore individual ids
@@ -221,6 +226,7 @@ export function stopAnnotationWatch() {
   }
   queue.clear();
   summaries.clear();
+  annotOwner.clear();
   onReady = undefined;
   if (notifierID) {
     try {

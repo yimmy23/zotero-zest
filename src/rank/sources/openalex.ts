@@ -1,4 +1,4 @@
-import { http, politeEmail } from "../../core/http";
+import { http, politeParam } from "../../core/http";
 import { normalizeISSN, normalizeJournal } from "../normalize";
 import type { RankValue } from "../types";
 
@@ -53,7 +53,7 @@ export async function fetchOpenAlexByISSN(
 ): Promise<{ values: RankValue[]; name?: string; issnL?: string } | null> {
   const clean = normalizeISSN(issn);
   if (!clean) return null;
-  const url = `${BASE}/sources/issn:${clean}?mailto=${encodeURIComponent(politeEmail())}`;
+  const url = `${BASE}/sources/issn:${clean}${politeParam("?")}`;
   const src = await http.request<OaSource>("GET", url, {
     responseType: "json",
   });
@@ -78,7 +78,7 @@ export async function fetchOpenAlexByName(
 ): Promise<{ values: RankValue[]; name?: string; issn?: string } | null> {
   const wanted = normalizeJournal(name);
   if (!wanted || wanted.length < 4) return null;
-  const url = `${BASE}/autocomplete/sources?q=${encodeURIComponent(name)}&mailto=${encodeURIComponent(politeEmail())}`;
+  const url = `${BASE}/autocomplete/sources?q=${encodeURIComponent(name)}${politeParam("&")}`;
   const res = await http.request<any>("GET", url, { responseType: "json" });
   const hit = (res?.results || []).find(
     (r: any) => normalizeJournal(r?.display_name || "") === wanted,
@@ -97,7 +97,7 @@ export async function fetchOpenAlexByDOI(
 ): Promise<{ values: RankValue[]; name?: string; issn?: string } | null> {
   const clean = doi.trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
   if (!/^10\.\d{4,9}\//.test(clean)) return null;
-  const url = `${BASE}/works/doi:${encodeURIComponent(clean)}?mailto=${encodeURIComponent(politeEmail())}&select=id,primary_location`;
+  const url = `${BASE}/works/doi:${encodeURIComponent(clean)}?select=id,primary_location${politeParam("&")}`;
   const work = await http.request<any>("GET", url, { responseType: "json" });
   const src: OaSource | undefined = work?.primary_location?.source;
   if (!src) return null;

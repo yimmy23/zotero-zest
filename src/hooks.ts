@@ -39,7 +39,7 @@ import {
   uninstallCollectionCounts,
   uninstallAllCollectionCounts,
   syncCollectionCounts,
-  sweepBadges as sweepCollectionBadges,
+  sweepBadgesIn as sweepCollectionBadgesIn,
 } from "./views/collectionCounts";
 import { resetTypeFilter } from "./views/typeFilter";
 import { installColorSchemes } from "./reader/colorSchemes";
@@ -213,7 +213,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   installTagTree(w);
   installViewMenu(w);
   installViewShortcuts(w);
-  sweepCollectionBadges();
+  sweepCollectionBadgesIn(w);
   installCollectionCounts(w);
   restoreGraphPane(w);
 }

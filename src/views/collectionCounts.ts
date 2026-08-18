@@ -77,16 +77,21 @@ function label(collectionID: number): string {
   }
 }
 
-/** take our badges out of every window's DOM (rows are reused, not rebuilt) */
+/** take our badges out of ONE window's DOM (rows are reused, not rebuilt) */
+export function sweepBadgesIn(win: Window) {
+  try {
+    for (const badge of win.document.querySelectorAll(".zest-count")) {
+      badge.remove();
+    }
+  } catch {
+    // window closing
+  }
+}
+
+/** every window — only for hot-reload leftovers, where ownership is unknown */
 export function sweepBadges() {
   for (const win of Zotero.getMainWindows() as unknown as Window[]) {
-    try {
-      for (const badge of win.document.querySelectorAll(".zest-count")) {
-        badge.remove();
-      }
-    } catch {
-      // window closing
-    }
+    sweepBadgesIn(win);
   }
 }
 
@@ -157,11 +162,11 @@ export function uninstallCollectionCounts(win: Window) {
     entry.tree.renderItem = entry.original;
     // The virtualized table reuses row nodes, so restoring renderItem does not
     // remove badges that are already in the DOM — take them out ourselves.
-    sweepBadges();
+    sweepBadgesIn(entry.win);
     redraw(entry.tree);
     // The virtualized table received `renderItem` as a React prop, so a render
     // that was already queued still paints badges; sweep once more after it.
-    setTimeout(() => sweepBadges(), 600);
+    setTimeout(() => sweepBadgesIn(entry.win), 600);
   } catch {
     // window gone
   }

@@ -184,7 +184,7 @@ export function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
-class ConfigStore {
+export class ConfigStore {
   private data: ZestConfig = { ...EMPTY };
   private path = "";
   private loaded = false;
@@ -207,6 +207,19 @@ class ConfigStore {
       this.data = { ...EMPTY };
     }
     this.loaded = true;
+    // readers that memoised the empty default before the file resolved must be
+    // told: rules.ts caches on first read and an empty array is truthy
+    this.notify();
+  }
+
+  private notify() {
+    for (const fn of this.listeners) {
+      try {
+        fn();
+      } catch (e) {
+        ztoolkit.log("[zest] config listener failed", e);
+      }
+    }
   }
 
   get(): Readonly<ZestConfig> {
@@ -224,14 +237,11 @@ class ConfigStore {
     mutate(draft);
     this.data = sanitizeConfig(draft);
     this.scheduleWrite();
-    for (const fn of this.listeners) {
-      try {
-        fn();
-      } catch (e) {
-        ztoolkit.log("[zest] config listener failed", e);
-      }
-    }
+    this.notify();
   }
+
+  /** how many entries of each kind sanitizeConfig will keep */
+  static readonly LIMITS = { viewGroups: 50, tagRules: 200, datasets: 20 };
 
   private scheduleWrite() {
     if (this.writeTimer) clearTimeout(this.writeTimer);

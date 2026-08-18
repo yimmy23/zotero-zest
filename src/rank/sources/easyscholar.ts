@@ -10,7 +10,9 @@ import type { RankValue } from "../types";
  *   - every answer is HTTP 200; failures live in the JSON `code`
  *     (40002 bad key, 40005 missing key, 40006 rate limited), so Zotero's
  *     built-in 429 retry never sees the throttling;
- *   - the key travels in the query string, so the URL must never be logged.
+ *   - the key travels in the query string, so the request bypasses
+ *     `Zotero.HTTP` (which logs every URL and only redacts `key=`), is never
+ *     cached by URL, and only ever appears in our logs redacted.
  */
 
 const ENDPOINT = "https://www.easyscholar.cc/open/getPublicationRank";
@@ -35,17 +37,34 @@ export function easyScholarBackoffMs(): number {
 
 export async function fetchEasyScholar(
   publicationName: string,
+  /** a user-triggered refresh ignores the back-off and any cached answer */
+  force = false,
 ): Promise<EsResult> {
   if (!publicationName) return { values: [] };
-  if (easyScholarBlocked()) return { values: [], error: "rate" };
+  if (!force && easyScholarBlocked()) return { values: [], error: "rate" };
+  if (force) {
+    blockedUntil = 0;
+    consecutiveRateLimits = 0;
+  }
+  // the block has expired without a new 40006 → start the back-off ladder over
+  if (blockedUntil && Date.now() >= blockedUntil) {
+    blockedUntil = 0;
+    consecutiveRateLimits = 0;
+  }
   const key = await getSecret("easyscholar");
   if (!key) return { values: [], error: "key" };
 
   const url = `${ENDPOINT}?secretKey=${encodeURIComponent(key)}&publicationName=${encodeURIComponent(publicationName)}`;
   const res = await http.request<any>("GET", url, {
     responseType: "json",
-    // the key is in the URL: keep the request out of Zotero's debug output
-    logBodyLength: 0,
+    // the key travels in the query string: send it outside Zotero's HTTP
+    // layer (which logs URLs), log a redacted URL ourselves, and never cache
+    // by URL — a business error comes back as HTTP 200 and would otherwise be
+    // remembered as a valid answer for a week. Successful answers are cached
+    // at the journal-record level instead.
+    secret: true,
+    noCache: true,
+    displayURL: `${ENDPOINT}?secretKey=***&publicationName=${encodeURIComponent(publicationName)}`,
     retries: 0,
   });
   if (!res) return { values: [], error: "network" };

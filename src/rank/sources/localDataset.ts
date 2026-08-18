@@ -1,5 +1,10 @@
 import { config } from "../../../package.json";
-import { zestConfig, newId, type DatasetMeta } from "../../core/config";
+import {
+  zestConfig,
+  newId,
+  ConfigStore,
+  type DatasetMeta,
+} from "../../core/config";
 import { normalizeJournal, normalizeISSN } from "../normalize";
 import type { RankValue } from "../types";
 
@@ -264,12 +269,12 @@ export async function saveDataset(
   name: string,
   parsed: ParsedDataset,
 ): Promise<DatasetMeta> {
+  // the config caps the number of datasets and sanitising silently keeps the
+  // FIRST N — so refuse here instead of writing a file nobody will ever read
+  if (zestConfig.get().datasets.length >= ConfigStore.LIMITS.datasets) {
+    throw new Error(`dataset limit reached (${ConfigStore.LIMITS.datasets})`);
+  }
   const id = newId("ds");
-  await IOUtils.makeDirectory(dirPath(), { ignoreExisting: true });
-  await Zotero.File.putContentsAsync(
-    filePath(id),
-    JSON.stringify({ v: 1, name, rows: parsed.rows }),
-  );
   const meta: DatasetMeta = {
     id,
     name: name.slice(0, 120) || parsed.name,
@@ -277,9 +282,18 @@ export async function saveDataset(
     fields: parsed.fields.slice(0, 80),
     updated: Date.now(),
   };
+  // register first: if the config rejects it, no orphan file is left behind
   zestConfig.update((draft) => {
     draft.datasets.push(meta);
   });
+  if (!zestConfig.get().datasets.some((d) => d.id === id)) {
+    throw new Error("dataset rejected by the configuration");
+  }
+  await IOUtils.makeDirectory(dirPath(), { ignoreExisting: true });
+  await Zotero.File.putContentsAsync(
+    filePath(id),
+    JSON.stringify({ v: 1, name, rows: parsed.rows }),
+  );
   index(id, parsed.rows);
   return meta;
 }

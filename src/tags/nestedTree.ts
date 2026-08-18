@@ -51,6 +51,9 @@ interface TreeState {
   inView: Set<string>;
   libraryID: number;
   refreshTimer?: number;
+  searchTimer?: number;
+  /** listeners we added to Zotero's views, so they can be removed again */
+  viewListeners: Array<{ target: any; fn: (...args: any[]) => void }>;
 }
 
 const states = new Map<Window, TreeState>();
@@ -134,8 +137,13 @@ export function installTagTree(win: Window) {
     guard("tag search", () => {
       const state = states.get(win);
       if (!state) return;
-      state.query = search.value.trim().toLowerCase();
-      render(state);
+      // debounce: every keystroke rebuilds the whole tree body
+      if (state.searchTimer) clearTimeout(state.searchTimer);
+      state.searchTimer = setTimeout(() => {
+        state.searchTimer = undefined;
+        state.query = search.value.trim().toLowerCase();
+        render(state);
+      }, 150);
     }),
   );
   bar.appendChild(search);
@@ -170,6 +178,7 @@ export function installTagTree(win: Window) {
     query: "",
     inView: new Set(),
     libraryID: 1,
+    viewListeners: [],
   };
   states.set(win, state);
   applyVisibility(win);
@@ -183,8 +192,23 @@ export function uninstallTagTree(win: Window) {
   if (!state) return;
   states.delete(win);
   if (state.refreshTimer) clearTimeout(state.refreshTimer);
+  if (state.searchTimer) clearTimeout(state.searchTimer);
+  for (const { target, fn } of state.viewListeners) {
+    try {
+      target?.removeListener?.(fn);
+    } catch {
+      // view already gone
+    }
+  }
+  state.viewListeners.length = 0;
   try {
     state.root.remove();
+  } catch {
+    // window closing
+  }
+  try {
+    // our context menu lives in the window's popupset, not in our subtree
+    win.document.getElementById(`${config.addonRef}-tag-menu`)?.remove();
   } catch {
     // window closing
   }
@@ -522,14 +546,18 @@ function toggleAll(win: Window) {
 /* ------------------------------------------------------------------ */
 
 function watchLibrary(win: Window) {
+  const state = states.get(win);
+  if (!state) return;
   try {
     const zp = (win as any).ZoteroPane;
-    zp?.itemsView?.onRefresh?.addListener?.(
-      guard("tag tree onRefresh", () => scheduleRefresh(win)),
-    );
-    zp?.collectionsView?.onSelect?.addListener?.(
-      guard("tag tree onSelect", () => scheduleRefresh(win)),
-    );
+    const bind = (target: any, name: string) => {
+      if (!target?.addListener) return;
+      const fn = guard(`tag tree ${name}`, () => scheduleRefresh(win));
+      target.addListener(fn);
+      state.viewListeners.push({ target, fn });
+    };
+    bind(zp?.itemsView?.onRefresh, "onRefresh");
+    bind(zp?.collectionsView?.onSelect, "onSelect");
   } catch (e) {
     ztoolkit.log("[tags] view listeners unavailable", e);
   }
@@ -539,11 +567,18 @@ function startNotifier() {
   if (notifierID) return;
   notifierID = Zotero.Notifier.registerObserver(
     {
-      notify: (_event: string, type: string) => {
+      notify: (_event: string, type: string, ids: Array<string | number>) => {
+        // `setting` fires for every synced setting — including the reader's
+        // lastPageIndex on each page turn — so only react to tag colours
+        if (type === "setting") {
+          if (ids.some((id) => String(id).endsWith("/tagColors"))) {
+            refreshAllTagTrees();
+          }
+          return;
+        }
         if (
           type === "tag" ||
           type === "item-tag" ||
-          type === "setting" ||
           type === "collection-item"
         ) {
           refreshAllTagTrees();
