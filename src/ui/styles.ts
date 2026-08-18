@@ -83,6 +83,48 @@ export function registerStyles(win: Window) {
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
 
+    /* ---------- nested tag tree ---------- */
+    /* Zotero styles #zotero-tag-selector with display:flex, which beats the
+       UA sheet's [hidden]{display:none} — so hiding it needs our own rule. */
+    #zotero-tag-selector[hidden] { display: none !important; }
+    .zest-tagtree { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
+    .zest-tagtree[hidden] { display: none; }
+    .zest-tagtree-bar {
+      display: flex; align-items: center; gap: 2px; padding: 3px 6px;
+      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
+    }
+    .zest-tagtree-btn {
+      appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
+      background-color: transparent; color: var(--fill-secondary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-tagtree-btn:hover { background-color: var(--fill-quinary); }
+    .zest-tagtree-search {
+      flex: 1 1 auto; min-width: 40px; margin: 0 4px; padding: 1px 6px;
+      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      border-radius: 4px; background-color: var(--material-background, transparent);
+      color: var(--fill-primary); font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-tagtree-count { color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); }
+    .zest-tagtree-body { flex: 1 1 auto; overflow: auto; padding: 2px 0 6px; }
+    .zest-tagtree-row {
+      display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 0;
+      cursor: pointer; border-radius: 4px; white-space: nowrap;
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
+    .zest-tagtree-row.selected { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-tagtree-row.dim { opacity: .55; }
+    .zest-tagtree-row.disabled { opacity: .35; cursor: default; }
+    .zest-tagtree-twisty { width: 12px; flex: 0 0 auto; text-align: center; color: var(--fill-secondary); }
+    .zest-tagtree-row.selected .zest-tagtree-twisty { color: inherit; }
+    .zest-tagtree-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+    .zest-tagtree-emoji { flex: 0 0 auto; }
+    .zest-tagtree-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+    .zest-tagtree-num { flex: 0 0 auto; color: var(--fill-secondary); font-variant-numeric: tabular-nums; }
+    .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
+    .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
+
     /* ---------- graph pane ---------- */
     .zest-graph-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-height: 1px; }
     .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }

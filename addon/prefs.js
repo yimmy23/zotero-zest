@@ -53,3 +53,10 @@ pref("graph.visible", false);
 pref("graph.mode", "related");
 pref("graph.height", 400);
 pref("graph.maxNodes", 250);
+
+// Nested tag tree
+pref("nestedTags.show", false);
+pref("nestedTags.linkSymbol", "/");
+pref("nestedTags.sort", "az");
+pref("nestedTags.showAllTags", false);
+pref("nestedTags.matchChildTags", true);

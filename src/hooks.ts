@@ -20,6 +20,12 @@ import {
   hideGraphPane,
   uninstallGraphPanes,
 } from "./graph/pane";
+import {
+  installTagTree,
+  uninstallTagTree,
+  uninstallAllTagTrees,
+} from "./tags/nestedTree";
+import { clearItemFilters } from "./views/itemFilter";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -163,10 +169,12 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   registerStyles(w);
   applyRootFlags(w, !!getPref("tags.hideInTitle"));
   installTitleDecor(w);
+  installTagTree(w);
   restoreGraphPane(w);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  uninstallTagTree(win);
   hideGraphPane(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
@@ -175,6 +183,8 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 async function onShutdown() {
   readingTracker.stop();
+  uninstallAllTagTrees();
+  clearItemFilters();
   uninstallGraphPanes();
   uninstallExportPatch();
   unregisterMenus();

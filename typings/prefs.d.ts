@@ -43,6 +43,11 @@ declare namespace _ZoteroTypes {
       "graph.mode": string;
       "graph.height": number;
       "graph.maxNodes": number;
+      "nestedTags.show": boolean;
+      "nestedTags.linkSymbol": string;
+      "nestedTags.sort": string;
+      "nestedTags.showAllTags": boolean;
+      "nestedTags.matchChildTags": boolean;
     };
   }
 }
