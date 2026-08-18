@@ -619,4 +619,192 @@
       data-l10n-id="pref-config-hint"
     ></description>
   </groupbox>
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-authors"></html:h2></label>
+    <checkbox
+      preference="column.authors.enable"
+      data-l10n-id="pref-column-authors"
+      native="true"
+    />
+    <checkbox
+      preference="column.firstAuthor.enable"
+      data-l10n-id="pref-column-first-author"
+      native="true"
+    />
+    <checkbox
+      preference="column.lastAuthor.enable"
+      data-l10n-id="pref-column-last-author"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-authors-preset"></html:label>
+      <menulist preference="authors.preset" native="true">
+        <menupopup>
+          <menuitem
+            value="creator-like"
+            data-l10n-id="pref-authors-preset-creator"
+          />
+          <menuitem value="all" data-l10n-id="pref-authors-preset-all" />
+          <menuitem value="first" data-l10n-id="pref-authors-preset-first" />
+          <menuitem value="last" data-l10n-id="pref-authors-preset-last" />
+          <menuitem
+            value="first-last"
+            data-l10n-id="pref-authors-preset-firstlast"
+          />
+          <menuitem value="first3" data-l10n-id="pref-authors-preset-first3" />
+          <menuitem
+            value="advisor"
+            data-l10n-id="pref-authors-preset-advisor"
+          />
+        </menupopup>
+      </menulist>
+      <html:label
+        data-l10n-id="pref-authors-count"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="number"
+        min="1"
+        max="20"
+        style="width: 5em"
+        preference="authors.count"
+      ></html:input>
+    </hbox>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-authors-order"></html:label>
+      <menulist preference="authors.order" native="true">
+        <menupopup>
+          <menuitem value="auto" data-l10n-id="pref-authors-order-auto" />
+          <menuitem
+            value="given-family"
+            data-l10n-id="pref-authors-order-given"
+          />
+          <menuitem
+            value="family-given"
+            data-l10n-id="pref-authors-order-family"
+          />
+        </menupopup>
+      </menulist>
+      <html:label
+        data-l10n-id="pref-authors-given"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <menulist preference="authors.given" native="true">
+        <menupopup>
+          <menuitem value="full" data-l10n-id="pref-authors-given-full" />
+          <menuitem
+            value="initials"
+            data-l10n-id="pref-authors-given-initials"
+          />
+          <menuitem value="none" data-l10n-id="pref-authors-given-none" />
+        </menupopup>
+      </menulist>
+    </hbox>
+    <checkbox
+      preference="authors.markLast"
+      data-l10n-id="pref-authors-marklast"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-authors-self"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="authors.selfNames"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-authors-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-citations"></html:h2></label>
+    <checkbox
+      preference="column.citations.enable"
+      data-l10n-id="pref-column-citations"
+      native="true"
+    />
+    <checkbox
+      preference="cite.useCrossref"
+      data-l10n-id="pref-cite-crossref"
+      native="true"
+    />
+    <checkbox
+      preference="cite.useOpenAlex"
+      data-l10n-id="pref-cite-openalex"
+      native="true"
+    />
+    <checkbox
+      preference="cite.useSemanticScholar"
+      data-l10n-id="pref-cite-s2"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-cite-stale"></html:label>
+      <html:input
+        type="number"
+        min="1"
+        max="3650"
+        style="width: 6em"
+        preference="cite.staleDays"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-cite-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-panel"></html:h2></label>
+    <checkbox
+      preference="info.enable"
+      data-l10n-id="pref-info-enable"
+      native="true"
+    />
+    <checkbox
+      preference="info.abstract"
+      data-l10n-id="pref-info-abstract"
+      native="true"
+    />
+    <checkbox
+      preference="column.remark.enable"
+      data-l10n-id="pref-column-remark"
+      native="true"
+    />
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-panel-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-tabs"></html:h2></label>
+    <checkbox
+      preference="tabs.sidebar"
+      data-l10n-id="pref-tabs-sidebar"
+      native="true"
+    />
+    <checkbox
+      preference="tabs.hideNative"
+      data-l10n-id="pref-tabs-hidenative"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-tabs-width"></html:label>
+      <html:input
+        type="number"
+        min="160"
+        max="480"
+        style="width: 6em"
+        preference="tabs.width"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-tabs-hint"
+    ></description>
+  </groupbox>
 </vbox>

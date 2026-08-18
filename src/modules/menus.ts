@@ -14,6 +14,7 @@ import { toggleTagTree } from "../tags/nestedTree";
 import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
 import { toggleSidebar } from "../tabs/sidebar";
+import { importBetterAuthors } from "../columns/authors";
 import { refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
 import {
@@ -360,6 +361,23 @@ export function registerMenus() {
             },
           },
           { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-authors-import"),
+            onCommand: () => {
+              const report = importBetterAuthors();
+              Services.prompt.alert(
+                Zotero.getMainWindow() as any,
+                getString("menu-authors-import", "label"),
+                getString("authors-import-done", {
+                  args: {
+                    applied: report.applied.join(", ") || "—",
+                    skipped: report.skipped.join(", ") || "—",
+                  },
+                }),
+              );
+            },
+          },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-migrate"),
