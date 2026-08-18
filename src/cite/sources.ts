@@ -1,0 +1,107 @@
+import { http, politeParam, politeEmail } from "../core/http";
+import { getSecret } from "../core/secrets";
+import { normalizeISSN } from "../rank/normalize";
+
+/**
+ * Citation-count sources, cheapest and most reliable first:
+ *
+ *   Crossref        DOI only, no key, polite pool          `is-referenced-by-count`
+ *   OpenAlex        DOI singleton (0 credits), no key      `cited_by_count`
+ *   Semantic Scholar DOI/PMID, optional key                `citationCount`
+ *
+ * Google Scholar is deliberately absent: scraping it gets the user's IP
+ * throttled or CAPTCHA-walled, and every plugin that does it has open issues
+ * about exactly that. If it is ever added it must be opt-in and rate-limited.
+ */
+
+export type CiteSource = "Crossref" | "OpenAlex" | "Semantic Scholar";
+
+export interface CiteResult {
+  count: number;
+  source: CiteSource;
+}
+
+function cleanDOI(item: Zotero.Item): string {
+  try {
+    const raw = String(item.getField("DOI") || "").trim();
+    const doi = raw.replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
+    return /^10\.\d{4,9}\/\S+$/.test(doi) ? doi : "";
+  } catch {
+    return "";
+  }
+}
+
+function pmidOf(item: Zotero.Item): string {
+  try {
+    const extra = String(item.getField("extra") || "");
+    const m = extra.match(/^PMID:\s*(\d+)/im);
+    return m ? m[1] : "";
+  } catch {
+    return "";
+  }
+}
+
+export async function fetchCrossref(
+  item: Zotero.Item,
+): Promise<CiteResult | null> {
+  const doi = cleanDOI(item);
+  if (!doi) return null;
+  // NB: the /works/{doi} route rejects `select` with a 400 — only the search
+  // route supports it, so ask for the whole record
+  const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}${politeParam("?")}`;
+  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const n = res?.message?.["is-referenced-by-count"];
+  return typeof n === "number" ? { count: n, source: "Crossref" } : null;
+}
+
+export async function fetchOpenAlexCitations(
+  item: Zotero.Item,
+): Promise<CiteResult | null> {
+  const doi = cleanDOI(item);
+  if (!doi) return null;
+  const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=cited_by_count${politeParam("&")}`;
+  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const n = res?.cited_by_count;
+  return typeof n === "number" ? { count: n, source: "OpenAlex" } : null;
+}
+
+export async function fetchSemanticScholar(
+  item: Zotero.Item,
+): Promise<CiteResult | null> {
+  const doi = cleanDOI(item);
+  const pmid = pmidOf(item);
+  const id = doi ? `DOI:${doi}` : pmid ? `PMID:${pmid}` : "";
+  if (!id) return null;
+  const key = await getSecret("semanticscholar");
+  const url = `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(id)}?fields=citationCount`;
+  const res = await http.request<any>("GET", url, {
+    responseType: "json",
+    headers: key ? { "x-api-key": key } : undefined,
+    // the key goes in a header, not the URL, but the request must still stay
+    // out of the shared URL cache when it is personalised
+    secret: !!key,
+    displayURL: key ? `${url} (with key)` : undefined,
+    retries: key ? 2 : 0,
+  });
+  const n = res?.citationCount;
+  return typeof n === "number"
+    ? { count: n, source: "Semantic Scholar" }
+    : null;
+}
+
+/** identifiers a source can work with — used to skip hopeless lookups */
+export function hasIdentifier(item: Zotero.Item): boolean {
+  return !!(cleanDOI(item) || pmidOf(item));
+}
+
+export function politeContact(): string {
+  return politeEmail();
+}
+
+export function issnOf(item: Zotero.Item): string {
+  try {
+    return normalizeISSN(String(item.getField("ISSN") || ""));
+  } catch {
+    return "";
+  }
+}

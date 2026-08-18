@@ -54,6 +54,12 @@ declare namespace _ZoteroTypes {
       "authors.markLast": boolean;
       "authors.lastMark": string;
       "authors.selfNames": string;
+      "column.citations.enable": boolean;
+      "cite.useCrossref": boolean;
+      "cite.useOpenAlex": boolean;
+      "cite.useSemanticScholar": boolean;
+      "cite.staleDays": number;
+      "secret.semanticscholar": string;
       "nestedTags.show": boolean;
       "nestedTags.linkSymbol": string;
       "nestedTags.sort": string;

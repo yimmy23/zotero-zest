@@ -35,6 +35,8 @@ import * as easyscholarSrc from "../rank/sources/easyscholar";
 import * as httpMod from "../core/http";
 import * as authors from "../authors/pipeline";
 import * as authorColumns from "../columns/authors";
+import * as cite from "../cite";
+import * as citeExtra from "../cite/extraFormat";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
@@ -138,6 +140,8 @@ export function registerDevEval() {
             httpMod,
             authors,
             authorColumns,
+            cite,
+            citeExtra,
             viewGroups,
             typeFilter,
             collectionCounts,

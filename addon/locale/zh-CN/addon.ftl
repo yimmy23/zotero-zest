@@ -229,3 +229,13 @@ authors-cell-tip = 共 { $count } 位作者
 authors-import-done = 已从 better-authors 导入：{ $applied }；未能对应：{ $skipped }
 menu-authors-import =
     .label = 导入 better-authors 设置
+
+# ---- citation counts ----
+column-citations = 被引数
+citations-cell-tip = 被引 { $count } 次 · 来源 { $source } · { $date }
+menu-citations-update =
+    .label = 更新被引数
+menu-citations-update-stale =
+    .label = 更新过期的被引数
+citations-done = 已更新 { $updated } 条 · 未变 { $unchanged } 条 · 无标识符 { $missing } 条 · 失败 { $failed } 条
+citations-none = 所选条目都没有 DOI 或 PMID

@@ -77,6 +77,10 @@ export function registerStyles(win: Window) {
     .virtualized-table .cell.zest-lastauthor .zest-author-self { font-weight: 600; }
     .virtualized-table .cell .zest-author-mark { color: var(--fill-secondary); }
 
+    /* Citations: a count we have not refreshed in a while is dimmed, not hidden */
+    .virtualized-table .cell.zest-citations > .cell-text { font-variant-numeric: tabular-nums; }
+    .virtualized-table .cell.zest-citations .zest-stale { opacity: .55; }
+
     /* Tags (native swatch markup) */
     .virtualized-table .cell.zest-tags .tag-swatch { margin-inline-end: 3px; }
     .virtualized-table .cell.zest-tags .tag-swatch.emoji { font-size: calc(var(--zotero-font-size, 13px) * .923); }

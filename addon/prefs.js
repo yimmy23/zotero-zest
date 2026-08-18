@@ -106,3 +106,11 @@ pref("authors.initialsDot", true);
 pref("authors.markLast", false);
 pref("authors.lastMark", "†");
 pref("authors.selfNames", "");
+
+// Citation counts (fetched on request only, never automatically)
+pref("column.citations.enable", false);
+pref("cite.useCrossref", true);
+pref("cite.useOpenAlex", true);
+pref("cite.useSemanticScholar", false);
+pref("cite.staleDays", 90);
+pref("secret.semanticscholar", "");

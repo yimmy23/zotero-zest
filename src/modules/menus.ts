@@ -12,6 +12,7 @@ import { runBatch } from "../ui/batch";
 import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
 import { refreshJournal } from "../rank";
+import { updateCitations, citableItems } from "../cite";
 import {
   typesInView,
   toggleType,
@@ -115,6 +116,41 @@ async function refreshJournalsFor(items: Zotero.Item[]) {
         args: { count: targets.length },
       }),
     },
+  );
+}
+
+async function updateCitationsFor(items: Zotero.Item[], onlyStale: boolean) {
+  const targets = citableItems(items, onlyStale);
+  const win = Zotero.getMainWindow();
+  if (!targets.length) {
+    Services.prompt.alert(
+      win as any,
+      getString("menu-citations-update", "label"),
+      getString("citations-none"),
+    );
+    return;
+  }
+  const tally = { updated: 0, unchanged: 0, missing: 0, failed: 0 };
+  await runBatch(
+    getString("menu-citations-update", "label"),
+    targets,
+    async (item) => {
+      const outcome = await updateCitations(item, !onlyStale);
+      if (outcome.status === "updated") tally.updated++;
+      else if (outcome.status === "unchanged") tally.unchanged++;
+      else if (outcome.status === "no-id") tally.missing++;
+      else tally.failed++;
+    },
+    {
+      confirmMessage: getString("batch-confirm-count", {
+        args: { count: targets.length },
+      }),
+    },
+  );
+  Services.prompt.alert(
+    win as any,
+    getString("menu-citations-update", "label"),
+    getString("citations-done", { args: tally }),
   );
 }
 
@@ -228,6 +264,18 @@ export function registerMenus() {
             ],
           },
           { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-citations-update"),
+            onCommand: (_ev: any, ctx: any) =>
+              void updateCitationsFor(regularItems(ctx), false),
+          },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-citations-update-stale"),
+            onCommand: (_ev: any, ctx: any) =>
+              void updateCitationsFor(regularItems(ctx), true),
+          },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("rank-menu-refresh"),

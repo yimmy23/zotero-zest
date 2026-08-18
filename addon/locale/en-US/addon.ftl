@@ -229,3 +229,13 @@ authors-cell-tip = { $count } creators
 authors-import-done = Imported from better-authors: { $applied }; not mapped: { $skipped }
 menu-authors-import =
     .label = Import better-authors settings
+
+# ---- citation counts ----
+column-citations = Citations
+citations-cell-tip = { $count } citations · { $source } · { $date }
+menu-citations-update =
+    .label = Update citation counts
+menu-citations-update-stale =
+    .label = Update citation counts that are out of date
+citations-done = { $updated } updated · { $unchanged } unchanged · { $missing } without an identifier · { $failed } failed
+citations-none = None of the selected items has a DOI or PMID
