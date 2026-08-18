@@ -239,3 +239,27 @@ menu-citations-update-stale =
     .label = Update citation counts that are out of date
 citations-done = { $updated } updated · { $unchanged } unchanged · { $missing } without an identifier · { $failed } failed
 citations-none = None of the selected items has a DOI or PMID
+
+# ---- remark ----
+column-remark = Remark
+remark-tip = Double-click to edit this one-line remark (stored in Extra)
+remark-prompt = One line, kept in the item's Extra field
+
+# ---- literature info panel ----
+info-section-header =
+    .label = Zest
+info-section-sidenav =
+    .tooltiptext = Zest — reading, ranking, citations
+info-authors = Authors
+info-venue = Venue
+info-citations = Citations
+info-citations-none = not fetched yet
+info-refresh = Refresh
+info-reading = Reading
+info-reading-value = { $time } · { $pages } of { $total } pages seen
+info-reading-none = not read yet
+info-status = Status
+info-status-none = No status
+info-abstract = Abstract
+info-open = Open in
+info-heat-tip = Open at page { $page }

@@ -114,3 +114,9 @@ pref("cite.useOpenAlex", true);
 pref("cite.useSemanticScholar", false);
 pref("cite.staleDays", 90);
 pref("secret.semanticscholar", "");
+
+// Remark column and the literature info panel
+pref("column.remark.enable", false);
+pref("info.enable", true);
+pref("info.tldr", false);
+pref("info.abstract", true);

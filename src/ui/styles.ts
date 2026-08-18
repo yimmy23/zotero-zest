@@ -153,6 +153,34 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
+    /* ---------- literature info panel ---------- */
+    .zest-info { display: flex; flex-direction: column; gap: 5px; padding: 4px 12px 12px; }
+    .zest-info-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .zest-info-key {
+      flex: 0 0 auto; min-width: 5.5em; color: var(--fill-secondary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-info-value { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .zest-info-btn, .zest-info-link {
+      appearance: none; border: 0; border-radius: 4px; padding: 1px 7px; cursor: pointer;
+      background-color: var(--fill-quinary); color: var(--fill-primary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923);
+    }
+    .zest-info-btn:hover, .zest-info-link:hover { background-color: var(--fill-quarternary, var(--fill-quinary)); }
+    .zest-info-stars { display: inline-flex; gap: 1px; }
+    .zest-info-star { cursor: pointer; color: var(--fill-quinary); }
+    .zest-info-star.on { color: var(--zest-star-color, var(--accent-yellow)); }
+    .zest-info-input {
+      flex: 1 1 auto; min-width: 6em; padding: 1px 6px; border-radius: 4px;
+      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      background-color: var(--material-background, transparent); color: var(--fill-primary);
+    }
+    .zest-info-heat { display: flex; height: 12px; gap: 1px; border-radius: 3px; overflow: hidden; }
+    .zest-info-heat-seg { flex: 1 1 auto; cursor: pointer; background-color: transparent; }
+    .zest-info-heat-seg:hover { outline: 1px solid var(--accent-blue); outline-offset: -1px; }
+    .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-info-abstract > div { margin-top: 4px; color: var(--fill-secondary); white-space: pre-wrap; }
+
     /* ---------- annotation locator cards ---------- */
     .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }
     .zest-annot-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }

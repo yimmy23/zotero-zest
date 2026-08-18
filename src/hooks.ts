@@ -47,6 +47,10 @@ import {
   registerAnnotSection,
   unregisterAnnotSection,
 } from "./panes/annotSection";
+import {
+  registerInfoSection,
+  unregisterInfoSection,
+} from "./panes/infoSection";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -136,7 +140,10 @@ async function onStartup() {
     await whenItemTreeReady();
     registerAllColumns();
   });
-  step("itemPane", () => registerAnnotSection());
+  step("itemPane", () => {
+    registerInfoSection();
+    registerAnnotSection();
+  });
   step("reader", () => installColorSchemes());
   step("menus", () => registerMenus());
   step("exportPatch", () => installExportPatch());
@@ -233,6 +240,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 async function onShutdown() {
   readingTracker.stop();
   unregisterAnnotSection();
+  unregisterInfoSection();
   uninstallAllTagTrees();
   uninstallAllViewMenus();
   uninstallAllViewShortcuts();

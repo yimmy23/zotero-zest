@@ -37,6 +37,8 @@ import * as authors from "../authors/pipeline";
 import * as authorColumns from "../columns/authors";
 import * as cite from "../cite";
 import * as citeExtra from "../cite/extraFormat";
+import * as infoSection from "../panes/infoSection";
+import * as remark from "../columns/remark";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
@@ -142,6 +144,8 @@ export function registerDevEval() {
             authorColumns,
             cite,
             citeExtra,
+            infoSection,
+            remark,
             viewGroups,
             typeFilter,
             collectionCounts,

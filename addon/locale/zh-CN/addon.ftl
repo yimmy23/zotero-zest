@@ -239,3 +239,27 @@ menu-citations-update-stale =
     .label = 更新过期的被引数
 citations-done = 已更新 { $updated } 条 · 未变 { $unchanged } 条 · 无标识符 { $missing } 条 · 失败 { $failed } 条
 citations-none = 所选条目都没有 DOI 或 PMID
+
+# ---- remark ----
+column-remark = 简记
+remark-tip = 双击编辑这条一行简记（存在 Extra 字段里）
+remark-prompt = 一行文字，保存在条目的 Extra 字段
+
+# ---- literature info panel ----
+info-section-header =
+    .label = Zest
+info-section-sidenav =
+    .tooltiptext = Zest——阅读、分区、被引
+info-authors = 作者
+info-venue = 期刊 / 来源
+info-citations = 被引数
+info-citations-none = 尚未获取
+info-refresh = 刷新
+info-reading = 阅读
+info-reading-value = { $time } · 已看 { $pages } / { $total } 页
+info-reading-none = 还没有阅读记录
+info-status = 状态
+info-status-none = 未设置
+info-abstract = 摘要
+info-open = 在其它平台打开
+info-heat-tip = 跳到第 { $page } 页

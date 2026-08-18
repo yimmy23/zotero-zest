@@ -7,6 +7,7 @@ import { tagsColumn } from "./tags";
 import { textTagsColumn } from "./textTags";
 import { annotationsColumn } from "./annotations";
 import { citationsColumn } from "./citations";
+import { remarkColumn } from "./remark";
 import {
   authorsColumn,
   firstAuthorColumn,
@@ -53,6 +54,7 @@ const SPECS: Array<() => ColumnSpec> = [
   firstAuthorColumn,
   lastAuthorColumn,
   citationsColumn,
+  remarkColumn,
 ];
 
 const prefObservers: symbol[] = [];
@@ -126,6 +128,7 @@ export function registerAllColumns() {
   watchEnable(firstAuthorColumn, "column.firstAuthor.enable");
   watchEnable(lastAuthorColumn, "column.lastAuthor.enable");
   watchEnable(citationsColumn, "column.citations.enable");
+  watchEnable(remarkColumn, "column.remark.enable");
   // journal ranks resolve in the background; repaint the rows that were waiting
   startRankService((ids) => refreshItems(ids));
   void loadDatasets();
