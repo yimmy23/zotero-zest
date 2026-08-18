@@ -34,6 +34,11 @@ export default defineConfig({
         },
         bundle: true,
         target: "firefox115",
+        // fold constant conditions in the release build: the dev-only eval
+        // endpoint compiles to `if (true) return;` and its (dead) body — and
+        // its token string — would otherwise ship inside the xpi. Identifiers
+        // stay readable, so the bundle is still auditable.
+        minifySyntax: process.env.NODE_ENV === "production",
         outfile: `.scaffold/build/addon/content/scripts/${pkg.config.addonRef}.js`,
       },
     ],
