@@ -80,7 +80,7 @@ export function openMatrix(parent?: Window) {
     }
   }
   const win = host.openDialog(
-    "chrome://zotero/content/standalone/basicViewer.xhtml",
+    `chrome://${config.addonRef}/content/panel.xhtml`,
     `${config.addonRef}-matrix`,
     "chrome,centerscreen,resizable,width=1040,height=680",
   ) as Window | null;
@@ -369,23 +369,45 @@ async function exportRows(kind: "csv" | "md", list: MatrixRow[]) {
 const MATRIX_CSS =
   ICON_CSS +
   `
-  /* Flat by design: no native button chrome, no bevels, no shadows — only
-     background tints from the host theme. */
+  /* The dialog host does not inherit Zotero's stylesheet, so the palette is
+     declared here — light by default, overridden by prefers-color-scheme, and
+     the color-scheme property makes native widgets follow too. Painting with a bare
+     system colour produced a white-on-white window in dark mode. */
+  :root {
+    color-scheme: light dark;
+    --zest-bg: #ffffff;
+    --zest-fg: #1a1a1a;
+    --zest-muted: rgba(26, 26, 26, .62);
+    --zest-line: rgba(26, 26, 26, .12);
+    --zest-fill: rgba(26, 26, 26, .07);
+    --zest-fill-strong: rgba(26, 26, 26, .14);
+    --zest-accent: #4072e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --zest-bg: #23262b;
+      --zest-fg: #e8eaed;
+      --zest-muted: rgba(232, 234, 237, .62);
+      --zest-line: rgba(232, 234, 237, .14);
+      --zest-fill: rgba(232, 234, 237, .08);
+      --zest-fill-strong: rgba(232, 234, 237, .16);
+      --zest-accent: #66adff;
+    }
+  }
+  body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
+
+  /* Flat by design: no native chrome, no bevels, no shadows. */
   .zest-flat-btn {
     appearance: none; -moz-appearance: none; border: 0; box-shadow: none;
-    background: color-mix(in srgb, FieldText 8%, transparent);
-    color: inherit; border-radius: 6px; padding: 4px 12px; cursor: pointer;
-    font: inherit; font-size: .875rem; line-height: 1.4;
+    background: var(--zest-fill); color: inherit; border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font: inherit; font-size: .875rem; line-height: 1.4;
   }
-  .zest-flat-btn:hover { background: color-mix(in srgb, FieldText 14%, transparent); }
-  .zest-flat-btn:active { background: color-mix(in srgb, FieldText 20%, transparent); }
-  .zest-flat-btn:focus-visible { outline: 2px solid AccentColor; outline-offset: 1px; }
+  .zest-flat-btn:hover { background: var(--zest-fill-strong); }
+  .zest-flat-btn:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 1px; }
   .zest-flat-input, .zest-flat-select {
     appearance: none; -moz-appearance: none; box-shadow: none;
-    background: color-mix(in srgb, FieldText 6%, transparent);
-    border: 1px solid color-mix(in srgb, FieldText 14%, transparent);
-    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem;
-    padding: 4px 10px;
+    background: var(--zest-fill); border: 1px solid var(--zest-line);
+    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem; padding: 4px 10px;
   }
   .zest-flat-select { padding-inline-end: 26px;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -393,25 +415,21 @@ const MATRIX_CSS =
     background-position: right 13px center, right 8px center;
     background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
   }
-  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid AccentColor; outline-offset: -1px; }
+  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid var(--zest-accent); outline-offset: -1px; }
 
-  body { margin: 0; font: message-box; background: Field; color: FieldText; }
   .zest-matrix { padding: 14px 18px 22px; font-family: system-ui, sans-serif; }
   .zest-matrix-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-
   .zest-matrix-search { flex: 1 1 240px; }
-  /* both dropdowns share a width so neither clips into its own chevron */
   .zest-matrix-select { flex: 0 0 auto; min-width: 10em; max-width: 16em; }
-  .zest-matrix-count { font-size: .85rem; opacity: .7; margin-inline: 4px; }
+  .zest-matrix-count { font-size: .85rem; color: var(--zest-muted); margin-inline: 4px; }
   .zest-matrix-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  .zest-matrix-table th { text-align: left; font-weight: 600; padding: 4px 8px; opacity: .7;
-    border-bottom: 1px solid color-mix(in srgb, FieldText 20%, transparent); }
-  .zest-matrix-table td { padding: 6px 8px; vertical-align: top;
-    border-bottom: 1px solid color-mix(in srgb, FieldText 10%, transparent); }
-  .zest-matrix-table td.item { width: 22%; opacity: .8; }
-  .zest-matrix-table td.page { width: 4em; text-align: right; opacity: .7; font-variant-numeric: tabular-nums; }
-  .zest-matrix-table td.tags { width: 16%; opacity: .7; }
-  .zest-matrix-table .comment { margin-top: 3px; opacity: .7; font-style: italic; }
-  .zest-matrix-row:hover { background: color-mix(in srgb, FieldText 6%, transparent); }
-  .zest-matrix-more { text-align: center; opacity: .6; padding: 10px; }
+  .zest-matrix-table th { text-align: left; font-weight: 600; padding: 4px 8px; color: var(--zest-muted);
+    border-bottom: 1px solid var(--zest-line); }
+  .zest-matrix-table td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid var(--zest-line); }
+  .zest-matrix-table td.item { width: 22%; color: var(--zest-muted); }
+  .zest-matrix-table td.page { width: 4em; text-align: right; color: var(--zest-muted); font-variant-numeric: tabular-nums; }
+  .zest-matrix-table td.tags { width: 16%; color: var(--zest-muted); }
+  .zest-matrix-table .comment { margin-top: 3px; color: var(--zest-muted); font-style: italic; }
+  .zest-matrix-row:hover { background: var(--zest-fill); }
+  .zest-matrix-more { text-align: center; color: var(--zest-muted); padding: 10px; }
 `;

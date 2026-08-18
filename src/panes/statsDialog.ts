@@ -121,7 +121,7 @@ export function openStatsDialog(parent?: Window) {
     }
   }
   const win = host.openDialog(
-    "chrome://zotero/content/standalone/basicViewer.xhtml",
+    `chrome://${config.addonRef}/content/panel.xhtml`,
     `${config.addonRef}-stats`,
     "chrome,centerscreen,resizable,width=900,height=620",
   ) as Window | null;
@@ -293,23 +293,45 @@ function buildCalendar(doc: Document, stats: Stats): HTMLElement {
 const STATS_CSS =
   ICON_CSS +
   `
-  /* Flat by design: no native button chrome, no bevels, no shadows — only
-     background tints from the host theme. */
+  /* The dialog host does not inherit Zotero's stylesheet, so the palette is
+     declared here — light by default, overridden by prefers-color-scheme, and
+     the color-scheme property makes native widgets follow too. Painting with a bare
+     system colour produced a white-on-white window in dark mode. */
+  :root {
+    color-scheme: light dark;
+    --zest-bg: #ffffff;
+    --zest-fg: #1a1a1a;
+    --zest-muted: rgba(26, 26, 26, .62);
+    --zest-line: rgba(26, 26, 26, .12);
+    --zest-fill: rgba(26, 26, 26, .07);
+    --zest-fill-strong: rgba(26, 26, 26, .14);
+    --zest-accent: #4072e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --zest-bg: #23262b;
+      --zest-fg: #e8eaed;
+      --zest-muted: rgba(232, 234, 237, .62);
+      --zest-line: rgba(232, 234, 237, .14);
+      --zest-fill: rgba(232, 234, 237, .08);
+      --zest-fill-strong: rgba(232, 234, 237, .16);
+      --zest-accent: #66adff;
+    }
+  }
+  body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
+
+  /* Flat by design: no native chrome, no bevels, no shadows. */
   .zest-flat-btn {
     appearance: none; -moz-appearance: none; border: 0; box-shadow: none;
-    background: color-mix(in srgb, FieldText 8%, transparent);
-    color: inherit; border-radius: 6px; padding: 4px 12px; cursor: pointer;
-    font: inherit; font-size: .875rem; line-height: 1.4;
+    background: var(--zest-fill); color: inherit; border-radius: 6px;
+    padding: 4px 12px; cursor: pointer; font: inherit; font-size: .875rem; line-height: 1.4;
   }
-  .zest-flat-btn:hover { background: color-mix(in srgb, FieldText 14%, transparent); }
-  .zest-flat-btn:active { background: color-mix(in srgb, FieldText 20%, transparent); }
-  .zest-flat-btn:focus-visible { outline: 2px solid AccentColor; outline-offset: 1px; }
+  .zest-flat-btn:hover { background: var(--zest-fill-strong); }
+  .zest-flat-btn:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 1px; }
   .zest-flat-input, .zest-flat-select {
     appearance: none; -moz-appearance: none; box-shadow: none;
-    background: color-mix(in srgb, FieldText 6%, transparent);
-    border: 1px solid color-mix(in srgb, FieldText 14%, transparent);
-    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem;
-    padding: 4px 10px;
+    background: var(--zest-fill); border: 1px solid var(--zest-line);
+    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem; padding: 4px 10px;
   }
   .zest-flat-select { padding-inline-end: 26px;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
@@ -317,29 +339,22 @@ const STATS_CSS =
     background-position: right 13px center, right 8px center;
     background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
   }
-  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid AccentColor; outline-offset: -1px; }
+  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid var(--zest-accent); outline-offset: -1px; }
 
-  .zest-stats-body { margin: 0; font: message-box; background: Field; color: FieldText; }
   .zest-stats { padding: 18px 22px 28px; font-family: system-ui, sans-serif; }
   .zest-stats h1 { font-size: 1.25rem; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
   .zest-stats h2 { font-size: 1rem; margin: 22px 0 8px; }
   .zest-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
-  .zest-stats-card {
-    min-width: 110px; padding: 8px 12px; border-radius: 8px; box-shadow: none;
-    background: color-mix(in srgb, FieldText 6%, transparent);
-  }
+  .zest-stats-card { min-width: 110px; padding: 8px 12px; border-radius: 8px; background: var(--zest-fill); }
   .zest-stats-value { font-size: 1.15rem; font-weight: 600; }
-  .zest-stats-label { font-size: .8rem; opacity: .7; margin-top: 2px; }
+  .zest-stats-label { font-size: .8rem; color: var(--zest-muted); margin-top: 2px; }
   .zest-cal-wrap { overflow-x: auto; padding-bottom: 6px; }
   .zest-cal { display: flex; gap: 3px; }
   .zest-cal-col { display: flex; flex-direction: column; gap: 3px; }
-  .zest-cal-cell {
-    width: 11px; height: 11px; border-radius: 2px;
-    background: color-mix(in srgb, FieldText 8%, transparent);
-  }
+  .zest-cal-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--zest-fill); }
   .zest-cal-cell.future { visibility: hidden; }
   .zest-stats-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-  .zest-stats-table td { padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, FieldText 12%, transparent); }
-  .zest-stats-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; opacity: .85; }
-  .zest-stats-note { margin-top: 18px; font-size: .8rem; opacity: .65; }
+  .zest-stats-table td { padding: 4px 6px; border-bottom: 1px solid var(--zest-line); }
+  .zest-stats-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--zest-muted); }
+  .zest-stats-note { margin-top: 18px; font-size: .8rem; color: var(--zest-muted); }
 `;
