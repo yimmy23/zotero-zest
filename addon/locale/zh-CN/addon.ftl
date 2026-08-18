@@ -320,3 +320,10 @@ tabs-session-delete = 删除
 tabs-hide-native = 隐藏 Zotero 自带的标签栏
 tabs-close-sidebar = 关闭侧栏
 tabs-restore-confirm = 重新打开 { $count } 个文档？每个都会打开一个阅读器标签页。
+
+# Accent presets (settings pane swatches)
+pref-accent-preset-green = GitHub 绿
+pref-accent-preset-teal = 青
+pref-accent-preset-violet = 紫
+pref-accent-preset-wood = 陶土
+pref-accent-preset-grey = 石墨

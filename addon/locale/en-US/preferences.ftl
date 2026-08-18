@@ -251,3 +251,12 @@ pref-tabs-hidenative =
     .label = Hide Zotero's own tab bar while the sidebar is shown
 pref-tabs-width = Sidebar width
 pref-tabs-hint = Tab groups are remembered per item, so they survive restarts. If a future Zotero changes its tab internals, the sidebar disables itself and Zotero's own tab bar comes back.
+
+pref-group-appearance = Appearance
+pref-accent-color = Accent colour
+pref-accent-hint = One colour drives every Zest surface — the reading heat map, badges, status dots, the tag tree and the tab sidebar. Blue is avoided by default because Zotero paints the selected row with the system selection blue.
+pref-accent-apply =
+    .label = Use for heat map and badges
+pref-accent-reset =
+    .label = Restore default green
+pref-accent-apply-hint = The heat map and the #tag badges keep their own colours below; this button copies the accent onto both.

@@ -21,8 +21,11 @@ pref("annots.style", "bar");
 pref("annots.color", "");
 
 // Reading heat (Reading column + optional title decoration)
-pref("heat.color", "#59ADC4");
-pref("heat.opacity", "0.7");
+// Accent colour for every Zest surface (heat map and #tag badges have their
+// own colours; the settings pane can push this one onto them)
+pref("ui.accent", "#40C463");
+pref("heat.color", "#40C463");
+pref("heat.opacity", "0.62");
 pref("titleDecor.heat", true);
 pref("titleDecor.unreadBold", true);
 pref("titleDecor.unreadIncludesEmpty", false);
@@ -30,7 +33,7 @@ pref("titleDecor.unreadIncludesEmpty", false);
 // Tags
 pref("tags.hideInTitle", false);
 pref("textTags.match", "#");
-pref("textTags.color", "#2F8296");
+pref("textTags.color", "#2DA44E");
 pref("textTags.textColor", "auto");
 
 // Rating

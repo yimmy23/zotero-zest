@@ -33,3 +33,23 @@
   max-height: 180px;
   overflow-y: auto;
 }
+
+.zest-pref-swatches {
+  display: flex;
+  gap: 6px;
+  margin-inline-start: 10px;
+}
+
+.zest-pref-swatch {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--fill-quinary, rgba(128, 128, 128, 0.35));
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.zest-pref-swatch:hover {
+  border-color: var(--fill-secondary, rgba(128, 128, 128, 0.7));
+}

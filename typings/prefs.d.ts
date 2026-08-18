@@ -22,6 +22,7 @@ declare namespace _ZoteroTypes {
       "column.annots.enable": boolean;
       "annots.style": string;
       "annots.color": string;
+      "ui.accent": string;
       "heat.color": string;
       "heat.opacity": string;
       "titleDecor.heat": boolean;

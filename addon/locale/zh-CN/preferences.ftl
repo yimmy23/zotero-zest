@@ -251,3 +251,12 @@ pref-tabs-hidenative =
     .label = 显示侧栏时隐藏 Zotero 自带的标签栏
 pref-tabs-width = 侧栏宽度
 pref-tabs-hint = 标签分组按条目记忆，重启后仍在。若将来 Zotero 改动标签内部实现，侧栏会自动停用并恢复原生标签栏。
+
+pref-group-appearance = 外观
+pref-accent-color = 主色
+pref-accent-hint = 一个颜色决定 Zest 的全部界面——阅读热力图、徽章、状态圆点、标签树与标签页侧栏。默认避开蓝色：Zotero 选中行用的就是系统选区蓝。
+pref-accent-apply =
+    .label = 同时用于热力图与徽章
+pref-accent-reset =
+    .label = 恢复默认绿色
+pref-accent-apply-hint = 下面的热力图与 #标签 徽章各自保留独立颜色；这个按钮把主色一并套用到两者。

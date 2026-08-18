@@ -493,6 +493,17 @@ export class GraphView {
    * computed style, with sane fallbacks (dark-aware where it matters) for
    * contexts where the variables aren't defined.
    */
+  /** mix a #rrggbb toward black; `f` is how much of the colour survives */
+  private static darkenHex(hex: string, f: number): string {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return hex;
+    const n = parseInt(m[1], 16);
+    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
+      Math.max(0, Math.min(255, Math.round(v * f))),
+    );
+    return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  }
+
   private readTheme(): GraphTheme {
     const dark = !!this.darkQuery?.matches;
     let style: CSSStyleDeclaration | null;
@@ -501,6 +512,7 @@ export class GraphView {
     } catch {
       style = null;
     }
+    const darken = (hex: string, f: number) => GraphView.darkenHex(hex, f);
     const read = (name: string, fallback: string): string => {
       try {
         const v = style?.getPropertyValue(name).trim();
@@ -510,11 +522,14 @@ export class GraphView {
       }
     };
     return {
-      // one cool family (the focus node darkest), with a single warm hue for
-      // tags so they read as a different KIND of node, not a different rank
-      center: "#2f8296",
-      item: read("--accent-teal", "#59adc4"),
-      author: read("--accent-green", "#39bf68"),
+      // items follow the user's accent (the focus node one step deeper), and
+      // the other kinds take fixed hues so a node's KIND is readable at a
+      // glance rather than looking like a different rank of the same thing
+      // --zest-accent-strong is a color-mix() expression, which canvas cannot
+      // be trusted to parse, so the deeper step is computed here instead
+      center: darken(read("--zest-accent", "#40c463"), 0.68),
+      item: read("--zest-accent", "#40c463"),
+      author: read("--accent-teal", "#59adc4"),
       tag: read("--accent-wood", "#cc7a52"),
       collection: read("--fill-secondary", "#6b7280"),
       edge: read("--fill-quinary", dark ? "#4b5563" : "#d1d5db"),

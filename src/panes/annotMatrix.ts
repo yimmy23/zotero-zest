@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { guard } from "../utils/guard";
 import { collectAnnotations, type CardAnnotation } from "./annotSection";
 import { iconLabelButton, ICON_CSS } from "../ui/icons";
+import { accentColor } from "../ui/styles";
 
 /**
  * Annotation matrix — every annotation of the current view in one table.
@@ -146,7 +147,7 @@ export function render(win: Window) {
   body.textContent = "";
 
   const style = doc.createElement("style");
-  style.textContent = MATRIX_CSS;
+  style.textContent = matrixCSS();
   body.appendChild(style);
 
   const root = doc.createElement("div");
@@ -400,9 +401,11 @@ async function exportRows(kind: "csv" | "md", list: MatrixRow[]) {
   }
 }
 
-const MATRIX_CSS =
-  ICON_CSS +
-  `
+/** built per render: the palette follows the user's accent preference */
+function matrixCSS(): string {
+  return (
+    ICON_CSS +
+    `
   /* The dialog host does not inherit Zotero's stylesheet, so the palette is
      declared here — light by default, overridden by prefers-color-scheme, and
      the color-scheme property makes native widgets follow too. Painting with a bare
@@ -415,7 +418,7 @@ const MATRIX_CSS =
     --zest-line: rgba(26, 26, 26, .12);
     --zest-fill: rgba(26, 26, 26, .07);
     --zest-fill-strong: rgba(26, 26, 26, .14);
-    --zest-accent: #2f8296;
+    --zest-accent: ${accentColor()};
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -425,7 +428,7 @@ const MATRIX_CSS =
       --zest-line: rgba(232, 234, 237, .14);
       --zest-fill: rgba(232, 234, 237, .08);
       --zest-fill-strong: rgba(232, 234, 237, .16);
-      --zest-accent: #7fc8d9;
+      --zest-accent: ${accentColor()};
     }
   }
   body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
@@ -470,4 +473,6 @@ const MATRIX_CSS =
   .zest-matrix-table .comment { margin-top: 3px; color: var(--zest-muted); font-style: italic; }
   .zest-matrix-row:hover { background: var(--zest-fill); }
   .zest-matrix-more { text-align: center; color: var(--zest-muted); padding: 10px; }
-`;
+`
+  );
+}

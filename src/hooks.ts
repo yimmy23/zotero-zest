@@ -14,7 +14,12 @@ import {
   installExportPatch,
   uninstallExportPatch,
 } from "./modules/exportPatch";
-import { registerStyles, unregisterStyles, applyRootFlags } from "./ui/styles";
+import {
+  registerStyles,
+  unregisterStyles,
+  applyRootFlags,
+  syncAccent,
+} from "./ui/styles";
 import {
   restoreGraphPane,
   hideGraphPane,
@@ -195,6 +200,7 @@ async function onStartup() {
       // the tab sidebar, the tag tree and the graph read their prefs once, at
       // mount — without these the settings-pane checkboxes only take effect
       // after a restart
+      Zotero.Prefs.registerObserver(`${P}.ui.accent`, () => syncAccent(), true),
       Zotero.Prefs.registerObserver(
         `${P}.tabs.sidebar`,
         () => {

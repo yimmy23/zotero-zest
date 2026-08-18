@@ -11,6 +11,7 @@ import { hexToRgb } from "../reading/heat";
 import { heatColor } from "../columns/reading";
 import { HEAT_LEVELS } from "../ui/palette";
 import { icon, ICON_CSS } from "../ui/icons";
+import { accentColor } from "../ui/styles";
 
 /**
  * Reading statistics — a GitHub-style calendar of what you actually read.
@@ -195,7 +196,7 @@ export function renderStats(win: Window) {
   body.classList.add("zest-stats-body");
 
   const style = doc.createElement("style");
-  style.textContent = STATS_CSS;
+  style.textContent = statsCSS();
   body.appendChild(style);
 
   const stats = collectStats();
@@ -325,9 +326,11 @@ function buildCalendar(doc: Document, stats: Stats): HTMLElement {
   return wrap;
 }
 
-const STATS_CSS =
-  ICON_CSS +
-  `
+/** built per render: the palette follows the user's accent preference */
+function statsCSS(): string {
+  return (
+    ICON_CSS +
+    `
   /* The dialog host does not inherit Zotero's stylesheet, so the palette is
      declared here — light by default, overridden by prefers-color-scheme, and
      the color-scheme property makes native widgets follow too. Painting with a bare
@@ -340,7 +343,7 @@ const STATS_CSS =
     --zest-line: rgba(26, 26, 26, .12);
     --zest-fill: rgba(26, 26, 26, .07);
     --zest-fill-strong: rgba(26, 26, 26, .14);
-    --zest-accent: #2f8296;
+    --zest-accent: ${accentColor()};
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -350,7 +353,7 @@ const STATS_CSS =
       --zest-line: rgba(232, 234, 237, .14);
       --zest-fill: rgba(232, 234, 237, .08);
       --zest-fill-strong: rgba(232, 234, 237, .16);
-      --zest-accent: #7fc8d9;
+      --zest-accent: ${accentColor()};
     }
   }
   body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }
@@ -395,4 +398,6 @@ const STATS_CSS =
   .zest-stats-table td { padding: 4px 6px; border-bottom: 1px solid var(--zest-line); }
   .zest-stats-table td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--zest-muted); }
   .zest-stats-note { margin-top: 18px; font-size: .8rem; color: var(--zest-muted); }
-`;
+`
+  );
+}

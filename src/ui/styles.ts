@@ -1,4 +1,5 @@
 import { config } from "../../package.json";
+import { getPref } from "../utils/prefs";
 
 /**
  * One stylesheet for all plugin UI, injected per main window.
@@ -12,6 +13,34 @@ import { config } from "../../package.json";
  *   resets background-image and blanks icons).
  * - Never move DOM under a hovering pointer; keep hint rows always present.
  */
+/** used until the preference is read (and by the two dialog windows) */
+export const ACCENT_FALLBACK = "#40c463";
+
+/** the accent the user picked, or the GitHub green Zest ships with */
+export function accentColor(): string {
+  const raw = String(getPref("ui.accent") || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : ACCENT_FALLBACK;
+}
+
+/** write the accent onto the root element; the stylesheet derives the rest */
+export function applyAccent(win: Window) {
+  (win.document.documentElement as HTMLElement | null)?.style.setProperty(
+    "--zest-accent",
+    accentColor(),
+  );
+}
+
+/** re-read the preference into every open main window */
+export function syncAccent() {
+  for (const win of Zotero.getMainWindows()) {
+    try {
+      applyAccent(win as unknown as Window);
+    } catch {
+      // window closing
+    }
+  }
+}
+
 export function registerStyles(win: Window) {
   const doc = win.document;
   const id = `${config.addonRef}-styles`;
@@ -23,15 +52,20 @@ export function registerStyles(win: Window) {
        Zotero paints the selected row with the system selection colour, which
        is blue on a default macOS/Windows theme — so the plugin's own accent
        has to sit away from it or it disappears the moment a row is selected.
-       Everything below uses these two tokens; changing the hue is a one-line
-       edit here (and the two matching defaults in ui/palette.ts). */
+       Every Zest surface below is drawn from these tokens; --zest-accent
+       itself is written onto the root element from the ui.accent preference
+       (see applyAccent), so the user can retune the whole plugin from one
+       colour picker. */
     :root {
-      --zest-accent: var(--accent-teal, #59adc4);
-      /* One step deeper, and deliberately NOT theme-mixed: this one is used
-         as a background under white text (selected rows, badges), and a mix
-         that follows the theme turns pale in dark mode and drops the label to
-         a 2:1 contrast ratio. Fixed, it stays at ~4.4:1 in both. */
-      --zest-accent-strong: #2f8296;
+      --zest-accent: ${ACCENT_FALLBACK};
+      /* one step deeper for anything that carries white text; mixing toward
+         black rather than toward the theme keeps that text legible in dark
+         mode too (a theme-following mix goes pale and drops it to ~2:1) */
+      --zest-accent-strong: color-mix(in srgb, var(--zest-accent) 68%, #000);
+      /* the translucent wash: selected rows and other filled surfaces let the
+         row underneath show through instead of covering it */
+      --zest-accent-wash: color-mix(in srgb, var(--zest-accent) 26%, transparent);
+      --zest-accent-wash-strong: color-mix(in srgb, var(--zest-accent) 42%, transparent);
     }
 
     /* ---------- item-tree cells ---------- */
@@ -57,11 +91,11 @@ export function registerStyles(win: Window) {
     }
     .zest-status-dot.zest-status-none        { border-color: var(--fill-quinary); }
     .zest-status-dot.zest-status-new         { background-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-to-read     { background-color: var(--zest-accent); }
-    .zest-status-dot.zest-status-in-progress { background-color: var(--zest-accent-strong); }
-    .zest-status-dot.zest-status-read        { background-color: var(--accent-green); }
+    .zest-status-dot.zest-status-to-read     { background-color: var(--accent-teal); }
+    .zest-status-dot.zest-status-in-progress { background-color: var(--accent-wood); }
+    .zest-status-dot.zest-status-read        { background-color: var(--zest-accent); }
     .zest-status-dot.zest-status-not-reading { border-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-custom      { background-color: var(--accent-wood); }
+    .zest-status-dot.zest-status-custom      { background-color: var(--accent-yellow); }
     .zest-status-dot:hover { outline: 2px solid var(--fill-quinary); outline-offset: 1px; }
 
     /* Rating stars: CSS-only hover preview */
@@ -163,7 +197,7 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
-    .zest-tagtree-row.selected { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
+    .zest-tagtree-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
     .zest-tagtree-row.dim { opacity: .55; }
     .zest-tagtree-row.disabled { opacity: .35; cursor: default; }
     .zest-tagtree-twisty { width: 12px; flex: 0 0 auto; text-align: center; color: var(--fill-secondary); }
@@ -261,7 +295,7 @@ export function registerStyles(win: Window) {
     .zest-tabbar-row { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
       border-radius: 4px; margin: 0 4px; font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-tabbar-row:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-row.selected { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
+    .zest-tabbar-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
     .zest-tabbar-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zest-tabbar-close { appearance: none; border: 0; background: transparent; cursor: pointer;
       color: inherit; opacity: 0; padding: 0 2px; }
@@ -287,7 +321,7 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-graph-mode:hover { background-color: var(--fill-quinary); }
-    .zest-graph-mode.active { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
+    .zest-graph-mode.active { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); }
     .zest-graph-status { flex: 1 1 auto; min-width: 0; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zest-graph-modes { flex: 0 0 auto; }
     .zest-graph-title { flex: 0 0 auto; white-space: nowrap; }
@@ -305,10 +339,14 @@ export function registerStyles(win: Window) {
     :root.zest-hide-title-swatches #zotero-items-tree .cell.primary .colored-tag-swatches { display: none !important; }
   `;
   doc.documentElement?.appendChild(style);
+  applyAccent(win);
 }
 
 export function unregisterStyles(win: Window) {
   win.document.getElementById(`${config.addonRef}-styles`)?.remove();
+  (win.document.documentElement as HTMLElement | null)?.style.removeProperty(
+    "--zest-accent",
+  );
   win.document.documentElement?.classList.remove("zest-hide-title-swatches");
 }
 

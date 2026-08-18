@@ -5,6 +5,7 @@ import {
   importReadingDataUI,
 } from "../reading/exportImport";
 import { getString } from "../utils/locale";
+import type { FluentMessageId } from "../../typings/i10n";
 import { exportBundle, importBundle, zestConfig } from "../core/config";
 import {
   parseDataset,
@@ -15,6 +16,10 @@ import { clearRankCache } from "../rank";
 import { getSecret, setSecret, secretIsInPrefs } from "../core/secrets";
 import { installPresets, removePresets } from "../reader/themes";
 import { views, removeView, renameView } from "../views/viewGroups";
+import { setPref } from "../utils/prefs";
+import { accentColor, syncAccent, ACCENT_FALLBACK } from "../ui/styles";
+import { HEAT_COLOR_DEFAULT, BADGE_COLOR_DEFAULT } from "../ui/palette";
+import { refreshAllRows } from "../columns";
 
 /**
  * Preference pane logic. The pane itself is declarative (preference="…"
@@ -25,6 +30,7 @@ import { views, removeView, renameView } from "../views/viewGroups";
  */
 
 const IDS = {
+  accentPresets: "zest-pref-accent-presets",
   dbPath: "zest-pref-dbpath",
   key: "zest-pref-eskey",
   keyStatus: "zest-pref-keystatus",
@@ -48,6 +54,7 @@ export async function registerPrefsScripts(_window: Window) {
     // cosmetic
   }
   await refreshKeyField();
+  buildAccentPresets();
   refreshDatasetList();
   refreshViewList();
   const unsub = zestConfig.onChange(() => {
@@ -58,6 +65,45 @@ export async function registerPrefsScripts(_window: Window) {
     unsub();
     if (paneWindow === _window) paneWindow = undefined;
   });
+}
+
+/**
+ * Accent presets — one click each, plus the colour picker beside them for
+ * anything else. Blue is deliberately absent: Zotero paints the selected row
+ * with the system selection blue, so a blue accent disappears into it.
+ */
+const ACCENT_PRESETS: Array<[string, FluentMessageId]> = [
+  ["#40C463", "pref-accent-preset-green"],
+  ["#59ADC4", "pref-accent-preset-teal"],
+  ["#8A7BE0", "pref-accent-preset-violet"],
+  ["#CC7A52", "pref-accent-preset-wood"],
+  ["#8C8C8C", "pref-accent-preset-grey"],
+];
+
+function buildAccentPresets() {
+  const d = doc();
+  const host = d?.getElementById(IDS.accentPresets);
+  if (!d || !host) return;
+  host.textContent = "";
+  for (const [color, stringID] of ACCENT_PRESETS) {
+    const b = d.createElement("button");
+    b.type = "button";
+    b.className = "zest-pref-swatch";
+    b.style.backgroundColor = color;
+    b.title = `${getString(stringID)} · ${color}`;
+    b.setAttribute("aria-label", b.title);
+    b.addEventListener("click", () => {
+      setPref("ui.accent", color);
+      syncAccent();
+      // the picker beside the swatches is bound to the pref, but XUL only
+      // syncs it on its own input events
+      const picker = d.querySelector(
+        'html\\:input[preference="ui.accent"], input[preference="ui.accent"]',
+      ) as HTMLInputElement | null;
+      if (picker) picker.value = color;
+    });
+    host.appendChild(b);
+  }
 }
 
 function doc(): Document | undefined {
@@ -186,12 +232,7 @@ async function pickFile(
   defaultName?: string,
 ): Promise<string | null> {
   const FilePicker = ztoolkit.FilePicker as any;
-  const path = await new FilePicker(
-    title,
-    mode,
-    filters,
-    defaultName,
-  ).open();
+  const path = await new FilePicker(title, mode, filters, defaultName).open();
   return typeof path === "string" && path ? path : null;
 }
 
@@ -319,6 +360,21 @@ export async function onPrefsCommand(type: string) {
       break;
     case "key-save":
       await saveKey();
+      break;
+    case "accent-apply":
+      // the heat map and the badges keep their own colours; this copies the
+      // accent onto both in one step rather than making them silently follow
+      setPref("heat.color", accentColor());
+      setPref("textTags.color", accentColor());
+      refreshAllRows();
+      break;
+    case "accent-reset":
+      setPref("ui.accent", ACCENT_FALLBACK.toUpperCase());
+      setPref("heat.color", HEAT_COLOR_DEFAULT);
+      setPref("textTags.color", BADGE_COLOR_DEFAULT);
+      syncAccent();
+      refreshAllRows();
+      buildAccentPresets();
       break;
     case "rank-clear":
       clearRankCache();

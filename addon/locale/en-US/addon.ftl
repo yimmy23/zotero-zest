@@ -320,3 +320,10 @@ tabs-session-delete = Delete
 tabs-hide-native = Hide Zotero's own tab bar
 tabs-close-sidebar = Close the sidebar
 tabs-restore-confirm = Reopen { $count } documents? Each one opens a reader tab.
+
+# Accent presets (settings pane swatches)
+pref-accent-preset-green = GitHub green
+pref-accent-preset-teal = Teal
+pref-accent-preset-violet = Violet
+pref-accent-preset-wood = Terracotta
+pref-accent-preset-grey = Graphite

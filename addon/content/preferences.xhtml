@@ -107,6 +107,31 @@
   </groupbox>
 
   <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-appearance"></html:h2></label>
+    <description class="zest-pref-hint" data-l10n-id="pref-accent-hint"></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-accent-color"></html:label>
+      <html:input type="color" preference="ui.accent"></html:input>
+      <html:div id="zest-pref-accent-presets" class="zest-pref-swatches"></html:div>
+    </hbox>
+    <hbox align="center">
+      <button
+        id="zest-pref-accent-apply"
+        data-l10n-id="pref-accent-apply"
+        oncommand="Zotero.__addonInstance__.hooks.onPrefsEvent('accent-apply', { window })"
+        native="true"
+      />
+      <button
+        id="zest-pref-accent-reset"
+        data-l10n-id="pref-accent-reset"
+        oncommand="Zotero.__addonInstance__.hooks.onPrefsEvent('accent-reset', { window })"
+        native="true"
+      />
+    </hbox>
+    <description class="zest-pref-hint" data-l10n-id="pref-accent-apply-hint"></description>
+  </groupbox>
+
+  <groupbox>
     <label><html:h2 data-l10n-id="pref-group-heat"></html:h2></label>
     <checkbox
       preference="titleDecor.heat"
