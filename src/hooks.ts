@@ -17,6 +17,8 @@ import {
 import { registerStyles, unregisterStyles, applyRootFlags } from "./ui/styles";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
+import { cache } from "./core/storage";
+import { zestConfig } from "./core/config";
 import { readingStore } from "./reading/store";
 import { readingTracker } from "./reading/tracker";
 import {
@@ -66,6 +68,11 @@ async function onStartup() {
   };
 
   step("locale", () => initLocale());
+  // config + derived-data cache: both are plain JSON files next to
+  // zotero.sqlite; readers degrade to "no data yet" until they resolve
+  step("config", async () => {
+    await Promise.all([zestConfig.init(), cache.init()]);
+  });
   step("prefsPane", async () => {
     const id = await Zotero.PreferencePanes.register({
       pluginID: config.addonID,
@@ -182,6 +189,8 @@ async function onShutdown() {
     ztoolkit.log("[shutdown] store flush failed", e);
   }
   await zestDB.close();
+  await cache.shutdown();
+  await zestConfig.shutdown();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   addon.data.alive = false;
@@ -198,6 +207,8 @@ async function onAppShutdown() {
     ztoolkit.log("[appShutdown] flush failed", e);
   }
   await zestDB.close();
+  await cache.shutdown();
+  await zestConfig.shutdown();
 }
 
 async function onNotify(
