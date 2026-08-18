@@ -21,7 +21,7 @@ pref("annots.style", "bar");
 pref("annots.color", "");
 
 // Reading heat (Reading column + optional title decoration)
-pref("heat.color", "#66ADFF");
+pref("heat.color", "#59ADC4");
 pref("heat.opacity", "0.7");
 pref("titleDecor.heat", true);
 pref("titleDecor.unreadBold", true);
@@ -30,7 +30,7 @@ pref("titleDecor.unreadIncludesEmpty", false);
 // Tags
 pref("tags.hideInTitle", false);
 pref("textTags.match", "#");
-pref("textTags.color", "#4072E5");
+pref("textTags.color", "#2F8296");
 pref("textTags.textColor", "auto");
 
 // Rating

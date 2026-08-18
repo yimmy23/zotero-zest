@@ -175,7 +175,43 @@ check("tabs.probe", dev.tabsSidebar.probeTabs(win));
 dev.tabsSidebar.showSidebar(win);
 await delay(900);
 check("tabs.sidebar", !!doc.getElementById("zest-tabbar"));
-check("tabs.rows", doc.querySelectorAll(".zest-tabbar-row").length > 0);
+// the library tab is deliberately not listed, so the list is empty until a
+// document tab exists — open one to exercise the rows
+check(
+  "tabs.emptyState",
+  doc.querySelectorAll(".zest-tabbar-row").length === 0 &&
+    !!doc.querySelector(".zest-tabbar-empty"),
+);
+let probeTabID;
+if (withPdf) {
+  const att = Zotero.Items.get(withPdf.getAttachments()[0]);
+  await Zotero.Reader.open(att.id, undefined, { openInBackground: true });
+  await delay(1500);
+  probeTabID = (win.Zotero_Tabs._tabs || []).find((t) => t.type !== "library")?.id;
+}
+check(
+  "tabs.rows",
+  doc.querySelectorAll(".zest-tabbar-row").length > 0,
+  `${doc.querySelectorAll(".zest-tabbar-row").length} rows`,
+);
+check(
+  "tabs.sidebarSurvivesReaderTab",
+  (() => {
+    if (!probeTabID) return false;
+    win.Zotero_Tabs.select(probeTabID);
+    const bar = doc.getElementById("zest-tabbar");
+    const r = bar?.getBoundingClientRect();
+    return !!r && r.width > 0 && r.height > 0;
+  })(),
+);
+if (probeTabID) {
+  try {
+    win.Zotero_Tabs.close(probeTabID);
+  } catch {
+    // already gone
+  }
+  await delay(400);
+}
 const group = dev.tabsModel.addGroup("probe group");
 check("tabs.groupPersists", dev.tabsModel.groups().some((g) => g.id === group.id));
 dev.tabsModel.removeGroup(group.id);

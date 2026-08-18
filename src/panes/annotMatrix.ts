@@ -415,7 +415,7 @@ const MATRIX_CSS =
     --zest-line: rgba(26, 26, 26, .12);
     --zest-fill: rgba(26, 26, 26, .07);
     --zest-fill-strong: rgba(26, 26, 26, .14);
-    --zest-accent: #4072e5;
+    --zest-accent: #2f8296;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -425,7 +425,7 @@ const MATRIX_CSS =
       --zest-line: rgba(232, 234, 237, .14);
       --zest-fill: rgba(232, 234, 237, .08);
       --zest-fill-strong: rgba(232, 234, 237, .16);
-      --zest-accent: #66adff;
+      --zest-accent: #7fc8d9;
     }
   }
   body { margin: 0; background: var(--zest-bg); color: var(--zest-fg); font: message-box; }

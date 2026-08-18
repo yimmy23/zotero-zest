@@ -510,10 +510,12 @@ export class GraphView {
       }
     };
     return {
-      center: read("--accent-blue", "#3b82f6"),
-      item: read("--accent-azure", "#0ea5e9"),
-      author: read("--accent-teal", "#14b8a6"),
-      tag: read("--accent-green", "#22c55e"),
+      // one cool family (the focus node darkest), with a single warm hue for
+      // tags so they read as a different KIND of node, not a different rank
+      center: "#2f8296",
+      item: read("--accent-teal", "#59adc4"),
+      author: read("--accent-green", "#39bf68"),
+      tag: read("--accent-wood", "#cc7a52"),
       collection: read("--fill-secondary", "#6b7280"),
       edge: read("--fill-quinary", dark ? "#4b5563" : "#d1d5db"),
       label: read("--fill-primary", dark ? "#e6e6e6" : "#111827"),

@@ -19,6 +19,21 @@ export function registerStyles(win: Window) {
   const style = doc.createElement("style");
   style.id = id;
   style.textContent = `
+    /* ---------- accent ----------
+       Zotero paints the selected row with the system selection colour, which
+       is blue on a default macOS/Windows theme — so the plugin's own accent
+       has to sit away from it or it disappears the moment a row is selected.
+       Everything below uses these two tokens; changing the hue is a one-line
+       edit here (and the two matching defaults in ui/palette.ts). */
+    :root {
+      --zest-accent: var(--accent-teal, #59adc4);
+      /* One step deeper, and deliberately NOT theme-mixed: this one is used
+         as a background under white text (selected rows, badges), and a mix
+         that follows the theme turns pale in dark mode and drops the label to
+         a 2:1 contrast ratio. Fixed, it stays at ~4.4:1 in both. */
+      --zest-accent-strong: #2f8296;
+    }
+
     /* ---------- item-tree cells ---------- */
     .virtualized-table .cell.zest-cell { display: flex; align-items: center; position: relative; overflow: hidden; }
     .virtualized-table .cell.zest-cell > .cell-text { position: relative; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -42,11 +57,11 @@ export function registerStyles(win: Window) {
     }
     .zest-status-dot.zest-status-none        { border-color: var(--fill-quinary); }
     .zest-status-dot.zest-status-new         { background-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-to-read     { background-color: var(--accent-azure); }
-    .zest-status-dot.zest-status-in-progress { background-color: var(--accent-blue); }
+    .zest-status-dot.zest-status-to-read     { background-color: var(--zest-accent); }
+    .zest-status-dot.zest-status-in-progress { background-color: var(--zest-accent-strong); }
     .zest-status-dot.zest-status-read        { background-color: var(--accent-green); }
     .zest-status-dot.zest-status-not-reading { border-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-custom      { background-color: var(--accent-teal); }
+    .zest-status-dot.zest-status-custom      { background-color: var(--accent-wood); }
     .zest-status-dot:hover { outline: 2px solid var(--fill-quinary); outline-offset: 1px; }
 
     /* Rating stars: CSS-only hover preview */
@@ -61,7 +76,7 @@ export function registerStyles(win: Window) {
     /* Annotations: histogram / colour stack / dots */
     .virtualized-table .cell.zest-annots .zest-annot-bars {
       flex: 0 0 auto; width: 44px; height: 11px; margin-inline-end: 5px; overflow: visible;
-      fill: var(--accent-blue); opacity: .85;
+      fill: var(--zest-accent-strong); opacity: .85;
     }
     .virtualized-table .cell.zest-annots .zest-annot-stack {
       flex: 0 0 auto; width: 44px; height: 8px; margin-inline-end: 5px; border-radius: 2px;
@@ -100,7 +115,7 @@ export function registerStyles(win: Window) {
       background-color: var(--fill-quinary); overflow: hidden;
     }
     .virtualized-table .cell.zest-if .zest-if-bar {
-      display: block; height: 100%; border-radius: 1em; background-color: var(--accent-blue);
+      display: block; height: 100%; border-radius: 1em; background-color: var(--zest-accent);
     }
     .virtualized-table .cell.zest-if > .cell-text { font-variant-numeric: tabular-nums; }
 
@@ -148,7 +163,7 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
-    .zest-tagtree-row.selected { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-tagtree-row.selected { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
     .zest-tagtree-row.dim { opacity: .55; }
     .zest-tagtree-row.disabled { opacity: .35; cursor: default; }
     .zest-tagtree-twisty { width: 12px; flex: 0 0 auto; text-align: center; color: var(--fill-secondary); }
@@ -184,7 +199,7 @@ export function registerStyles(win: Window) {
     }
     .zest-info-heat { display: flex; height: 12px; gap: 1px; border-radius: 3px; overflow: hidden; }
     .zest-info-heat-seg { flex: 1 1 auto; cursor: pointer; background-color: transparent; }
-    .zest-info-heat-seg:hover { outline: 1px solid var(--accent-blue); outline-offset: -1px; }
+    .zest-info-heat-seg:hover { outline: 1px solid var(--zest-accent-strong); outline-offset: -1px; }
     .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-info-abstract > div { margin-top: 4px; color: var(--fill-secondary); white-space: pre-wrap; }
 
@@ -196,7 +211,7 @@ export function registerStyles(win: Window) {
       color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846);
     }
     .zest-annot-card {
-      border-inline-start: 3px solid var(--zest-annot-line, var(--accent-blue));
+      border-inline-start: 3px solid var(--zest-annot-line, var(--zest-accent));
       border-radius: 4px; padding: 5px 8px;
       background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .13);
       cursor: default;
@@ -246,7 +261,7 @@ export function registerStyles(win: Window) {
     .zest-tabbar-row { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
       border-radius: 4px; margin: 0 4px; font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-tabbar-row:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-row.selected { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-tabbar-row.selected { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
     .zest-tabbar-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zest-tabbar-close { appearance: none; border: 0; background: transparent; cursor: pointer;
       color: inherit; opacity: 0; padding: 0 2px; }
@@ -272,7 +287,7 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-graph-mode:hover { background-color: var(--fill-quinary); }
-    .zest-graph-mode.active { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-graph-mode.active { background-color: var(--zest-accent-strong); color: var(--accent-white, #fff); }
     .zest-graph-status { flex: 1 1 auto; min-width: 0; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zest-graph-modes { flex: 0 0 auto; }
     .zest-graph-title { flex: 0 0 auto; white-space: nowrap; }
