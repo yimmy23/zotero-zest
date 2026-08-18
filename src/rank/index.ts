@@ -12,7 +12,11 @@ import { parseRewriteRules, applyRewrite } from "./map";
 import type { JournalRecord, RankValue } from "./types";
 import { lookupDataset } from "./sources/localDataset";
 import { fetchEasyScholar, easyScholarBlocked } from "./sources/easyscholar";
-import { fetchOpenAlexByISSN, fetchOpenAlexByDOI } from "./sources/openalex";
+import {
+  fetchOpenAlexByISSN,
+  fetchOpenAlexByDOI,
+  fetchOpenAlexByName,
+} from "./sources/openalex";
 
 /**
  * Journal ranks, one record per JOURNAL (not per item).
@@ -234,6 +238,14 @@ export async function lookupJournal(
       if (byDoi) {
         oa = byDoi;
         resolvedISSN = byDoi.issn || resolvedISSN;
+      }
+    }
+    if (!oa && name) {
+      // last resort, still free: exact-name autocomplete → ISSN → singleton
+      const byName = await fetchOpenAlexByName(name);
+      if (byName) {
+        oa = byName;
+        resolvedISSN = byName.issn || resolvedISSN;
       }
     }
     if (oa?.values.length) push(oa.values);

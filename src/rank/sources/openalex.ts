@@ -1,5 +1,5 @@
 import { http, politeEmail } from "../../core/http";
-import { normalizeISSN } from "../normalize";
+import { normalizeISSN, normalizeJournal } from "../normalize";
 import type { RankValue } from "../types";
 
 /**
@@ -64,6 +64,31 @@ export async function fetchOpenAlexByISSN(
   );
   if (!known.has(clean)) return null;
   return { values: valuesFrom(src), name: src.display_name, issnL: src.issn_l };
+}
+
+/**
+ * Free name resolution: `/autocomplete/sources` costs 0 credits and returns an
+ * `external_id` that is the ISSN-L, which we can then look up through the (also
+ * free) ISSN singleton. The name must match after normalisation — OpenAlex
+ * cannot resolve abbreviations ("J Clin Oncol" finds nothing, "Adv Mater"
+ * finds the wrong journal), so a fuzzy hit is refused rather than guessed.
+ */
+export async function fetchOpenAlexByName(
+  name: string,
+): Promise<{ values: RankValue[]; name?: string; issn?: string } | null> {
+  const wanted = normalizeJournal(name);
+  if (!wanted || wanted.length < 4) return null;
+  const url = `${BASE}/autocomplete/sources?q=${encodeURIComponent(name)}&mailto=${encodeURIComponent(politeEmail())}`;
+  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const hit = (res?.results || []).find(
+    (r: any) => normalizeJournal(r?.display_name || "") === wanted,
+  );
+  const issn = normalizeISSN(
+    String(hit?.external_id || "").replace(/^.*\//, ""),
+  );
+  if (!issn) return null;
+  const full = await fetchOpenAlexByISSN(issn);
+  return full ? { ...full, issn } : null;
 }
 
 /** free singleton lookup by DOI → the work's host source (journal) */

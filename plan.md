@@ -312,3 +312,18 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 5. 视图组会写 Zotero 自己的 `treePrefs.json`，因此只在用户显式「应用视图」时写，且提供「恢复上一次布局」。
 
 **有意差异（写进 README「与原版的差异」）**：无 Shift+P 命令面板（功能分散到菜单/设置/列内交互）；不再可配奇偶/选中/悬停行底色（只用 Zotero 主题变量）；阅读记录不进文库（zest.sqlite + 导入导出）；也记录独立阅读器窗口与 EPUB；计时口径 = 120 s 无输入停表（原版 60 s 页面不动）；评级单击即写入；标签列跟随 Zotero 7+ 口径（彩色 + emoji）；`#标签` 正则无捕获组显示整个标签；期刊标签缺数据永远排最后；图谱跟随主题；视图组操作显式化；设置统一在「设置 → Zest」；附件图标不按扩展名替换；评分 Extra 键可选（默认 `rate`）；配色主色系为蓝（热力 `#66ADFF` 4 级台阶、徽章 `#4072E5`、星级保持黄色 `--accent-yellow`（用户拍板）、待读 `--accent-azure`），不再是原版粉/紫，且热力由连续渐变改为 GitHub 式离散分级。
+
+---
+
+## 10. 阶段 C 落地记录（2026-08-18）
+
+**新增模块**：`core/{storage,config,secrets}.ts`（zest-cache.json / zest-config.json / 登录管理器密钥）、`tags/{tree,scope,rules,nestedTree,menu}.ts`、`views/{itemFilter,viewGroups,typeFilter,collectionCounts}.ts`、`rank/{types,rank,normalize,map,index}.ts + sources/{localDataset,easyscholar,openalex}.ts`、`annots/density.ts`、`panes/annotSection.ts`、`graph/{build,view,pane}.ts`、`reader/{themes,colorSchemes}.ts`、`columns/{annotations,pubTags}.ts`。
+
+**与 Phase A 计划的三处修正（真机核对后）**
+1. **前缀筛选不能用 `setFilter('tags', Set)`**：Zotero 对该集合是「精确标签 AND」，父节点展开成兄弟标签必然筛空。改为自建 `getItems` 过滤管线（`views/itemFilter.ts`，分支内 OR、分支间 AND，附件/笔记/标注的标签也算），Zotero 10 的 `setFilter('advanced-search')` 属于高级搜索面板的槽位，**故意不占用**。管线额外处理：只对顶层条目跑判定，子条目按父条目存亡带走（否则条目树会因残留子条目把父行重新拉回来）。
+2. **`ZoteroPane.getSelectedLibraryID()` 在 Zotero 10 被移除并主动抛错**，必须用 `getSelectedLibraryIDs()`（`tags/scope.ts:selectedLibraryID` 统一封装）。
+3. **视图组**：`_getColumnPrefs()` 在没手动调过列的 profile 上返回 `{}`（Z10 删掉了构造函数里的回写），必须 `prefs[dataKey] ??= {dataKey}`；`_storeColumnPrefs()` 不再改活动列模型，之后必须 `_resetColumns()` + `sort()`。
+
+**其它真机结论**：`Zotero.Tags.getAll` 是异步的（`getColors` 同步）；`collectionsView.renderItem` 是实例字段且以 React prop 形式传下去，取消挂钩后必须再扫一次 DOM 才能清掉徽章；OpenAlex 自 2026-02 起按信用点计费，Zest 只用 0 点的单体端点（`/sources/issn:`、`/works/doi:`、`/autocomplete/sources`），**永不按刊名 `.search`**；easyScholar 的错误码在 HTTP 200 的响应体里（40002/40005/40006），退避必须自己做；`unregisterEventListener` 在 9.0.6 仍是反向过滤（会误删其它插件的监听器），因此永不调用。
+
+**验收探针**：`scripts/phase-c-probe.js`（`scripts/dev-eval.sh -f scripts/phase-c-probe.js`），覆盖嵌套树挂载/筛选/搜索、标注卡片、9 个列注册、期刊链路、视图组应用与还原、类型筛选、分类计数开关、图谱渲染与拆除、阅读器主题与菜单钩子、错误控制台。

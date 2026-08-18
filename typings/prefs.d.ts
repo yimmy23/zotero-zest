@@ -39,7 +39,6 @@ declare namespace _ZoteroTypes {
       "network.cacheTTLHours": number;
       "statusAuto.markEmpty": boolean;
       "extra.stripOnExport": boolean;
-      "reader.schemes": boolean;
       "graph.visible": boolean;
       "graph.mode": string;
       "graph.height": number;
@@ -71,6 +70,7 @@ declare namespace _ZoteroTypes {
       "if.color": string;
       "collectionCounts.enable": boolean;
       "collectionCounts.mode": number;
+      "reader.schemes": boolean;
     };
   }
 }

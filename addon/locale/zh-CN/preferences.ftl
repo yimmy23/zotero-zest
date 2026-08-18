@@ -58,3 +58,16 @@ pref-btn-import =
 
 pref-group-about = 关于
 pref-about-text = Zest 是对 zotero-style 的从零重写（开源，AGPL-3.0），支持 Zotero 9～10。评级与阅读状态存于条目 Extra 字段；阅读记录存于插件自己的数据库。
+
+pref-key-plaintext = 以明文存储：无法使用登录管理器
+pref-key-saved = 密钥已存入登录管理器
+pref-datasets-empty = 还没有导入本地数据集
+pref-dataset-remove = 移除
+pref-dataset-empty = 该文件中没有可用的数据行
+pref-dataset-import-done = 已导入「{ $name }」：{ $rows } 本期刊、{ $fields } 个字段
+pref-views-empty = 还没有保存的列视图
+pref-view-rename = 重命名
+pref-view-remove = 删除
+pref-config-export-done = 已导出 { $prefs } 项设置、{ $views } 个视图、{ $rules } 条标签规则
+pref-config-import-done = 已导入 { $prefs } 项设置 · { $views } 个视图 · { $rules } 条标签规则 · 跳过 { $skipped } 项
+pref-rank-cleared = 已清空期刊缓存

@@ -58,3 +58,16 @@ pref-btn-import =
 
 pref-group-about = About
 pref-about-text = Zest is a from-scratch, open-source (AGPL-3.0) rewrite of zotero-style for Zotero 9–10. Ratings and read status live in the item's Extra field; reading records live in a plugin database.
+
+pref-key-plaintext = Stored in plain text: the login manager was unavailable
+pref-key-saved = Key stored in the login manager
+pref-datasets-empty = No local dataset imported yet
+pref-dataset-remove = Remove
+pref-dataset-empty = No usable rows in that file
+pref-dataset-import-done = Imported “{ $name }”: { $rows } journals, { $fields } fields
+pref-views-empty = No saved column views yet
+pref-view-rename = Rename
+pref-view-remove = Delete
+pref-config-export-done = Exported { $prefs } preferences, { $views } views and { $rules } tag rules
+pref-config-import-done = Imported { $prefs } preferences · { $views } views · { $rules } tag rules · { $skipped } entries skipped
+pref-rank-cleared = Journal cache cleared
