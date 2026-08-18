@@ -218,6 +218,12 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
+    /* toolbar button (graph): Zotero's own chrome, one extra "on" state */
+    #zest-tb-graph.zest-tb-on {
+      background-color: var(--fill-quinary);
+      border-radius: 5px;
+    }
+
     /* ---------- literature info panel ---------- */
     /* read-only libraries: the controls stay visible (the values are real)
        but must not look clickable */

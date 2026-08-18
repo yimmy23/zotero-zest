@@ -329,3 +329,4 @@ pref-accent-preset-wood = Terracotta
 pref-accent-preset-grey = Graphite
 config-damaged = zest-config.json could not be read — view groups, tag rules and datasets are unavailable and Zest will not overwrite the file. Fix or remove it, then restart Zotero.
 tags-tree-label = Nested tag tree
+graph-toggle-tip = Graph — related items, authors, tags, collections

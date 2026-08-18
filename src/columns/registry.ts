@@ -94,7 +94,32 @@ export function registerColumn(spec: ColumnSpec): boolean {
   if (spec.staticWidth) opts.staticWidth = true;
   if (spec.minWidth !== undefined) opts.minWidth = spec.minWidth;
   if (spec.renderCell) {
-    opts.renderCell = guard(`column:${spec.key}:render`, spec.renderCell);
+    const render = spec.renderCell;
+    // A renderCell that returns anything but an Element makes Zotero fall back
+    // to its own cell renderer, which paints the raw dataProvider string —
+    // i.e. our SORT KEY ("00000600", "lovelace ada"). An empty cell is the
+    // honest failure; guard() alone would return undefined and produce that
+    // garbage instead.
+    opts.renderCell = (
+      index: number,
+      data: string,
+      column: any,
+      isFirstColumn: boolean,
+      doc: Document,
+    ) => {
+      try {
+        const cell = render(index, data, column, isFirstColumn, doc);
+        if (cell) return cell;
+      } catch (e) {
+        ztoolkit.log(`[column:${spec.key}] renderCell failed`, e);
+        try {
+          Zotero.logError(e as any);
+        } catch {
+          // never throw out of a render
+        }
+      }
+      return makeCell(doc, column, spec.key).cell;
+    };
   }
   const key = mgr.registerColumn(opts);
   if (!key) {

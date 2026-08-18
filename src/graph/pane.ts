@@ -55,6 +55,29 @@ export function graphMode(): GraphMode {
   return (MODES as string[]).includes(v) ? (v as GraphMode) : "related";
 }
 
+/**
+ * The toolbar button lives in another module that imports this one, so the
+ * sync goes through a registered callback rather than a circular import.
+ */
+let buttonSync: (() => void) | undefined;
+
+export function onGraphVisibilityChange(fn: () => void) {
+  buttonSync = fn;
+}
+
+function queueButtonSync() {
+  const fn = buttonSync;
+  if (!fn) return;
+  // after the caller finished mutating `panes`
+  setTimeout(() => {
+    try {
+      fn();
+    } catch (e) {
+      ztoolkit.log("[graph] button sync failed", e);
+    }
+  }, 0);
+}
+
 export function isGraphVisible(win: Window): boolean {
   return !!panes.get(win);
 }
@@ -66,6 +89,9 @@ export function toggleGraphPane(win: Window) {
 
 export function showGraphPane(win: Window) {
   if (panes.get(win)) return;
+  // the toolbar button reads this state; keep it honest whichever route the
+  // user took (button, Tools menu, shortcut, preference)
+  queueButtonSync();
   const doc = win.document;
   const container = doc.getElementById("zotero-items-pane-container");
   const itemsPane = doc.getElementById("zotero-items-pane");
@@ -203,6 +229,7 @@ export function showGraphPane(win: Window) {
  * and it would not come back next launch.
  */
 export function hideGraphPane(win: Window, persist = true) {
+  queueButtonSync();
   const state = panes.get(win);
   if (!state) return;
   panes.delete(win);

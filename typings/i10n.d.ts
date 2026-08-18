@@ -60,6 +60,7 @@ export type FluentMessageId =
   | 'graph-status'
   | 'graph-status-truncated'
   | 'graph-title'
+  | 'graph-toggle-tip'
   | 'if-cell-tip'
   | 'import-done'
   | 'import-mode-max'
