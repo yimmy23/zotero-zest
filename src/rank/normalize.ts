@@ -59,23 +59,45 @@ export function allISSNs(raw: string | undefined | null): string[] {
   return out;
 }
 
+/**
+ * Fields that name a JOURNAL-like venue — the only ones a ranking source can
+ * meaningfully answer for. Deliberately excludes university / publisher /
+ * institution: a thesis whose "venue" is its university would otherwise be
+ * looked up as if it were a journal (and burn an API call doing it).
+ */
+const RANKABLE_VENUE_FIELDS = [
+  "publicationTitle",
+  "proceedingsTitle",
+  "conferenceName",
+  "repository",
+];
+
+/** the venue as shown in the Venue column: broader, display only */
+const DISPLAY_VENUE_FIELDS = [
+  ...RANKABLE_VENUE_FIELDS,
+  "bookTitle",
+  "encyclopediaTitle",
+  "dictionaryTitle",
+  "websiteTitle",
+  "blogTitle",
+  "forumTitle",
+  "programTitle",
+  "university",
+  "institution",
+  "publisher",
+];
+
+/** the journal name a rank lookup may use ("" when the item has no journal) */
+export function rankableVenueOf(item: Zotero.Item): string {
+  return fieldOf(item, RANKABLE_VENUE_FIELDS);
+}
+
 /** the journal / venue of an item, trying the fields Zotero actually fills */
 export function venueOf(item: Zotero.Item): string {
-  const fields = [
-    "publicationTitle",
-    "proceedingsTitle",
-    "bookTitle",
-    "encyclopediaTitle",
-    "dictionaryTitle",
-    "websiteTitle",
-    "blogTitle",
-    "forumTitle",
-    "programTitle",
-    "university",
-    "institution",
-    "publisher",
-    "repository",
-  ];
+  return fieldOf(item, DISPLAY_VENUE_FIELDS);
+}
+
+function fieldOf(item: Zotero.Item, fields: string[]): string {
   for (const f of fields) {
     let v: string;
     try {

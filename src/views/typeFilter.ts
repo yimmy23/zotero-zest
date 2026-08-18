@@ -74,12 +74,12 @@ export async function clearTypeFilter(win: Window) {
 
 async function apply(win: Window) {
   if (!active.size) {
-    setItemFilter("type", null);
+    setItemFilter(win, "type", null);
     await refreshItemView(win);
     return;
   }
   const wanted = new Set(active);
-  const ok = setItemFilter("type", (items) =>
+  const ok = setItemFilter(win, "type", (items) =>
     items.filter((item) => {
       try {
         return wanted.has(Zotero.ItemTypes.getName(item.itemTypeID));
@@ -107,5 +107,7 @@ export function typeFilterSummary(): string {
 
 export function resetTypeFilter() {
   active = new Set();
-  setItemFilter("type", null);
+  for (const w of Zotero.getMainWindows() as unknown as Window[]) {
+    setItemFilter(w, "type", null);
+  }
 }

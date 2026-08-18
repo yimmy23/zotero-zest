@@ -57,13 +57,43 @@ export async function loadDatasets() {
       const path = filePath(meta.id);
       if (!(await IOUtils.exists(path))) continue;
       const raw = (await Zotero.File.getContentsAsync(path)) as string;
-      const rows = parseDataset(raw, "json").rows;
+      // our own file already stores DatasetRow[] ({name, issn, fields}); it
+      // must NOT go through the flat-object parser again, which would turn the
+      // nested `fields` object into a field literally called "fields"
+      const rows = readStoredRows(raw);
       index(meta.id, rows);
     } catch (e) {
       ztoolkit.log(`[rank] dataset ${meta.id} failed to load`, e);
     }
   }
   ready = true;
+}
+
+/** parse a file written by saveDataset (with a tolerant fallback) */
+function readStoredRows(raw: string): DatasetRow[] {
+  const parsed = JSON.parse(raw);
+  const list = Array.isArray(parsed) ? parsed : parsed?.rows;
+  if (!Array.isArray(list)) return [];
+  const looksStored = list.some(
+    (r: any) =>
+      r && typeof r === "object" && r.fields && typeof r.fields === "object",
+  );
+  if (!looksStored) return parseDataset(raw, "json").rows;
+  const out: DatasetRow[] = [];
+  for (const r of list) {
+    if (!r || typeof r !== "object") continue;
+    const fields: Record<string, string> = {};
+    for (const [k, v] of Object.entries<any>(r.fields || {})) {
+      if (typeof k !== "string" || !k) continue;
+      const value = v === null || v === undefined ? "" : String(v);
+      if (value) fields[k.slice(0, 60)] = value.slice(0, 120);
+    }
+    const name = typeof r.name === "string" ? r.name : undefined;
+    const issn = typeof r.issn === "string" ? r.issn : undefined;
+    if (!name && !issn) continue;
+    out.push({ name, issn, fields });
+  }
+  return out;
 }
 
 function index(id: string, rows: DatasetRow[]) {

@@ -196,7 +196,7 @@ export function uninstallTagTree(win: Window) {
   } catch {
     // window closing
   }
-  setItemFilter("tags", null);
+  setItemFilter(win, "tags", null);
   if (!states.size) stopNotifier();
 }
 
@@ -405,7 +405,7 @@ export function clearSelection(win: Window) {
   const state = states.get(win);
   if (!state) return;
   if (!state.selection.size) {
-    setItemFilter("tags", null);
+    setItemFilter(win, "tags", null);
     return;
   }
   state.selection.clear();
@@ -440,13 +440,13 @@ function applyTagFilter(state: TreeState) {
   emitSelectionChange();
   const groups = [...state.selection.values()].map((set) => new Set(set));
   if (!groups.length) {
-    setItemFilter("tags", null);
+    setItemFilter(state.win, "tags", null);
     void refreshItemView(state.win);
     return;
   }
   const withChildren = matchChildTags();
   const link = linkSymbol();
-  const ok = setItemFilter("tags", (items) => {
+  const ok = setItemFilter(state.win, "tags", (items) => {
     // the per-item tag lists are only valid for one pass over the view
     clearTagCache();
     return items.filter((item) => {

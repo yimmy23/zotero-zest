@@ -5,7 +5,7 @@ import {
   normalizeJournal,
   normalizeISSN,
   allISSNs,
-  venueOf,
+  rankableVenueOf,
 } from "./normalize";
 import { inferRank } from "./rank";
 import { parseRewriteRules, applyRewrite } from "./map";
@@ -35,9 +35,14 @@ import {
  */
 
 const NS = "rank";
+/** how long a "looked, found nothing" answer suppresses another lookup */
 const MISS_TTL = 12 * 3600 * 1000;
+/** how long a FAILED lookup (offline, rate limited) suppresses a retry */
+const FAILURE_TTL = 10 * 60 * 1000;
 
 let onReady: ((itemIDs: number[]) => void) | undefined;
+/** cacheKey → epoch ms of the last attempt that failed for network reasons */
+const failures = new Map<string, number>();
 const queue = new Map<string, Set<number>>();
 let queueTimer: number | undefined;
 let fetching = false;
@@ -101,7 +106,7 @@ export function journalKeyOf(item: Zotero.Item): {
   let issn = "";
   let doi = "";
   try {
-    name = venueOf(item);
+    name = rankableVenueOf(item);
     issn = normalizeISSN((item.getField("ISSN") as string) || "");
     if (!issn) {
       const more = allISSNs((item.getField("ISSN") as string) || "");
@@ -140,6 +145,10 @@ export function requestJournalRecord(
   if (!key && !issn) return undefined;
   const cacheKey = key || `issn:${issn}`;
   const age = cache.ageOf(NS, cacheKey);
+  const failedAt = failures.get(cacheKey);
+  if (failedAt !== undefined && Date.now() - failedAt < FAILURE_TTL) {
+    return undefined; // the last attempt could not reach anything
+  }
   if (age !== undefined && age < MISS_TTL) return undefined; // asked recently
   let ids = queue.get(cacheKey);
   if (!ids) {
@@ -173,15 +182,7 @@ async function drain() {
       if (!first) continue;
       try {
         const rec = await lookupJournal(first);
-        if (rec) cache.set(NS, cacheKey, rec);
-        else
-          cache.set(NS, cacheKey, {
-            key: cacheKey,
-            name: "",
-            values: [],
-            updated: Date.now(),
-          });
-        onReady?.([...itemIDs]);
+        if (rec) onReady?.([...itemIDs]);
       } catch (e) {
         ztoolkit.log("[rank] lookup failed", e);
       }
@@ -208,6 +209,10 @@ export async function lookupJournal(
 
   const values: RankValue[] = [];
   const misses: JournalRecord["misses"] = [];
+  // "the source said no" vs "we could not reach the source" — only the first
+  // may be cached for the full TTL, otherwise one offline launch would hide
+  // every journal badge for a month
+  let unreachable = false;
   const seen = new Set<string>();
   const push = (list: RankValue[]) => {
     for (const v of list) {
@@ -225,7 +230,10 @@ export async function lookupJournal(
   if (getPref("rank.useEasyScholar") && name && !easyScholarBlocked()) {
     const es = await fetchEasyScholar(name);
     if (es.values.length) push(es.values);
-    else if (es.error) misses.push("easyscholar");
+    else if (es.error) {
+      misses.push("easyscholar");
+      if (es.error === "network" || es.error === "rate") unreachable = true;
+    }
   }
 
   // 3. OpenAlex, but only through the free singleton endpoints
@@ -249,7 +257,12 @@ export async function lookupJournal(
       }
     }
     if (oa?.values.length) push(oa.values);
-    else misses.push("openalex");
+    else {
+      misses.push("openalex");
+      // a keyless OpenAlex miss can equally mean "offline"; only treat it as a
+      // real miss when something else already answered
+      if (!values.length) unreachable = true;
+    }
   }
 
   const rec: JournalRecord = {
@@ -260,6 +273,13 @@ export async function lookupJournal(
     updated: Date.now(),
     misses: misses.length ? misses : undefined,
   };
+  if (!values.length && unreachable) {
+    // remember the failure in memory only: nothing is written to the cache, so
+    // the next launch (or the next ten minutes) tries again
+    failures.set(cacheKey, Date.now());
+    return rec;
+  }
+  failures.delete(cacheKey);
   cache.set(NS, cacheKey, rec);
   if (resolvedISSN && cacheKey !== `issn:${resolvedISSN}`) {
     cache.set(NS, `issn:${resolvedISSN}`, rec);
@@ -276,6 +296,7 @@ export async function refreshJournal(item: Zotero.Item) {
 
 export function clearRankCache() {
   cache.clear(NS);
+  failures.clear();
 }
 
 /**

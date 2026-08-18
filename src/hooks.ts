@@ -25,7 +25,7 @@ import {
   uninstallTagTree,
   uninstallAllTagTrees,
 } from "./tags/nestedTree";
-import { clearItemFilters } from "./views/itemFilter";
+import { clearItemFilters, clearWindowFilters } from "./views/itemFilter";
 import {
   installViewMenu,
   uninstallViewMenu,
@@ -101,9 +101,16 @@ async function onStartup() {
 
   step("locale", () => initLocale());
   // config + derived-data cache: both are plain JSON files next to
-  // zotero.sqlite; readers degrade to "no data yet" until they resolve
+  // zotero.sqlite. Steps run concurrently, so anything that READS them (the
+  // columns, the tag rules) must await this promise rather than assume it
+  // finished first.
+  const configReady = Promise.all([zestConfig.init(), cache.init()]).catch(
+    (e) => {
+      ztoolkit.log("[startup] config failed", e);
+    },
+  );
   step("config", async () => {
-    await Promise.all([zestConfig.init(), cache.init()]);
+    await configReady;
   });
   step("prefsPane", async () => {
     const id = await Zotero.PreferencePanes.register({
@@ -125,6 +132,7 @@ async function onStartup() {
   // instance without a rendered `tree` throws inside Zotero's notify handler
   // (observed on 10.0 at startup), which stalls the DB transaction queue.
   step("columns", async () => {
+    await configReady;
     await whenItemTreeReady();
     registerAllColumns();
   });
@@ -215,7 +223,8 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallViewMenu(win);
   uninstallViewShortcuts(win);
   uninstallTagTree(win);
-  hideGraphPane(win);
+  hideGraphPane(win, false);
+  clearWindowFilters(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
   addon.data.dialog?.window?.close();

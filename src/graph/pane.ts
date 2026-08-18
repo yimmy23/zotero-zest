@@ -180,7 +180,12 @@ export function showGraphPane(win: Window) {
   void rebuild(win);
 }
 
-export function hideGraphPane(win: Window) {
+/**
+ * @param persist false while tearing down (plugin shutdown, window close) —
+ * otherwise closing Zotero would remember the pane as "closed by the user"
+ * and it would not come back next launch.
+ */
+export function hideGraphPane(win: Window, persist = true) {
   const state = panes.get(win);
   if (!state) return;
   panes.delete(win);
@@ -195,11 +200,11 @@ export function hideGraphPane(win: Window) {
   } catch {
     // window closing
   }
-  setPref("graph.visible", false);
+  if (persist) setPref("graph.visible", false);
 }
 
 export function uninstallGraphPanes() {
-  for (const win of [...panes.keys()]) hideGraphPane(win);
+  for (const win of [...panes.keys()]) hideGraphPane(win, false);
 }
 
 /** called on main-window load: restore the pane when it was open last time */

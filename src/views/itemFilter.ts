@@ -19,13 +19,34 @@
 
 export type ItemFilter = (items: Zotero.Item[]) => Zotero.Item[];
 
-const filters = new Map<string, ItemFilter>();
+/**
+ * Filters are per WINDOW: the prototype is shared by every main window, so a
+ * tag selection made in one window must not silently filter another. A row
+ * knows its window through `row.view._ownerDocument` (verified on 9.0.6 and
+ * 10.0); when that cannot be resolved we filter nothing rather than guess.
+ */
+const filters = new Map<Window, Map<string, ItemFilter>>();
 let original:
   ((this: any, ...args: any[]) => Promise<Zotero.Item[]>) | undefined;
 let target: any;
 
 function proto(): any {
   return (Zotero as any).CollectionTreeRow?.prototype;
+}
+
+function activeCount(): number {
+  let n = 0;
+  for (const m of filters.values()) n += m.size;
+  return n;
+}
+
+function windowOf(row: any): Window | undefined {
+  try {
+    const doc = row?.view?._ownerDocument;
+    return (doc?.defaultView as Window) || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** true when the pipeline can be installed on this Zotero build */
@@ -68,9 +89,12 @@ function install(): boolean {
     try {
       // `unfiltered` asks for the raw set (Zotero 10 uses it for counts and
       // for the tag selector's scope) — never touch it
-      if (args[0]?.unfiltered || !filters.size || !Array.isArray(items)) {
+      if (args[0]?.unfiltered || !activeCount() || !Array.isArray(items)) {
         return items;
       }
+      const win = windowOf(this);
+      const mine = win ? filters.get(win) : undefined;
+      if (!mine?.size) return items;
       // `getItems` also returns child items (attachments, notes, annotations);
       // the tree only renders top-level rows but still needs the children in
       // the set, so predicates never see them and they are passed through.
@@ -84,7 +108,7 @@ function install(): boolean {
         (isTop ? top : children).push(it);
       }
       let out: Zotero.Item[] = top;
-      for (const fn of filters.values()) {
+      for (const fn of mine.values()) {
         const next = fn(out);
         if (Array.isArray(next)) out = next;
       }
@@ -127,24 +151,46 @@ function uninstall() {
   target = undefined;
 }
 
-/** add/replace a named filter (null removes it); returns false when unsupported */
-export function setItemFilter(name: string, fn: ItemFilter | null): boolean {
+/**
+ * Add/replace a named filter for ONE window (null removes it). Returns false
+ * when the pipeline is unavailable on this Zotero build.
+ */
+export function setItemFilter(
+  win: Window,
+  name: string,
+  fn: ItemFilter | null,
+): boolean {
   if (fn) {
     if (!install()) return false;
-    filters.set(name, fn);
+    let mine = filters.get(win);
+    if (!mine) {
+      mine = new Map();
+      filters.set(win, mine);
+    }
+    mine.set(name, fn);
   } else {
-    filters.delete(name);
-    if (!filters.size) uninstall();
+    const mine = filters.get(win);
+    mine?.delete(name);
+    if (mine && !mine.size) filters.delete(win);
+    if (!activeCount()) uninstall();
   }
   return true;
 }
 
-export function hasItemFilter(name: string): boolean {
-  return filters.has(name);
+export function hasItemFilter(win: Window, name: string): boolean {
+  return !!filters.get(win)?.has(name);
 }
 
-export function activeItemFilters(): string[] {
-  return [...filters.keys()];
+export function activeItemFilters(win?: Window): string[] {
+  if (win) return [...(filters.get(win)?.keys() ?? [])];
+  const out: string[] = [];
+  for (const m of filters.values()) out.push(...m.keys());
+  return out;
+}
+
+/** drop every filter of one window (the window is closing) */
+export function clearWindowFilters(win: Window) {
+  if (filters.delete(win) && !activeCount()) uninstall();
 }
 
 export function clearItemFilters() {
