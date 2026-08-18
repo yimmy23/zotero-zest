@@ -39,6 +39,8 @@ class ReadingTracker {
   private lastProgressCheck = new Map<string, number>();
   private idleService: any = null;
   running = false;
+  /** dev builds only: ignore OS focus/idle so headless probes can drive the tracker */
+  debugForceActive = false;
 
   start() {
     if (this.running) return;
@@ -102,6 +104,9 @@ class ReadingTracker {
     } catch {
       focused = null;
     }
+    if (__env__ === "development" && this.debugForceActive) {
+      focused = Zotero.getMainWindow() as unknown as Window;
+    }
     if (!focused) return null;
     // main-window tab
     for (const win of Zotero.getMainWindows()) {
@@ -122,6 +127,7 @@ class ReadingTracker {
   }
 
   private isIdle(reader: any): boolean {
+    if (__env__ === "development" && this.debugForceActive) return false;
     const limit = Math.max(10, getNumPref("tracker.idleSeconds", 120)) * 1000;
     let idle: number;
     try {

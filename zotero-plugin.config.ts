@@ -39,6 +39,12 @@ export default defineConfig({
     ],
   },
 
+  server: {
+    // no Browser Toolbox: it is a separate process that steals window focus,
+    // which breaks focus-gated probes (reading tracker) in the dev instance
+    devtools: false,
+  },
+
   test: {
     waitForPlugin: `() => Zotero.${pkg.config.addonInstance}.data.initialized`,
   },

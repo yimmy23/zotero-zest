@@ -26,7 +26,7 @@ export function ratingColumn(): ColumnSpec {
   return {
     key: "rating",
     label: getString("column-rating"),
-    width: 92,
+    width: 100,
     enabledPref: "extensions.zotero.zest.column.rating.enable",
     dataProvider: (item) => {
       if (!item.isRegularItem()) return "";
