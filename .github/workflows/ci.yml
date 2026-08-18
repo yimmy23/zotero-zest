@@ -1,0 +1,29 @@
+name: CI
+
+# Lint + build on every push / PR. Releases are cut locally with the gh CLI
+# (see AGENTS.md → Releasing) — no release workflow here on purpose: the
+# template's release-plugin workflow would re-run `npm run release` on tag
+# push and collide with the manually created release + update manifest.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup JS
+        # pinned to a commit of zotero-plugin-dev/workflows (main as of 2026-08-17)
+        uses: zotero-plugin-dev/workflows/setup-js@b7aa408f6edee769dd16fab177b99eabbc71bc79
+      - name: Lint
+        run: npm run lint:check
+      - name: Build
+        run: npm run build
+      - name: Upload build result
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-result
+          path: .scaffold/build

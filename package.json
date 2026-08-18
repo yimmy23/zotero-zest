@@ -1,0 +1,61 @@
+{
+  "name": "zotero-zest",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Zest — columns, tags, reading records, view groups, graph and vertical tabs for Zotero",
+  "config": {
+    "addonName": "Zest",
+    "addonID": "zest@zotero-zest.app",
+    "addonRef": "zest",
+    "addonInstance": "Zest",
+    "prefsPrefix": "extensions.zotero.zest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yimmy23/zotero-zest.git"
+  },
+  "author": "yim",
+  "bugs": {
+    "url": "https://github.com/yimmy23/zotero-zest/issues"
+  },
+  "homepage": "https://github.com/yimmy23/zotero-zest#readme",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "start": "zotero-plugin serve",
+    "build": "zotero-plugin build && tsc --noEmit",
+    "lint:check": "prettier --check . && eslint .",
+    "lint:fix": "prettier --write . && eslint . --fix",
+    "release": "zotero-plugin release",
+    "test": "zotero-plugin test",
+    "update-deps": "npm update --save"
+  },
+  "dependencies": {
+    "d3-force": "^3.0.0",
+    "zotero-plugin-toolkit": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "@types/node": "^24.10.0",
+    "@zotero-plugin/eslint-config": "^0.6.7",
+    "eslint": "^9.39.2",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "zotero-plugin-scaffold": "^0.8.8",
+    "zotero-types": "^4.1.3"
+  },
+  "prettier": {
+    "printWidth": 80,
+    "tabWidth": 2,
+    "endOfLine": "lf",
+    "overrides": [
+      {
+        "files": [
+          "*.xhtml"
+        ],
+        "options": {
+          "htmlWhitespaceSensitivity": "css"
+        }
+      }
+    ]
+  }
+}

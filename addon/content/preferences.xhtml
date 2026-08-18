@@ -1,0 +1,168 @@
+<linkset>
+  <html:link rel="localization" href="__addonRef__-preferences.ftl" />
+</linkset>
+<vbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-columns"></html:h2></label>
+    <checkbox
+      preference="column.reading.enable"
+      data-l10n-id="pref-column-reading"
+      native="true"
+    />
+    <checkbox
+      preference="column.status.enable"
+      data-l10n-id="pref-column-status"
+      native="true"
+    />
+    <checkbox
+      preference="column.rating.enable"
+      data-l10n-id="pref-column-rating"
+      native="true"
+    />
+    <checkbox
+      preference="column.tags.enable"
+      data-l10n-id="pref-column-tags"
+      native="true"
+    />
+    <checkbox
+      preference="tags.hideInTitle"
+      data-l10n-id="pref-tags-hide-in-title"
+      native="true"
+    />
+    <checkbox
+      preference="column.textTags.enable"
+      data-l10n-id="pref-column-texttags"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-texttags-match"></html:label>
+      <html:input
+        type="text"
+        style="flex: 1"
+        preference="textTags.match"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-texttags-match-hint"
+    ></description>
+    <hbox align="center">
+      <html:label data-l10n-id="pref-texttags-color"></html:label>
+      <html:input type="color" preference="textTags.color"></html:input>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-heat"></html:h2></label>
+    <checkbox
+      preference="titleDecor.heat"
+      data-l10n-id="pref-titledecor-heat"
+      native="true"
+    />
+    <checkbox
+      preference="titleDecor.unreadBold"
+      data-l10n-id="pref-titledecor-unread"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-heat-color"></html:label>
+      <html:input type="color" preference="heat.color"></html:input>
+      <html:label
+        data-l10n-id="pref-heat-opacity"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="number"
+        min="0.1"
+        max="1"
+        step="0.05"
+        preference="heat.opacity"
+      ></html:input>
+    </hbox>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-tracker"></html:h2></label>
+    <checkbox
+      preference="tracker.enable"
+      data-l10n-id="pref-tracker-enable"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-tracker-idle"></html:label>
+      <html:input
+        type="number"
+        min="10"
+        max="3600"
+        preference="tracker.idleSeconds"
+      ></html:input>
+    </hbox>
+    <checkbox
+      preference="statusAuto.enable"
+      data-l10n-id="pref-statusauto-enable"
+      native="true"
+    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-statusauto-threshold"></html:label>
+      <html:input
+        type="number"
+        min="10"
+        max="100"
+        preference="statusAuto.readThreshold"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-statusauto-minminutes"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="number"
+        min="0"
+        max="600"
+        preference="statusAuto.minMinutes"
+      ></html:input>
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-tracker-storage-hint"
+    ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-data"></html:h2></label>
+    <hbox align="center">
+      <button
+        data-l10n-id="pref-btn-migrate"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('migrate', { window })
+        "
+      />
+      <button
+        data-l10n-id="pref-btn-export-json"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('export-json', { window })
+        "
+      />
+      <button
+        data-l10n-id="pref-btn-export-csv"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('export-csv', { window })
+        "
+      />
+      <button
+        data-l10n-id="pref-btn-import"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('import', { window })
+        "
+      />
+    </hbox>
+    <description class="zest-pref-hint" id="zest-pref-dbpath"></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-about"></html:h2></label>
+    <description data-l10n-id="pref-about-text"></description>
+    <description id="zest-pref-build"
+      >Build __buildVersion__ · __buildTime__</description
+    >
+  </groupbox>
+</vbox>
