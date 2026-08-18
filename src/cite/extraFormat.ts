@@ -124,23 +124,50 @@ const WHOLE_LINE_PATTERNS: RegExp[] = [
   /^openalex\.cit_count:\s*\d+\s*$/i,
 ];
 
+/** the shape Zest itself writes — the ONLY line we may replace or delete */
+const OUR_LINE = /^Citations:\s*\d+\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i;
+
 export function isCitationOnlyLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   return WHOLE_LINE_PATTERNS.some((re) => re.test(trimmed));
 }
 
+export function isOurCitationLine(line: string): boolean {
+  return OUR_LINE.test(line.trim());
+}
+
 /**
- * Replace whatever citation line the item has with ours, or append one.
- * Other plugins' lines are REPLACED, not duplicated — two counts in one Extra
- * is exactly the mess users complain about. Everything else, including blank
- * lines the user put there, is preserved verbatim.
+ * Replace OUR citation line in place, or append one.
+ *
+ * Other plugins' records (GSCC from the Google Scholar plugin, ZSCC, and
+ * `openalex.cit_count`) stay exactly where they are: they are that plugin's
+ * data, not ours, and a batch update over 3000 items would otherwise delete a
+ * field Zest cannot even reproduce. `readCitations` already prefers our own
+ * line, so a foreign record left in place changes nothing on screen.
+ *
+ * Everything else — including blank lines and the position of the record
+ * inside Extra — is preserved verbatim.
  */
 export function withCitationLine(extra: string, line: string): string {
   const lines = (extra || "").split(/\r?\n/);
-  const kept = lines.filter((l) => !isCitationOnlyLine(l));
-  // drop a trailing blank line so the appended record does not leave a gap
-  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
-  kept.push(line);
-  return kept.join("\n");
+  const out: string[] = [];
+  let placed = false;
+  for (const l of lines) {
+    if (isOurCitationLine(l)) {
+      // first hit keeps its position; any later duplicate of OUR line goes
+      if (!placed) {
+        out.push(line);
+        placed = true;
+      }
+      continue;
+    }
+    out.push(l);
+  }
+  if (!placed) {
+    // drop a trailing blank line so the appended record does not leave a gap
+    while (out.length && !out[out.length - 1].trim()) out.pop();
+    out.push(line);
+  }
+  return out.join("\n");
 }

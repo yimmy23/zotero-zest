@@ -15,7 +15,7 @@ import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
 import { toggleSidebar } from "../tabs/sidebar";
 import { importBetterAuthors } from "../columns/authors";
-import { refreshJournal } from "../rank";
+import { rankSourceThrottled, refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
 import {
   typesInView,
@@ -113,6 +113,10 @@ async function refreshJournalsFor(items: Zotero.Item[]) {
     getString("rank-menu-refresh", "label"),
     targets,
     async (item) => {
+      // once the rank service is throttled, every further journal in this batch
+      // would get the same "too fast" answer and be recorded as a miss — stop
+      // instead of spending the rest of the batch on refusals
+      if (rankSourceThrottled()) throw new Error("rank source throttled");
       await refreshJournal(item);
     },
     {

@@ -31,7 +31,10 @@ type Preset =
   | "first3"
   | "advisor";
 
-const cache = new Map<number, { version: number; value: FormattedAuthors }>();
+const cache = new Map<
+  number,
+  { version: number; mod: string; value: FormattedAuthors }
+>();
 let version = 0;
 
 export function bumpAuthorsVersion() {
@@ -66,8 +69,9 @@ function policyFor(preset: Preset): SelectPolicy {
     case "advisor":
       return { kind: "advisor" };
     default:
-      // Zotero's own rule: one name, two names joined, otherwise "A et al."
-      return { kind: "first", n: 2, etAl: "append" };
+      // Zotero's own rule: one name, two names joined with "and", otherwise
+      // "A et al." (verified against Items.getFirstCreatorFromData)
+      return { kind: "creator-like" };
   }
 }
 
@@ -94,19 +98,48 @@ function marks() {
 }
 
 function optionsFor(preset: Preset): FormatOptions {
+  const rules = nameRules();
   return {
     policy: policyFor(preset),
-    rules: nameRules(),
+    // the creator-like preset copies Zotero's Creator column, and that column
+    // shows family names only — the user's given-name rule is for the other
+    // presets
+    rules: preset === "creator-like" ? { ...rules, given: "none" } : rules,
     marks: marks(),
     roles: { include: "primary+fallback" },
     etAlText: etAlText(),
+    pairJoiner: preset === "creator-like" ? andJoiner() : undefined,
   };
+}
+
+/** Zotero's own "A and B" string, as a {a}/{b} template */
+function andJoiner(): string {
+  try {
+    const raw = Zotero.getString("general.andJoiner", ["\u0001", "\u0002"]);
+    if (raw.includes("\u0001") && raw.includes("\u0002")) {
+      return raw.replace("\u0001", "{a}").replace("\u0002", "{b}");
+    }
+  } catch {
+    // fall through
+  }
+  return "{a} and {b}";
+}
+
+/** cheap per-item stamp: any save (including a synced one) moves it */
+function modStamp(item: Zotero.Item): string {
+  try {
+    return String(item.dateModified || "") + ":" + String(item.version ?? 0);
+  } catch {
+    return "";
+  }
 }
 
 function compute(item: Zotero.Item, preset: Preset): FormattedAuthors {
   const key = item.id * 8 + PRESET_INDEX[preset];
+  const mod = modStamp(item);
   const hit = cache.get(key);
-  if (hit && hit.version === version) return hit.value;
+  // version = the formatting prefs changed; mod = this item's creators may have
+  if (hit && hit.version === version && hit.mod === mod) return hit.value;
   let value: FormattedAuthors;
   try {
     value = formatAuthors(item, optionsFor(preset));
@@ -115,7 +148,7 @@ function compute(item: Zotero.Item, preset: Preset): FormattedAuthors {
     value = { parts: [], sortKey: "", total: 0 };
   }
   if (cache.size > 5000) cache.clear();
-  cache.set(key, { version, value });
+  cache.set(key, { version, mod, value });
   return value;
 }
 
@@ -129,10 +162,16 @@ const PRESET_INDEX: Record<Preset, number> = {
   advisor: 6,
 };
 
+/**
+ * `preset` is a function, not a value: the column spec is built once, at
+ * registration, but the Authors column's preset is a preference the user can
+ * change at any time — capturing it here meant the setting did nothing until
+ * Zotero restarted.
+ */
 function authorColumn(
   key: string,
   labelID: "column-authors" | "column-first-author" | "column-last-author",
-  preset: Preset,
+  presetOf: () => Preset,
   enablePref: string,
   width: number,
 ): ColumnSpec {
@@ -143,13 +182,13 @@ function authorColumn(
     enabledPref: `extensions.zotero.${config.addonRef}.${enablePref}`,
     dataProvider: (item) => {
       if (!item.isRegularItem()) return "";
-      return compute(item, preset).sortKey;
+      return compute(item, presetOf()).sortKey;
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, key);
       if (!data) return cell;
       const item = rowItem(doc, index);
-      const result = item ? compute(item, preset) : undefined;
+      const result = item ? compute(item, presetOf()) : undefined;
       if (!result?.parts.length) return cell;
       for (const part of result.parts) {
         if (!part.kind) {
@@ -169,12 +208,16 @@ function authorColumn(
   };
 }
 
-export function authorsColumn(): ColumnSpec {
+function configuredPreset(): Preset {
   const preset = String(getPref("authors.preset") || "creator-like") as Preset;
+  return PRESET_INDEX[preset] === undefined ? "creator-like" : preset;
+}
+
+export function authorsColumn(): ColumnSpec {
   return authorColumn(
     "authors",
     "column-authors",
-    PRESET_INDEX[preset] === undefined ? "creator-like" : preset,
+    configuredPreset,
     "column.authors.enable",
     160,
   );
@@ -184,7 +227,7 @@ export function firstAuthorColumn(): ColumnSpec {
   return authorColumn(
     "firstauthor",
     "column-first-author",
-    "first",
+    () => "first",
     "column.firstAuthor.enable",
     120,
   );
@@ -194,7 +237,7 @@ export function lastAuthorColumn(): ColumnSpec {
   return authorColumn(
     "lastauthor",
     "column-last-author",
-    "last",
+    () => "last",
     "column.lastAuthor.enable",
     120,
   );

@@ -65,10 +65,16 @@ export function upsertExtraText(
   const out: string[] = [];
   let done = false;
   let changed = false;
+  // only the spelling we actually rewrote counts as a duplicate: `rate:` and
+  // `Rating:` are different lines to the user (one may be another plugin's, or
+  // a deliberate note), and deleting the other spelling loses data we never
+  // showed
+  let writtenKey = "";
   for (const line of lines) {
     const m = line.match(re);
     if (m && !done) {
       done = true;
+      writtenKey = m[1].toLowerCase();
       if (value === null) {
         changed = true;
         continue; // drop
@@ -78,8 +84,8 @@ export function upsertExtraText(
       out.push(next);
       continue;
     }
-    if (m && done) {
-      // duplicate line for the same key: drop it
+    if (m && done && m[1].toLowerCase() === writtenKey) {
+      // a second line with the SAME key: that one is a duplicate, drop it
       changed = true;
       continue;
     }

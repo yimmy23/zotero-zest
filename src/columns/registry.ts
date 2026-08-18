@@ -259,3 +259,17 @@ export function numKey(
   if (n < 0 || (n === 0 && !keepZero)) return "";
   return String(Math.round(n)).padStart(width, "0");
 }
+
+/**
+ * A click that carries a selection modifier belongs to Zotero, not to us.
+ *
+ * The item tree implements Shift-click range select and Cmd/Ctrl-click toggle
+ * on mousedown/mouseup; a widget that swallows those events inside its own
+ * column turns an ordinary multi-select into "set this item's rating" (and
+ * writes to Extra). Only a plain primary-button click is ours.
+ */
+export function isPlainClick(ev: MouseEvent): boolean {
+  return (
+    ev.button === 0 && !ev.shiftKey && !ev.ctrlKey && !ev.metaKey && !ev.altKey
+  );
+}

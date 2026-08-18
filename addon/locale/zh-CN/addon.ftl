@@ -327,3 +327,5 @@ pref-accent-preset-teal = 青
 pref-accent-preset-violet = 紫
 pref-accent-preset-wood = 陶土
 pref-accent-preset-grey = 石墨
+config-damaged = 无法读取 zest-config.json——视图组、标签规则与数据集暂不可用，Zest 不会覆盖该文件。请修复或移除它后重启 Zotero。
+tags-tree-label = 嵌套标签树

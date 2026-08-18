@@ -38,6 +38,11 @@ import {
 } from "./tags/nestedTree";
 import { clearItemFilters, clearWindowFilters } from "./views/itemFilter";
 import {
+  installRevealGuard,
+  uninstallRevealGuard,
+  uninstallAllRevealGuards,
+} from "./views/reveal";
+import {
   installViewMenu,
   uninstallViewMenu,
   uninstallAllViewMenus,
@@ -296,15 +301,41 @@ async function whenItemTreeReady(): Promise<void> {
   }
 }
 
+/**
+ * Resolve once THIS window's panes exist (or after ~15 s).
+ *
+ * `onMainWindowLoad` fires while a second window is still building: its
+ * `ZoteroPane.itemsView` / `collectionsView` are undefined for a moment, and
+ * every binding that needs them used to bail out silently — so a second window
+ * came up with no tag tree, no counts, no graph and no tab sidebar until the
+ * user restarted Zotero.
+ */
+async function whenPaneReady(win: Window): Promise<boolean> {
+  for (let i = 0; i < 60; i++) {
+    if (win.closed) return false;
+    try {
+      const pane = (win as any).ZoteroPane;
+      if (pane?.itemsView && pane?.collectionsView) return true;
+    } catch {
+      // still building
+    }
+    await Zotero.Promise.delay(250);
+  }
+  return !win.closed;
+}
+
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(`${config.addonRef}-addon.ftl`);
   const w = win as unknown as Window;
   registerStyles(w);
   applyRootFlags(w, !!getPref("tags.hideInTitle"));
   installTitleDecor(w);
-  installTagTree(w);
   installViewMenu(w);
   installViewShortcuts(w);
+  // everything below reads ZoteroPane's trees
+  if (!(await whenPaneReady(w))) return;
+  installTagTree(w);
+  installRevealGuard(w);
   sweepCollectionBadgesIn(w);
   installCollectionCounts(w);
   restoreGraphPane(w);
@@ -316,6 +347,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallViewMenu(win);
   uninstallViewShortcuts(win);
   uninstallTagTree(win);
+  uninstallRevealGuard(win);
   hideGraphPane(win, false);
   hideSidebar(win, false);
   clearWindowFilters(win);
@@ -334,6 +366,7 @@ async function onShutdown() {
   uninstallAllViewMenus();
   uninstallAllViewShortcuts();
   uninstallAllCollectionCounts();
+  uninstallAllRevealGuards();
   resetTypeFilter();
   clearItemFilters();
   uninstallGraphPanes();

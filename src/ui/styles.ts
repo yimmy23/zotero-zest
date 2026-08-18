@@ -58,10 +58,12 @@ export function registerStyles(win: Window) {
        colour picker. */
     :root {
       --zest-accent: ${ACCENT_FALLBACK};
-      /* one step deeper for anything that carries white text; mixing toward
-         black rather than toward the theme keeps that text legible in dark
-         mode too (a theme-following mix goes pale and drops it to ~2:1) */
-      --zest-accent-strong: color-mix(in srgb, var(--zest-accent) 68%, #000);
+      /* one step away from the background: mixing toward the theme's TEXT
+         colour darkens it in the light theme and lightens it in the dark one,
+         so a histogram bar or a hover outline stays visible in both. Nothing
+         puts white text on this token — filled surfaces use the washes below,
+         which keep the row's own text colour. */
+      --zest-accent-strong: color-mix(in srgb, var(--zest-accent) 72%, var(--fill-primary, #000));
       /* the translucent wash: selected rows and other filled surfaces let the
          row underneath show through instead of covering it */
       --zest-accent-wash: color-mix(in srgb, var(--zest-accent) 26%, transparent);
@@ -197,9 +199,16 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
+    .zest-tagtree-row:focus-visible {
+      outline: 2px solid var(--zest-accent-strong); outline-offset: -2px;
+    }
     .zest-tagtree-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
-    .zest-tagtree-row.dim { opacity: .55; }
-    .zest-tagtree-row.disabled { opacity: .35; cursor: default; }
+    /* "not in this view" is a hint, not a disabled state: dimming the whole
+       row to .55 put the label near 2:1 against the pane background, which is
+       unreadable. Grey the TEXT one step instead and keep it legible. */
+    .zest-tagtree-row.dim { color: var(--fill-secondary); }
+    .zest-tagtree-row.dim .zest-tagtree-num { opacity: .8; }
+    .zest-tagtree-row.disabled { color: var(--fill-tertiary); cursor: default; }
     .zest-tagtree-twisty { width: 12px; flex: 0 0 auto; text-align: center; color: var(--fill-secondary); }
     .zest-tagtree-row.selected .zest-tagtree-twisty { color: inherit; }
     .zest-tagtree-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
@@ -210,6 +219,14 @@ export function registerStyles(win: Window) {
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
     /* ---------- literature info panel ---------- */
+    /* read-only libraries: the controls stay visible (the values are real)
+       but must not look clickable */
+    .zest-info-btn:disabled, .zest-info-input:disabled {
+      color: var(--fill-secondary); opacity: .6; cursor: default;
+    }
+    .zest-info-btn:disabled:hover { background-color: var(--fill-quinary); }
+    .zest-info-stars.disabled .zest-info-star { cursor: default; }
+    .zest-info-stars.disabled { opacity: .7; }
     .zest-info { display: flex; flex-direction: column; gap: 5px; padding: 4px 12px 12px; }
     .zest-info-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .zest-info-key {

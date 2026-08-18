@@ -41,6 +41,10 @@ import * as infoSection from "../panes/infoSection";
 import * as stats from "../panes/statsDialog";
 import * as matrix from "../panes/annotMatrix";
 import * as tabsSidebar from "../tabs/sidebar";
+import * as reveal from "../views/reveal";
+import * as csv from "../utils/csv";
+import * as density from "../annots/density";
+import * as counts from "../views/collectionCounts";
 import * as tabsModel from "../tabs/model";
 import * as remark from "../columns/remark";
 import * as viewGroups from "../views/viewGroups";
@@ -152,6 +156,10 @@ export function registerDevEval() {
             stats,
             matrix,
             tabsSidebar,
+            reveal,
+            csv,
+            density,
+            counts,
             tabsModel,
             remark,
             viewGroups,

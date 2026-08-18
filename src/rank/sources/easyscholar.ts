@@ -41,11 +41,10 @@ export async function fetchEasyScholar(
   force = false,
 ): Promise<EsResult> {
   if (!publicationName) return { values: [] };
-  if (!force && easyScholarBlocked()) return { values: [], error: "rate" };
-  if (force) {
-    blockedUntil = 0;
-    consecutiveRateLimits = 0;
-  }
+  // `force` means "ignore the cached answer", never "ignore the server telling
+  // us to slow down": a 300-journal refresh used to clear the block before
+  // every request, so a 40006 was answered with 299 more requests.
+  if (easyScholarBlocked()) return { values: [], error: "rate" };
   // the block has expired without a new 40006 → start the back-off ladder over
   if (blockedUntil && Date.now() >= blockedUntil) {
     blockedUntil = 0;

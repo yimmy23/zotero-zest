@@ -6,7 +6,7 @@ import {
   setReadStatus,
   statusRank,
 } from "../reading/status";
-import { makeCell, rowItem, type ColumnSpec } from "./registry";
+import { makeCell, rowItem, isPlainClick, type ColumnSpec } from "./registry";
 
 /**
  * "Status" column — Reading-List-compatible `Read_Status` from Extra.
@@ -64,9 +64,13 @@ export function statusColumn(): ColumnSpec {
       // keep those from reaching the row so a quick double click on the dot
       // never opens the PDF
       for (const t of ["mousedown", "mouseup", "dblclick"]) {
-        dot.addEventListener(t, (ev: Event) => ev.stopPropagation());
+        dot.addEventListener(t, (ev: Event) => {
+          // a modified click is a selection gesture — let Zotero have it
+          if (isPlainClick(ev as unknown as MouseEvent)) ev.stopPropagation();
+        });
       }
       dot.addEventListener("click", (ev) => {
+        if (!isPlainClick(ev as unknown as MouseEvent)) return;
         ev.stopPropagation();
         const item = rowItem(doc, index);
         if (!item || !item.isEditable()) return;

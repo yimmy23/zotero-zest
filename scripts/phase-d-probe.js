@@ -86,17 +86,19 @@ check(
   Object.values(parsed).every((v) => typeof v === "number"),
   JSON.stringify(parsed),
 );
-latin.setField("extra", "GSCC: 0000010\nPublisher: X");
+latin.setField("extra", "GSCC: 0000010\nPublisher: X\nCitations: 1 (Crossref) [2026-01-01]");
 await latin.saveTx();
 latin.setField(
   "extra",
   dev.citeExtra.withCitationLine(latin.getField("extra"), "Citations: 7 (Crossref) [2026-08-18]"),
 );
 await latin.saveTx();
+// our own line is replaced IN PLACE; another plugin's record is never deleted
 check(
-  "citations.replacesLegacyLine",
-  !latin.getField("extra").includes("GSCC") &&
-    latin.getField("extra").includes("Citations: 7"),
+  "citations.replacesOwnLineOnly",
+  latin.getField("extra").includes("GSCC: 0000010") &&
+    latin.getField("extra").includes("Citations: 7") &&
+    !latin.getField("extra").includes("Citations: 1"),
   latin.getField("extra").replace(/\n/g, " | "),
 );
 

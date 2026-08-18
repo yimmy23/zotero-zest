@@ -244,10 +244,16 @@ function render(props: any) {
   const stars = doc.createElement("span");
   stars.className = editable ? "zest-info-stars" : "zest-info-stars disabled";
   const rating = getRating(item) || 0;
+  // same symbols and colour as the Rating column — two places showing the same
+  // value must not disagree about what it looks like
+  const mark = (getPref("rating.mark") as string) || "★";
+  const option = (getPref("rating.option") as string) || mark;
+  const starColor = (getPref("rating.color") as string) || "";
+  if (starColor) stars.style.setProperty("--zest-star-color", starColor);
   for (let i = 1; i <= 5; i++) {
     const star = doc.createElement("span");
     star.className = `zest-info-star${i <= rating ? " on" : ""}`;
-    star.textContent = "★";
+    star.textContent = i <= rating ? mark : option;
     star.addEventListener(
       "click",
       guard("info rating", () => {

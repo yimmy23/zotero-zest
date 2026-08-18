@@ -9,6 +9,7 @@ import {
   itemHasPrefix,
   matchChildTags,
   selectedLibraryID,
+  invalidateTagCache,
   clearTagCache,
 } from "./scope";
 import {
@@ -53,6 +54,8 @@ interface TreeState {
   libraryID: number;
   refreshTimer?: number;
   searchTimer?: number;
+  /** display path of the row that owns the tab stop (roving tabindex) */
+  focusPath?: string;
   /** listeners we added to Zotero's views, so they can be removed again */
   viewListeners: Array<{ target: any; fn: (...args: any[]) => void }>;
 }
@@ -174,6 +177,7 @@ export function installTagTree(win: Window) {
 
   const body = doc.createElement("div");
   body.className = "zest-tagtree-body";
+  installTreeKeys(win, body);
 
   root.appendChild(bar);
   root.appendChild(body);
@@ -202,6 +206,8 @@ export function uninstallTagTree(win: Window) {
   const state = states.get(win);
   if (!state) return;
   states.delete(win);
+  refreshing.delete(win);
+  refreshGeneration.delete(win);
   if (state.refreshTimer) clearTimeout(state.refreshTimer);
   if (state.searchTimer) clearTimeout(state.searchTimer);
   for (const { target, fn } of state.viewListeners) {
@@ -237,6 +243,8 @@ export function uninstallTagTree(win: Window) {
 
 export function uninstallAllTagTrees() {
   for (const win of [...states.keys()]) uninstallTagTree(win);
+  // nothing left to filter, so the cached tag lists are dead weight
+  clearTagCache();
 }
 
 /** switch between Zotero's tag selector and ours */
@@ -282,7 +290,31 @@ export function refreshAllTagTrees() {
   for (const win of states.keys()) scheduleRefresh(win);
 }
 
-export async function refreshTagTree(win: Window) {
+/** one full-library pass at a time, per window (a sync fires bursts) */
+const refreshing = new Map<Window, Promise<void>>();
+const refreshGeneration = new Map<Window, number>();
+
+export async function refreshTagTree(win: Window): Promise<void> {
+  const inFlight = refreshing.get(win);
+  if (inFlight) {
+    // a pass is already walking the library; mark it stale and let it re-run
+    // once, instead of starting a second walk beside it
+    refreshGeneration.set(win, (refreshGeneration.get(win) ?? 0) + 1);
+    return inFlight;
+  }
+  const run = runTagTreeRefresh(win).finally(() => {
+    refreshing.delete(win);
+    const pending = refreshGeneration.get(win) ?? 0;
+    if (pending > 0) {
+      refreshGeneration.set(win, 0);
+      void refreshTagTree(win);
+    }
+  });
+  refreshing.set(win, run);
+  return run;
+}
+
+async function runTagTreeRefresh(win: Window) {
   const state = states.get(win);
   if (!state || !isTreeShown()) return;
   try {
@@ -337,6 +369,16 @@ function render(state: TreeState) {
     if (selected) row.classList.add("selected");
     if (!inView && !selected) row.classList.add("dim");
     row.setAttribute("data-tag", node.name);
+    // Zotero's own tag selector is keyboard operable, and this tree REPLACES
+    // it — so it carries the same contract: one tab stop for the whole tree,
+    // arrow keys to move, Enter/Space to select.
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(depth + 1));
+    row.setAttribute("aria-selected", selected ? "true" : "false");
+    if (node.children.length) {
+      row.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+    row.tabIndex = -1;
 
     const twisty = doc.createElement("span");
     twisty.className = "zest-tagtree-twisty";
@@ -416,6 +458,17 @@ function render(state: TreeState) {
   for (const n of state.nodes) addNode(n, 0);
   for (const r of rows) body.appendChild(r);
 
+  body.setAttribute("role", "tree");
+  body.setAttribute("aria-label", getString("tags-tree-label"));
+  // the remembered row keeps the tab stop across re-renders; if it is gone
+  // (collapsed away, filtered out) the first row takes it
+  const tabStop =
+    rows.find((r) => r.getAttribute("data-tag") === state.focusPath) ?? rows[0];
+  if (tabStop) {
+    tabStop.tabIndex = 0;
+    state.focusPath = tabStop.getAttribute("data-tag") || undefined;
+  }
+
   if (!rows.length) {
     const empty = doc.createElement("div");
     empty.className = "zest-tagtree-empty";
@@ -429,6 +482,83 @@ function render(state: TreeState) {
       ? getString("tags-selected", { args: { count: state.selection.size } })
       : "";
   }
+}
+
+/**
+ * Keyboard contract, mirroring Zotero's own tag selector:
+ *   ↑ ↓        move between visible rows
+ *   ← →        collapse / expand a branch (→ on a leaf does nothing)
+ *   Home End   first / last row
+ *   Enter Space  select or deselect the branch
+ * The tree keeps ONE tab stop (see the roving tabindex in render), so Tab
+ * moves past the whole tree rather than through every tag.
+ */
+function installTreeKeys(win: Window, body: HTMLElement) {
+  body.addEventListener(
+    "keydown",
+    guard("tag keys", (ev: KeyboardEvent) => {
+      const state = states.get(win);
+      if (!state) return;
+      const rows = [...body.querySelectorAll<HTMLElement>(".zest-tagtree-row")];
+      if (!rows.length) return;
+      const active = win.document.activeElement as HTMLElement | null;
+      const index = active ? rows.indexOf(active) : -1;
+      const current = index >= 0 ? rows[index] : rows[0];
+      const focusRow = (row: HTMLElement | undefined) => {
+        if (!row) return;
+        for (const r of rows) r.tabIndex = -1;
+        row.tabIndex = 0;
+        state.focusPath = row.getAttribute("data-tag") || undefined;
+        row.focus();
+      };
+      const path = current.getAttribute("data-tag") || "";
+      switch (ev.key) {
+        case "ArrowDown":
+          ev.preventDefault();
+          focusRow(rows[Math.min(rows.length - 1, index + 1)]);
+          return;
+        case "ArrowUp":
+          ev.preventDefault();
+          focusRow(rows[Math.max(0, index - 1)]);
+          return;
+        case "Home":
+          ev.preventDefault();
+          focusRow(rows[0]);
+          return;
+        case "End":
+          ev.preventDefault();
+          focusRow(rows[rows.length - 1]);
+          return;
+        case "ArrowRight":
+        case "ArrowLeft": {
+          if (current.getAttribute("aria-expanded") === null) return;
+          ev.preventDefault();
+          state.collapsed.set(path, ev.key === "ArrowLeft");
+          state.focusPath = path;
+          render(state);
+          body
+            .querySelector<HTMLElement>(`[data-tag="${cssEscape(path)}"]`)
+            ?.focus();
+          return;
+        }
+        case "Enter":
+        case " ":
+          ev.preventDefault();
+          current.click();
+          body
+            .querySelector<HTMLElement>(`[data-tag="${cssEscape(path)}"]`)
+            ?.focus();
+          return;
+        default:
+          return;
+      }
+    }),
+  );
+}
+
+/** CSS.escape is not on every chrome window; this covers our attribute use */
+function cssEscape(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
 }
 
 function toggleNode(state: TreeState, node: TagNode, realNames: Set<string>) {
@@ -484,8 +614,10 @@ function applyTagFilter(state: TreeState) {
   const withChildren = matchChildTags();
   const link = linkSymbol();
   const ok = setItemFilter(state.win, "tags", (items) => {
-    // the per-item tag lists are only valid for one pass over the view
-    clearTagCache();
+    // the tag cache is NOT cleared here: this predicate runs on every refresh
+    // of the item list, and rebuilding every item's tag list each time made
+    // typing in the quick search walk the whole library. The notifier drops
+    // the entries that actually changed.
     return items.filter((item) => {
       try {
         for (const names of groups) {
@@ -594,6 +726,9 @@ function startNotifier() {
           type === "item-tag" ||
           type === "collection-item"
         ) {
+          // a renamed or deleted tag can touch any item; an item-tag event
+          // names the items it touched
+          invalidateTagCache(type === "item-tag" ? ids : undefined);
           refreshAllTagTrees();
         }
       },

@@ -54,8 +54,20 @@ export function datasetsReady(): boolean {
   return ready;
 }
 
+/** resolves when the datasets are in memory (the lookup queue waits on it) */
+let loading: Promise<void> | undefined;
+
+export function datasetsLoaded(): Promise<void> {
+  return loading ?? Promise.resolve();
+}
+
 /** load every registered dataset into memory (called once at startup) */
 export async function loadDatasets() {
+  loading = loadDatasetsInner();
+  await loading;
+}
+
+async function loadDatasetsInner() {
   loaded.clear();
   for (const meta of zestConfig.get().datasets) {
     try {

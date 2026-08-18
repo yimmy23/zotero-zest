@@ -1,3 +1,4 @@
+import { csvCell } from "../utils/csv";
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { readingStore, dayOf } from "./store";
@@ -84,11 +85,6 @@ export function toJSON(items: ExportedItem[]): string {
     1,
   );
 }
-
-const csvCell = (v: unknown) => {
-  const s = String(v ?? "");
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 
 export function toCSV(items: ExportedItem[]): string {
   const rows = ["libraryID,itemKey,title,kind,key,seconds,attKey"];

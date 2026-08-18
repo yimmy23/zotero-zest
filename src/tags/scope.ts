@@ -164,14 +164,31 @@ export async function collectTagScope(
 
 /**
  * Tag lists are re-read for every selected branch during filtering, and each
- * read walks the item's attachments, notes and annotations. One short-lived
- * cache per filter pass keeps that O(items) instead of O(items × branches);
- * it is dropped whenever the filter is re-applied.
+ * read walks the item's attachments, notes and annotations.
+ *
+ * The cache therefore has to survive across filter passes: the predicate runs
+ * on EVERY item-tree refresh (each quick-search keystroke, each batch of items
+ * a sync adds), and rebuilding it every time made a tag filter O(items ×
+ * children) per keystroke on a 20k library. It is invalidated by the tag tree's
+ * notifier instead — per item where the event names them.
  */
 const tagCache = new Map<number, string[]>();
 
 export function clearTagCache() {
   tagCache.clear();
+}
+
+/** drop the cached tag lists of these items (all of them when ids is empty) */
+export function invalidateTagCache(ids?: Array<string | number>) {
+  if (!ids?.length) {
+    tagCache.clear();
+    return;
+  }
+  for (const raw of ids) {
+    // item-tag ids arrive as "itemID-tagID"
+    const itemID = Number(String(raw).split("-")[0]);
+    if (Number.isInteger(itemID)) tagCache.delete(itemID);
+  }
 }
 
 function cachedTags(item: Zotero.Item, withChildren: boolean): string[] {

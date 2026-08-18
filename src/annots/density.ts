@@ -1,3 +1,4 @@
+import { readingStore } from "../reading/store";
 import { config } from "../../package.json";
 import { setTimeout, clearTimeout } from "../utils/timers";
 
@@ -91,6 +92,15 @@ async function drain() {
   if (done.length) onReady?.(done);
 }
 
+/** page count the reader reported for this item, 0 when never opened */
+function pagesOfItem(item: Zotero.Item): number {
+  try {
+    return readingStore.getForItem(item)?.pages || 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** synchronous computation for ONE item (all its PDF/EPUB attachments) */
 export function computeSummary(item: Zotero.Item): AnnotSummary {
   const owner = item.id;
@@ -136,7 +146,13 @@ export function computeSummary(item: Zotero.Item): AnnotSummary {
   }
   const histogram = new Array<number>(BUCKETS).fill(0);
   if (pages.length && maxPage >= 0) {
-    const span = maxPage + 1;
+    // scale to the DOCUMENT, not to the last annotated page: six highlights in
+    // the first ten pages of a 400-page book otherwise fill the whole bar and
+    // read as "annotated throughout". The reading tracker already records the
+    // real page count per attachment; fall back to the last annotated page for
+    // EPUBs and snapshots, which have no page count.
+    const known = pagesOfItem(item);
+    const span = Math.max(maxPage + 1, known);
     for (const page of pages) {
       const b = Math.min(BUCKETS - 1, Math.floor((page / span) * BUCKETS));
       histogram[b] += 1;

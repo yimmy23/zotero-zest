@@ -4,6 +4,7 @@ import { guard } from "../utils/guard";
 import { collectAnnotations, type CardAnnotation } from "./annotSection";
 import { iconLabelButton, ICON_CSS } from "../ui/icons";
 import { accentColor } from "../ui/styles";
+import { csvCell } from "../utils/csv";
 
 /**
  * Annotation matrix — every annotation of the current view in one table.
@@ -351,7 +352,7 @@ async function openAnnotationFromMatrix(row: MatrixRow) {
 }
 
 export function toCSV(list: MatrixRow[]): string {
-  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = csvCell;
   const head = ["item", "page", "text", "comment", "color", "tags"].join(",");
   const body = list.map((r) =>
     [r.itemTitle, r.page, r.text, r.comment, r.color, r.tags.join("; ")]

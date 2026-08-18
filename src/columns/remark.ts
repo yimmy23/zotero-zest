@@ -2,7 +2,7 @@ import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getExtraLine, setExtraLine } from "../utils/extra";
 import { guard } from "../utils/guard";
-import { makeCell, rowItem, type ColumnSpec } from "./registry";
+import { makeCell, rowItem, isPlainClick, type ColumnSpec } from "./registry";
 
 export const REMARK_KEYS = ["Remark", "remark", "简记"];
 
@@ -49,6 +49,7 @@ export function remarkColumn(): ColumnSpec {
       cell.addEventListener(
         "dblclick",
         guard("remark edit", (ev: Event) => {
+          if (!isPlainClick(ev as unknown as MouseEvent)) return;
           const item = rowItem(doc, index);
           if (!canEditRemark(item) || !item) return;
           ev.stopPropagation();

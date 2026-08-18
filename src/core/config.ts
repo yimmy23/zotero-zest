@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import { setTimeout, clearTimeout } from "../utils/timers";
+import { getString } from "../utils/locale";
 
 /**
  * `<dataDir>/zest-config.json` — user configuration that is too structured
@@ -254,7 +255,24 @@ export function newId(prefix: string): string {
   return `${prefix}${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
 }
 
+export /**
+ * A damaged config is the one case where saying nothing is wrong: the user
+ * would see every view group and tag rule gone, change one setting, and the
+ * file that still held them would be replaced by the empty default.
+ */
+function warnConfigDamaged(path: string, e: unknown) {
+  try {
+    new ztoolkit.ProgressWindow(config.addonName, { closeTime: 12000 })
+      .createLine({ text: getString("config-damaged"), type: "fail" })
+      .show();
+  } catch {
+    // UI is optional here
+  }
+  ztoolkit.log(`[zest] config unreadable, writes disabled: ${path}`, e);
+}
+
 export class ConfigStore {
+  private damaged = false;
   private data: ZestConfig = { ...EMPTY };
   private path = "";
   private loaded = false;
@@ -273,8 +291,13 @@ export class ConfigStore {
         this.data = sanitizeConfig(JSON.parse(raw));
       }
     } catch (e) {
-      ztoolkit.log("[zest] config load failed", e);
+      // The file exists but could not be read or parsed — a hand edit with a
+      // trailing comma, or a sync tool's conflicted copy. Coming up empty is
+      // survivable; OVERWRITING it with the empty config is not, so the store
+      // goes read-only until the user deals with it.
+      this.damaged = true;
       this.data = { ...EMPTY };
+      warnConfigDamaged(this.path, e);
     }
     this.loaded = true;
     // readers that memoised the empty default before the file resolved must be
@@ -321,8 +344,13 @@ export class ConfigStore {
     }, 600);
   }
 
+  /** true when the file on disk could not be parsed — never overwrite it */
+  get isDamaged(): boolean {
+    return this.damaged;
+  }
+
   async flush() {
-    if (!this.loaded || !this.path) return;
+    if (!this.loaded || !this.path || this.damaged) return;
     await Zotero.File.putContentsAsync(
       this.path,
       JSON.stringify(this.data, null, 1),
@@ -409,6 +437,8 @@ export interface ImportReport {
   viewGroups: number;
   tagRules: number;
   datasets: number;
+  tabGroups: number;
+  tabSessions: number;
   skipped: number;
 }
 
@@ -423,6 +453,8 @@ export function importBundle(raw: any, replace: boolean): ImportReport {
     viewGroups: 0,
     tagRules: 0,
     datasets: 0,
+    tabGroups: 0,
+    tabSessions: 0,
     skipped: 0,
   };
   if (!raw || raw.kind !== "zest-config")
@@ -489,11 +521,20 @@ export function importBundle(raw: any, replace: boolean): ImportReport {
         if (tgIds.has(g.id)) continue;
         draft.tabGroups.push(g);
       }
+      // sessions are exported, so they have to be importable — the sanitiser
+      // keeps the newest 20 either way
+      const tsIds = new Set(draft.tabSessions.map((x) => x.id));
+      for (const session of incoming.tabSessions) {
+        if (tsIds.has(session.id)) continue;
+        draft.tabSessions.push(session);
+      }
     }
   });
   const after = zestConfig.get();
   report.viewGroups = after.viewGroups.length;
   report.tagRules = after.tagRules.length;
   report.datasets = after.datasets.length;
+  report.tabGroups = after.tabGroups.length;
+  report.tabSessions = after.tabSessions.length;
   return report;
 }

@@ -10,7 +10,7 @@ import {
 import { inferRank } from "./rank";
 import { parseRewriteRules, applyRewrite } from "./map";
 import type { JournalRecord, RankValue } from "./types";
-import { lookupDataset } from "./sources/localDataset";
+import { datasetsLoaded, lookupDataset } from "./sources/localDataset";
 import { fetchEasyScholar, easyScholarBlocked } from "./sources/easyscholar";
 import {
   fetchOpenAlexByISSN,
@@ -172,6 +172,10 @@ async function drain() {
   if (fetching) return;
   fetching = true;
   try {
+    // a local dataset is the highest-priority source and loads asynchronously
+    // at startup; fetching before it lands would cache "no Chinese ranking"
+    // for 30 days on journals the user's own file answers
+    await datasetsLoaded();
     while (queue.size) {
       const [cacheKey, itemIDs] = queue.entries().next().value as [
         string,
@@ -228,7 +232,7 @@ export async function lookupJournal(
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
   if (getPref("rank.useEasyScholar") && name) {
-    if (!force && easyScholarBlocked()) {
+    if (easyScholarBlocked()) {
       // we did not even ask: the record must not be cached for 30 days as
       // "this journal has no Chinese ranking"
       misses.push("easyscholar");
@@ -299,6 +303,11 @@ export async function refreshJournal(item: Zotero.Item) {
   const rec = await lookupJournal(item, true);
   onReady?.([item.id]);
   return rec;
+}
+
+/** true when easyScholar has told us to stop — batch callers should give up */
+export function rankSourceThrottled(): boolean {
+  return easyScholarBlocked();
 }
 
 export function clearRankCache() {

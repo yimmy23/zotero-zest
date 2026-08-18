@@ -38,31 +38,84 @@ function mode(): number {
   return m === 1 || m === 2 ? m : 0;
 }
 
-function countFor(collectionID: number): { direct: number; total: number } {
-  const hit = counts.get(collectionID);
-  if (hit) return hit;
-  let direct = 0;
-  let total = 0;
-  try {
-    const collection = Zotero.Collections.get(collectionID) as any;
-    if (collection) {
-      // top-level items only: attachments and notes are not "items" here
-      direct = (collection.getChildItems(true) as number[])?.length ?? 0;
-      const seen = new Set<number>();
-      const walk = (c: any) => {
-        for (const id of (c.getChildItems(true) as number[]) || [])
-          seen.add(id);
-        for (const sub of Zotero.Collections.getByParent(c.id) || []) walk(sub);
-      };
-      walk(collection);
-      total = seen.size;
+/**
+ * One bottom-up pass over every collection, off the render path.
+ *
+ * The renderer runs for every visible row on every frame, so it may only READ
+ * this map — the recursive walk it used to do took `O(subtree)` per row and
+ * was thrown away by the next item event, which on a syncing 20k library is
+ * several times a second.
+ *
+ * Totals dedupe: an item filed in both a parent and a child must count once,
+ * so the pass carries a Set per subtree and keeps only its size.
+ */
+let recomputing: Promise<void> | undefined;
+
+/** libraries with more collections than this get direct counts only */
+const MAX_COLLECTIONS_PER_LIBRARY = 2000;
+
+async function recomputeCounts(): Promise<void> {
+  const next = new Map<number, { direct: number; total: number }>();
+  const libraries = (Zotero.Libraries.getAll() ?? []) as Array<{
+    libraryID: number;
+  }>;
+  for (const library of libraries) {
+    let all: any[];
+    try {
+      all = (Zotero.Collections.getByLibrary(library.libraryID, true) ??
+        []) as any[];
+    } catch {
+      continue;
     }
-  } catch (e) {
-    ztoolkit.log("[counts] failed", e);
+    const recursive = mode() !== 0;
+    if (recursive && all.length > MAX_COLLECTIONS_PER_LIBRARY) {
+      ztoolkit.log(
+        `[counts] library ${library.libraryID} has ${all.length} collections — showing direct counts only`,
+      );
+    }
+    const direct = new Map<number, number[]>();
+    let n = 0;
+    for (const c of all) {
+      try {
+        direct.set(c.id, ((c.getChildItems(true) as number[]) || []).slice());
+      } catch {
+        direct.set(c.id, []);
+      }
+      // the pass can touch thousands of collections; let the UI breathe
+      if (++n % 50 === 0) await Zotero.Promise.delay(0);
+    }
+    const subtree = new Map<number, Set<number>>();
+    const walk = (c: any): Set<number> => {
+      const hit = subtree.get(c.id);
+      if (hit) return hit;
+      const set = new Set<number>(direct.get(c.id) ?? []);
+      subtree.set(c.id, set);
+      let children: any[];
+      try {
+        children = (Zotero.Collections.getByParent(c.id) as any[]) || [];
+      } catch {
+        children = [];
+      }
+      for (const sub of children) for (const id of walk(sub)) set.add(id);
+      return set;
+    };
+    const wantTotals = recursive && all.length <= MAX_COLLECTIONS_PER_LIBRARY;
+    for (const c of all) {
+      const d = (direct.get(c.id) ?? []).length;
+      next.set(c.id, {
+        direct: d,
+        total: wantTotals ? walk(c).size : d,
+      });
+    }
   }
-  const value = { direct, total };
-  counts.set(collectionID, value);
-  return value;
+  counts.clear();
+  for (const [id, value] of next) counts.set(id, value);
+}
+
+function countFor(collectionID: number): { direct: number; total: number } {
+  // read-only: a miss means the pass has not finished yet, and an empty badge
+  // is better than a synchronous walk inside the row renderer
+  return counts.get(collectionID) ?? { direct: 0, total: 0 };
 }
 
 function label(collectionID: number): string {
@@ -95,12 +148,21 @@ export function sweepBadges() {
   }
 }
 
-/** rebuild every collection row (badges are baked into the row DOM) */
+/**
+ * Repaint every collection row (badges are baked into the row DOM).
+ *
+ * NEVER call `tree.refresh()` here: on CollectionTree that is a full data
+ * rebuild which sets `selection.selectEventsSuppressed = true` and expects the
+ * caller to restore the selection and clear the flag afterwards. Called bare —
+ * and we used to call it on every item event — it leaves selection events
+ * suppressed, so clicking a collection stops loading its items.
+ * forceUpdate + invalidate re-run renderItem for every visible row, which is
+ * all a badge needs.
+ */
 function redraw(tree: any) {
   try {
     tree.forceUpdate?.();
     tree.tree?.invalidate?.();
-    void tree.refresh?.();
   } catch {
     // not mounted yet
   }
@@ -145,16 +207,18 @@ export function installCollectionCounts(win: Window) {
   (wrapped as any).__zestOriginal = base;
   tree.renderItem = wrapped;
   patched.set(win, { win, tree, original: base });
-  redraw(tree);
   startWatch();
+  invalidateCounts();
+  redraw(tree);
 }
 
 export function uninstallCollectionCounts(win: Window) {
   const entry = patched.get(win);
   if (!entry) {
     // nothing wrapped here, but a previous session (or a hot reload) may have
-    // left badges in the DOM
-    sweepBadges();
+    // left badges in THIS window's DOM — never sweep the other windows, they
+    // may still have counts installed
+    sweepBadgesIn(win);
     return;
   }
   patched.delete(win);
@@ -188,26 +252,40 @@ export function syncCollectionCounts() {
 }
 
 export function invalidateCounts() {
-  counts.clear();
   if (recomputeTimer) clearTimeout(recomputeTimer);
+  // a sync run fires item events continuously; coalesce them into one pass
   recomputeTimer = setTimeout(() => {
     recomputeTimer = undefined;
-    for (const { tree } of patched.values()) redraw(tree);
-  }, 400);
+    if (!patched.size) return;
+    const run = (recomputing ?? Promise.resolve())
+      .then(() => recomputeCounts())
+      .catch((e) => ztoolkit.log("[counts] recompute failed", e))
+      .then(() => {
+        if (recomputing === run) recomputing = undefined;
+        for (const { tree } of patched.values()) redraw(tree);
+      });
+    recomputing = run;
+  }, 1500);
 }
 
 function startWatch() {
   if (notifierID) return;
   notifierID = Zotero.Notifier.registerObserver(
     {
-      notify: (_event: string, type: string) => {
+      notify: (event: string, type: string) => {
+        // `modify` on an item cannot change which collection it is in
+        // (that is a collection-item event), so ignore it — otherwise every
+        // rating click and every synced field repaints the whole tree
         if (
-          type === "collection" ||
-          type === "collection-item" ||
-          type === "item"
+          type === "item" &&
+          event !== "add" &&
+          event !== "delete" &&
+          event !== "trash" &&
+          event !== "restore"
         ) {
-          invalidateCounts();
+          return;
         }
+        invalidateCounts();
       },
     },
     ["collection", "collection-item", "item"],

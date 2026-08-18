@@ -1,7 +1,7 @@
 import { getString } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { getExtraLine, setExtraLine } from "../utils/extra";
-import { makeCell, rowItem, type ColumnSpec } from "./registry";
+import { makeCell, rowItem, isPlainClick, type ColumnSpec } from "./registry";
 
 /**
  * "Rating" column — 1–5 stars in Extra. Reads `Rating:` and the legacy
@@ -64,9 +64,13 @@ export function ratingColumn(): ColumnSpec {
         star.textContent = k <= n ? mark : option;
         star.dataset.value = String(k);
         for (const t of ["mousedown", "mouseup", "dblclick"]) {
-          star.addEventListener(t, (ev: Event) => ev.stopPropagation());
+          star.addEventListener(t, (ev: Event) => {
+            // a modified click is a selection gesture — let Zotero have it
+            if (isPlainClick(ev as unknown as MouseEvent)) ev.stopPropagation();
+          });
         }
         star.addEventListener("click", (ev) => {
+          if (!isPlainClick(ev as unknown as MouseEvent)) return;
           ev.stopPropagation();
           const item = rowItem(doc, index);
           if (!item || !item.isEditable()) return;
