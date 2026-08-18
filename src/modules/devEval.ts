@@ -33,6 +33,8 @@ import * as secrets from "../core/secrets";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
+import * as readerThemes from "../reader/themes";
+import * as colorSchemes from "../reader/colorSchemes";
 import * as columns from "../columns";
 import * as registry from "../columns/registry";
 import * as migrate from "../reading/migrate";
@@ -129,6 +131,8 @@ export function registerDevEval() {
             viewGroups,
             typeFilter,
             collectionCounts,
+            readerThemes,
+            colorSchemes,
           });
           if (typeof result !== "string") {
             try {

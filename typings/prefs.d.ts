@@ -39,6 +39,7 @@ declare namespace _ZoteroTypes {
       "network.cacheTTLHours": number;
       "statusAuto.markEmpty": boolean;
       "extra.stripOnExport": boolean;
+      "reader.schemes": boolean;
       "graph.visible": boolean;
       "graph.mode": string;
       "graph.height": number;

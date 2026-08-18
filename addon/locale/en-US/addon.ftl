@@ -188,3 +188,15 @@ typefilter-clear =
 typefilter-active = Showing only: { $types }
 typefilter-unavailable =
     .label = Not available on this Zotero version
+
+# ---- reader themes / colour schemes ----
+reader-theme-original = Zotero Original
+reader-theme-sepia = Zest Sepia
+reader-theme-eyecare = Zest Eye Care
+reader-theme-graphite = Zest Graphite
+reader-scheme-menu = Zest colour scheme
+reader-scheme-classic = Classic (yellow · red · green)
+reader-scheme-warm = Warm (orange · red · magenta)
+reader-scheme-cool = Cool (blue · green · purple)
+reader-themes-installed = { $count } reader themes are now available in the reader's Appearance menu
+reader-themes-removed = Removed { $count } Zest reader themes

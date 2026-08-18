@@ -39,6 +39,7 @@ import {
   sweepBadges as sweepCollectionBadges,
 } from "./views/collectionCounts";
 import { resetTypeFilter } from "./views/typeFilter";
+import { installColorSchemes } from "./reader/colorSchemes";
 import {
   registerAnnotSection,
   unregisterAnnotSection,
@@ -125,6 +126,7 @@ async function onStartup() {
     registerAllColumns();
   });
   step("itemPane", () => registerAnnotSection());
+  step("reader", () => installColorSchemes());
   step("menus", () => registerMenus());
   step("exportPatch", () => installExportPatch());
   step("tracker", () => {
