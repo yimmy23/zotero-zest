@@ -7,6 +7,12 @@ import { tagsColumn } from "./tags";
 import { textTagsColumn } from "./textTags";
 import { annotationsColumn } from "./annotations";
 import {
+  authorsColumn,
+  firstAuthorColumn,
+  lastAuthorColumn,
+  bumpAuthorsVersion,
+} from "./authors";
+import {
   publicationTagsColumn,
   impactFactorColumn,
   venueColumn,
@@ -42,6 +48,9 @@ const SPECS: Array<() => ColumnSpec> = [
   publicationTagsColumn,
   impactFactorColumn,
   venueColumn,
+  authorsColumn,
+  firstAuthorColumn,
+  lastAuthorColumn,
 ];
 
 const prefObservers: symbol[] = [];
@@ -111,6 +120,9 @@ export function registerAllColumns() {
   watchEnable(publicationTagsColumn, "column.pubtags.enable");
   watchEnable(impactFactorColumn, "column.if.enable");
   watchEnable(venueColumn, "column.venue.enable");
+  watchEnable(authorsColumn, "column.authors.enable");
+  watchEnable(firstAuthorColumn, "column.firstAuthor.enable");
+  watchEnable(lastAuthorColumn, "column.lastAuthor.enable");
   // journal ranks resolve in the background; repaint the rows that were waiting
   startRankService((ids) => refreshItems(ids));
   void loadDatasets();

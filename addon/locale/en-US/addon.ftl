@@ -220,3 +220,12 @@ pref-view-remove = Delete
 pref-config-export-done = Exported { $prefs } preferences, { $views } views and { $rules } tag rules
 pref-config-import-done = Imported { $prefs } preferences · { $views } views · { $rules } tag rules · { $skipped } entries skipped
 pref-rank-cleared = Journal cache cleared
+
+# ---- author columns ----
+column-authors = Authors
+column-first-author = First Author
+column-last-author = Last Author
+authors-cell-tip = { $count } creators
+authors-import-done = Imported from better-authors: { $applied }; not mapped: { $skipped }
+menu-authors-import =
+    .label = Import better-authors settings

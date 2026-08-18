@@ -93,3 +93,16 @@ pref("collectionCounts.mode", 0);
 
 // Reader
 pref("reader.schemes", true);
+
+// Author columns (all off by default; Zotero's own Creator column stays)
+pref("column.authors.enable", false);
+pref("column.firstAuthor.enable", false);
+pref("column.lastAuthor.enable", false);
+pref("authors.preset", "creator-like");
+pref("authors.count", 3);
+pref("authors.order", "auto");
+pref("authors.given", "full");
+pref("authors.initialsDot", true);
+pref("authors.markLast", false);
+pref("authors.lastMark", "†");
+pref("authors.selfNames", "");

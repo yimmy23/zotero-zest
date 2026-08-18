@@ -71,6 +71,12 @@ export function registerStyles(win: Window) {
     .virtualized-table .cell.zest-annots .zest-annot-dot { width: 7px; height: 7px; border-radius: 50%; }
     .virtualized-table .cell.zest-annots > .cell-text { font-variant-numeric: tabular-nums; }
 
+    /* Author marks: decoration only, never part of the sort key */
+    .virtualized-table .cell.zest-authors .zest-author-self,
+    .virtualized-table .cell.zest-firstauthor .zest-author-self,
+    .virtualized-table .cell.zest-lastauthor .zest-author-self { font-weight: 600; }
+    .virtualized-table .cell .zest-author-mark { color: var(--fill-secondary); }
+
     /* Tags (native swatch markup) */
     .virtualized-table .cell.zest-tags .tag-swatch { margin-inline-end: 3px; }
     .virtualized-table .cell.zest-tags .tag-swatch.emoji { font-size: calc(var(--zotero-font-size, 13px) * .923); }

@@ -43,6 +43,17 @@ declare namespace _ZoteroTypes {
       "graph.mode": string;
       "graph.height": number;
       "graph.maxNodes": number;
+      "column.authors.enable": boolean;
+      "column.firstAuthor.enable": boolean;
+      "column.lastAuthor.enable": boolean;
+      "authors.preset": string;
+      "authors.count": number;
+      "authors.order": string;
+      "authors.given": string;
+      "authors.initialsDot": boolean;
+      "authors.markLast": boolean;
+      "authors.lastMark": string;
+      "authors.selfNames": string;
       "nestedTags.show": boolean;
       "nestedTags.linkSymbol": string;
       "nestedTags.sort": string;

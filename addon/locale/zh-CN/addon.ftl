@@ -220,3 +220,12 @@ pref-view-remove = 删除
 pref-config-export-done = 已导出 { $prefs } 项设置、{ $views } 个视图、{ $rules } 条标签规则
 pref-config-import-done = 已导入 { $prefs } 项设置 · { $views } 个视图 · { $rules } 条标签规则 · 跳过 { $skipped } 项
 pref-rank-cleared = 已清空期刊缓存
+
+# ---- author columns ----
+column-authors = 作者
+column-first-author = 第一作者
+column-last-author = 末位作者
+authors-cell-tip = 共 { $count } 位作者
+authors-import-done = 已从 better-authors 导入：{ $applied }；未能对应：{ $skipped }
+menu-authors-import =
+    .label = 导入 better-authors 设置

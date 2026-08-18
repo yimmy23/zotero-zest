@@ -33,6 +33,8 @@ import * as dataset from "../rank/sources/localDataset";
 import * as secrets from "../core/secrets";
 import * as easyscholarSrc from "../rank/sources/easyscholar";
 import * as httpMod from "../core/http";
+import * as authors from "../authors/pipeline";
+import * as authorColumns from "../columns/authors";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
@@ -134,6 +136,8 @@ export function registerDevEval() {
             secrets,
             easyscholarSrc,
             httpMod,
+            authors,
+            authorColumns,
             viewGroups,
             typeFilter,
             collectionCounts,
