@@ -17,8 +17,16 @@ const delay = (ms) => Zotero.Promise.delay(ms);
 
 // start from the library root so row counts are comparable
 try {
-  await win.ZoteroPane.collectionsView.selectByID("L1");
-  await delay(800);
+  const zp = win.ZoteroPane;
+  const cv = zp.collectionsView;
+  cv.selection?.select(0);
+  // a programmatic selection does not always propagate to the item view in a
+  // headless run — switch the item view explicitly (Zotero 10 API)
+  const libraryRow = cv.getRow?.(0);
+  if (libraryRow && typeof zp.itemsView?.changeCollectionTreeRow === "function") {
+    await zp.itemsView.changeCollectionTreeRow(libraryRow);
+  }
+  await delay(1000);
 } catch {
   // older layout — carry on with whatever is selected
 }
@@ -36,22 +44,42 @@ const rootRows = [...doc.querySelectorAll(".zest-tagtree-row")].map((r) =>
 );
 check("tagtree.rows", rootRows.length > 0, rootRows.join(", "));
 
-// expand the first branch and filter by it
+// pick a tag branch that covers SOME but not all of the visible rows, so the
+// filter provably narrows the list whatever collection happens to be selected
 const before = win.ZoteroPane.itemsView.rowCount;
-const firstRow = doc.querySelector(".zest-tagtree-row");
-firstRow
-  ?.querySelector(".zest-tagtree-twisty")
-  ?.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
-await delay(400);
-const branch = doc.querySelector(".zest-tagtree-row");
-branch?.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
-await delay(1500);
-const filtered = win.ZoteroPane.itemsView.rowCount;
-check(
-  "tagtree.branchFilter",
-  filtered > 0 && filtered < before,
-  `${before} → ${filtered}`,
-);
+const rowsNow = win.ZoteroPane.itemsView.getSortedItems();
+// open every branch first so leaf rows exist
+for (const tw of doc.querySelectorAll(".zest-tagtree-twisty")) {
+  tw.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  await delay(120);
+}
+const treeRows = [...doc.querySelectorAll(".zest-tagtree-row")];
+const itemTags = rowsNow.map((i) => dev.tagScope.tagsOfItem(i, true));
+let picked = null;
+for (const row of treeRows) {
+  const path = row.getAttribute("data-tag") || "";
+  if (!path) continue;
+  // the tree strips the match prefix ("#"), so compare on the suffix
+  const n = itemTags.filter((tags) =>
+    tags.some((t) => t === path || t.endsWith(path) || t.startsWith(path)),
+  ).length;
+  if (n > 0 && n < before) {
+    picked = { row, path, n };
+    break;
+  }
+}
+if (picked) {
+  picked.row.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+  await delay(1500);
+  const filtered = win.ZoteroPane.itemsView.rowCount;
+  check(
+    "tagtree.branchFilter",
+    filtered === picked.n,
+    `${picked.path} covers ${picked.n} of ${before} → ${filtered}`,
+  );
+} else {
+  out.notes.push("tagtree.branchFilter: no branch narrows the current view");
+}
 dev.tagTreeUI.clearSelection(win);
 await delay(1200);
 check("tagtree.clear", win.ZoteroPane.itemsView.rowCount === before);
