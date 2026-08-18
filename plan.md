@@ -283,3 +283,25 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 9. 带真实 `pluginID` 的 dataKey（含 `\@ \.`）经 `refreshColumns()` 后列宽是否失灵（reading-list #27）；必要时 dataKey 走 `pluginID: ""` + 自命名空间（🔍 B 阶段第一件事）。
 10. 9.0.x `typeof window.title`（决定 `tab.audioStatus` 是否可用）。
 11. Zotero 10 beta 本机不可测：若你能提供一台装 10 beta 的隔离 profile，E 阶段补测多选 header 行与视图组；否则按官方清单写兼容代码并在 README 注明。
+
+---
+
+## 9. 官方手册对比结论（2026-08-18，Opus 子代理 · `.research/notion-manual-spec.md` + `notion-gap-matrix.md`）
+
+矩阵 120 行：✅ 已实现 21 · 🟡 部分 25 · 📅 C 29 · 📅 D 1 · ❌ 有意删除 12 · ⛔ 原 plan 未提 32。处理办法：
+
+**B1（阶段 B 内已改，commit 0b9c449）**：未读加粗只对「未读/待读」（无状态可选加入，默认关）；`#标签` 文字色 `auto`（同色相、亮度压到可读，暗色主题反向）；Tags 列不再重复显示被 `#标签` 规则命中的标签；`~~X` 多字符按字符类；前缀规则余下为空则隐藏；热力默认色 `#FFC6D3`/0.7 对齐原版；评级 `mark/option/color` 三个符号项 + `Extra 键名`（默认 `rate` 兼容原版，读取两者）；工具→Zest 顶部「Zest 设置…」入口；设置页 hint 修正。
+
+**折进阶段 C（原 plan 缺失或需细化）**
+1. 嵌套标签的**标注定位卡片**：按选中标签过滤当前条目的 PDF 标注 → 单击复制、双击 `Zotero.Reader.open(itemID,{annotationID})` 跳转（原版 2.2 的核心承诺，原 plan 遗漏）。宿主：条目面板 section（与 D 的信息面板同一容器）。
+2. 期刊标签：`Fields`（默认 `sci, sciif5, eii`，40+ 字段清单入设置页）、`Sort By` 多键（`sci, -sciif`；**缺失值永远排最后**，README 注明有意修正）、rank 阈值表（sciif ≥10/4/2/1/0 → 1–5 等）、`rankColors` 5 色（`#EE0000, #2F998C, #D2A500, #DA6D00, #007BF6`）、`Map` 对 key/value 分别映射（`A=B` 全等、`/re/=X` 正则 replace）、`defaultColor/textColor`、单条强制刷新（单元格右键）、easyScholar 密钥申请引导 + 全角逗号纠正 + 字段名大小写不敏感 + 刊名括号剥离。
+3. IF 列 `max`（15）/`progress`（条）/`info`（文字）三开关 + 默认色。
+4. 标注密度列（改名「标注」）：`bar` + `stack` 两种样式、`circle`、默认**关闭**（性能）。
+5. 视图组：新增/更新/删除三个入口改为显式菜单项 + 确认（不复刻长按与隐藏条件）；`Position` 改拖拽；提供旧 `columnsViews` 导入。
+6. 嵌套标签：`linkSymbol`（默认 `/`，7 选项）、4 种排序、全部折叠/展开、与原生标签选择器互切、`Copy Tag`/`Copy Full Tag`、批量前缀改名影响面提示。
+7. 分类计数默认关 + 4 种模式；Tags 列 `margin`、#标签 `opacity/margin/padding`（与「标签规则」设置页一起做）。
+8. 图谱：模式圆点常驻、节点文案 `lastName, year`、显式「重新分析」、默认高 400px、跟随主题。
+
+**折进阶段 D**：Authors 列接受旧变量 `${firstName} ${lastName} ${firstCreator}`、旧切片语法 `0:1, -1:`、`join` 默认 `", "` 并提供旧配置导入；信息面板的每页热力条可点击跳页（原「高能进度条」）；阅读统计面板注明数据来源与导出方式。
+
+**有意差异（写进 README「与原版的差异」）**：无 Shift+P 命令面板（功能分散到菜单/设置/列内交互）；不再可配奇偶/选中/悬停行底色（只用 Zotero 主题变量）；阅读记录不进文库（zest.sqlite + 导入导出）；也记录独立阅读器窗口与 EPUB；计时口径 = 120 s 无输入停表（原版 60 s 页面不动）；评级单击即写入；标签列跟随 Zotero 7+ 口径（彩色 + emoji）；`#标签` 正则无捕获组显示整个标签；期刊标签缺数据永远排最后；图谱跟随主题；视图组操作显式化；设置统一在「设置 → Zest」；附件图标不按扩展名替换；评分 Extra 键可选（默认 `rate`）。
