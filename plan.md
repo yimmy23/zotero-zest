@@ -366,3 +366,27 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 - **偏好实时生效（major）**：`tabs.*` / `nestedTags.*` / `graph.*` 只在挂载时读一次，设置页的开关要重启才生效 → 补齐 `Zotero.Prefs.registerObserver`。
 - **Extra 是用户的**（major，上一提交）：`withCitationLine` 会删掉 Extra 里所有空行、且未锚定的模式会把「3 citations still missing…」这类正文当成引文行删除 → 模式整行锚定、保留空行与非引文行。
 - 其余：信息面板尊重只读条目、热力条打开被统计的那个附件而非第一个、引文数 0 不再是空单元格、简记列不再抢走 Zotero 自己的双击、会话恢复后台打开并限速（>12 个先询问）、批量关闭一次调用、分组成员清理与满员丢最旧、matrix 丢弃下拉里已不存在的过滤值并给搜索防抖、两个对话框恢复文字可选中（chrome UA 样式表默认 `user-select:none`）、统计窗口重开时重算。
+
+---
+
+## 12. 阶段 E 审计落地记录（2026-08-18）
+
+**审计方式**：7 维（安全隐私 / 数据完整性 / 与原生 Zotero 10 冲突 / 核心正确性 / 性能 / UI·主题·本地化·可访问性 / 生命周期）多智能体全库审查，每条发现交由独立"反驳者"对抗验证（构造不出具体失败场景即判不成立）。**41 → 34 条原始发现 → 25 条确认，全部修复**（commit `f943e63`）。
+
+**两条 critical（均在分类计数）**
+- `redraw()` 里调了 `CollectionTree.refresh()`，而它是**数据重建**：会置 `selection.selectEventsSuppressed = true` 并要求调用方恢复选择后清标志。裸调（且每个 item 事件都调）导致选择事件被永久抑制——**点分类不再加载条目**。改为 `forceUpdate + invalidate`（徽章只需要重绘）。
+- 递归子树计数跑在**行渲染器**里，每行 O(子树)，且被每个 item 事件作废。改为渲染路径之外的一次自底向上遍历（1.5 s 合并、忽略不可能改变计数的 item 事件），渲染器只读；>2000 个分类的库只算直接计数并记录日志。
+
+**"不与原生冲突"这条红线上的三处**
+- 评分星、状态点、简记单元格吞掉 mousedown/mouseup → 落在这些列上的 **Shift/Cmd 点击变成了改评分**而不是扩展选择。现在只有"无修饰键的左键"归我们。
+- Zest 的过滤器活在 `CollectionTreeRow.getItems` 里，Zotero 的 reveal 路径看不见 → 阅读器里的 **View ▸ Show Item in Library**、Connector 保存、Word 的"Show in Library"在条目被过滤时**静默失败**。现包一层 `ZoteroPane.selectItems`：Zotero 先试，条目没出现且 Zest 有过滤时，清掉**我们自己的**过滤再让 Zotero 试一次。
+- 嵌套标签树替换了 Zotero 可键盘操作的标签选择器，却没有键盘契约 → 补齐 `role=tree/treeitem`、`aria-selected/expanded`、单一 roving tab stop、方向键 + Home/End + Enter/Space、焦点描边。
+
+**Extra 是用户的字段**
+- "更新被引数"会删除 GSCC / ZSCC / `openalex.cit_count`——**别的插件的数据**，且是批量跨条目。现在只替换我们自己的 `Citations:` 行，且**原位替换**不再挪到末尾。
+- 写一个键会删掉该键的**另一种拼写**（`rate:` 与 `Rating:` 并存时），迁移过来的库每次写入都在丢行。
+- `zest-config.json` 解析失败不再变成"空配置 + 下一次写入把真文件覆盖"：存储转只读并提示用户。
+
+**其余已修**：第二个主窗口什么都没绑定（`onMainWindowLoad` 时 ZoteroPane 的树还不存在 → 改为按窗口等待）；关掉第二个窗口会清掉第一个窗口的徽章；标签过滤在每次条目列表刷新时重走全库附件/标注（缓存改为跨 pass 存活、由 notifier 精确失效）；全库标签遍历会叠加（改为同时只跑一个、过期再补跑一次）；CSV 导出只做了引号转义没有防公式注入（`=/+/-/@` 开头的标注文本在 Excel 里会执行）；强制刷新分区会在每次请求前清掉 easyScholar 退避、且批量在 40006 后继续硬打；本地数据集尚未加载完就发起分区查询并把"无分区"缓存 30 天；标注直方图按"最后一个有标注的页"缩放而不是全文；信息面板忽略评分符号/颜色偏好、只读库里控件看起来仍可点；"Like Zotero's Creator column" 预设与 `getFirstCreatorFromData` 不一致（现已逐字对齐：单作者姓氏、`A and B`、`A et al.`）；灰显标签行对比度只有 2.1:1。
+
+**验收**：`scripts/phase-e-probe.js` —— Zotero 10.0 **20/20 通过**；`scripts/phase-d-probe.js` 24/24、`scripts/phase-c-probe.js` 23/23 回归通过；第二窗口实测（徽章 2、标签行 2、样式与主色 token 均就位，关闭后第一窗口徽章不受影响）。
