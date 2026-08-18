@@ -1,8 +1,8 @@
 # Zest — a reading-centric Zotero plugin (Zotero 9 & 10)
 
-> 中文见下 · **Status: work in progress.** Phases B (columns · reading records · storage) and C (tags ·
-> journal ranks · views · graph · reader) are implemented and verified on Zotero 10.0 (and 9.0.6 for
-> phase B). No release has been published yet.
+> 中文见下 · **Status: work in progress.** Phases B (columns · reading records · storage), C (tags ·
+> journal ranks · views · graph · reader) and D (authors · citations · panels · statistics · annotation
+> matrix · vertical tabs) are implemented and verified on Zotero 10.0 and 9.0.6. No release yet.
 
 Zest is a from-scratch, open-source rewrite of the ideas behind
 [zotero-style](https://github.com/MuiseDestiny/zotero-style) (MuiseDestiny, AGPL-3.0) for modern
@@ -31,6 +31,13 @@ looked at, whether you finished it, and how you rated it.
 | **Reader themes & colour schemes**        | three reading backgrounds written into Zotero's own reader-theme list, plus highlight palettes in the reader's colour menu                                                                                                                            |
 | **Collection counts**                     | optional item counts next to collection names (three modes)                                                                                                                                                                                           |
 | Configuration                             | export/import the whole configuration (preferences, views, tag rules, dataset list) as one JSON file — API keys are never included                                                                                                                    |
+| **Authors** columns                       | formatted creator lists (Authors / First / Last): script-aware ordering and separators, "et al." from Zotero's own locale, optional last-author mark that never touches the sort key; imports better-authors settings                                 |
+| **Citations** column                      | count kept in `Extra` as `Citations: N (Source) [date]` — Crossref → OpenAlex → optional Semantic Scholar, fetched only when you ask; reads and replaces GSCC / ZSCC / eschnett / openalex lines from other plugins                                   |
+| **Zest panel**                            | one item-pane section: authors, venue with rank badges, citations with a refresh button, reading time with a clickable per-page strip (jumps to that page), status/rating/remark editing, abstract, open-in links                                     |
+| **Remark** column                         | a one-line note in `Extra`, editable in the list and the panel                                                                                                                                                                                        |
+| **Reading statistics**                    | a window with a GitHub-style year calendar, totals, streaks and your most-read items                                                                                                                                                                  |
+| **Annotation matrix**                     | every annotation of the current view in one searchable table (AND / OR / exclude), filter by colour or tag, export CSV or Markdown, double-click to jump                                                                                              |
+| **Vertical tabs**                         | optional tab sidebar: groups that survive restarts, saved sessions, search, drag to reorder — off by default, and it disables itself if Zotero changes its tab internals                                                                              |
 
 Everything is in **Settings → Zest**; per-item actions are in the item context menu (**Zest ▸**) and
 under **Tools ▸ Zest**.
@@ -39,8 +46,7 @@ Zest **extends** Zotero 10 rather than competing with it: anything that replaces
 by default and reversible, filters compose with Zotero's own search instead of overriding it, and reader
 themes and tag colours go through Zotero's own APIs.
 
-Planned next: vertical tab manager, citation counts, an authors column, the literature info panel and a
-reading-statistics dashboard. The full plan, including verified
+Next: a full-library audit pass and the first release. The full plan, including verified
 Zotero 9/10 API facts and the deliberate differences from the original plugin, is in
 [`plan.md`](./plan.md).
 
@@ -71,8 +77,8 @@ user-facing data formats (`Extra` keys, `#Tags` match syntax) so existing librar
 
 # Zest — 以“阅读”为中心的 Zotero 插件（Zotero 9 / 10）
 
-> **状态：开发中。** 阶段 B（列 · 阅读记录 · 存储）与阶段 C（标签体系 · 期刊分级 · 视图 · 图谱 · 阅读器）已完成，
-> 在 Zotero 10.0 上实测通过（阶段 B 亦在 9.0.6 上验证）；尚未发布 Release。
+> **状态：开发中。** 阶段 B（列 · 阅读记录 · 存储）、C（标签体系 · 期刊分级 · 视图 · 图谱 · 阅读器）与
+> D（作者 · 被引 · 面板 · 统计 · 标注矩阵 · 垂直标签页）已完成，在 Zotero 10.0 与 9.0.6 上实测通过；尚未发布 Release。
 
 Zest 是对 [zotero-style](https://github.com/MuiseDestiny/zotero-style)（MuiseDestiny，AGPL-3.0）思路的
 **从零重写**，面向新版 Zotero，完全开源。它把“阅读”这件事放回条目列表：这篇读了多久、哪几页真的看过、
@@ -98,13 +104,20 @@ Zest 是对 [zotero-style](https://github.com/MuiseDestiny/zotero-style)（Muise
 - **阅读器主题与配色**：三套阅读背景写入 Zotero 官方的阅读器主题列表；阅读器取色菜单里增加高亮配色方案。
 - **分类计数**：可选，在分类名旁显示条目数（三种口径）。
 - 配置：整套配置（设置项、视图、标签规则、数据集清单）可导出 / 导入为一个 JSON 文件，**不包含任何 API 密钥**。
+- **作者列**（作者 / 第一作者 / 末位作者）：按文字系统决定姓名顺序与分隔符，「等 / et al.」取自 Zotero 自身语言，可选的末位作者标记不进排序键；支持导入 better-authors 的设置。
+- **被引数列**：数值写在 `Extra` 的 `Citations: N (来源) [日期]` 行——Crossref → OpenAlex → 可选 Semantic Scholar，只在你主动触发时联网；能读取并替换其它插件写下的 GSCC / ZSCC / eschnett / openalex 行。
+- **Zest 面板**：条目面板中的一栏——作者、期刊与分区徽章、被引数（带刷新）、阅读时长与可点击的每页热力条（点哪段跳哪页）、状态 / 评级 / 简记直接编辑、摘要、跳转外部平台。
+- **简记列**：一行备注，存在 `Extra`，列表与面板中都能改。
+- **阅读统计**：独立窗口，GitHub 式年度日历、累计时长、连续天数、读得最多的条目。
+- **标注矩阵**：把当前视图的全部标注汇成一张可搜索的表（且 / 或 / 排除），按颜色或标签过滤，导出 CSV 或 Markdown，双击跳转。
+- **垂直标签页**：可选的标签页侧栏——分组可跨重启保留、会话保存、搜索、拖拽排序；**默认关闭**，若 Zotero 改动标签内部实现会自动停用。
 
 设置集中在**设置 → Zest**；条目右键 **Zest ▸**、菜单 **工具 ▸ Zest** 提供逐条与批量操作。
 
 Zest 是 Zotero 10 的**扩展与优化**，不与原生功能冲突：任何替换原生界面的能力默认关闭且可一键切回，
 筛选与 Zotero 自身的搜索叠加而非覆盖，阅读器主题与标签颜色都通过 Zotero 官方接口写入。
 
-接下来：垂直标签页管理器、被引数列、作者列、文献信息面板、阅读统计面板。完整计划（含已验证的 Zotero 9/10 API 事实、以及与原版有意为之的差异）见 [`plan.md`](./plan.md)。
+接下来：全库审查与首个 Release。完整计划（含已验证的 Zotero 9/10 API 事实、以及与原版有意为之的差异）见 [`plan.md`](./plan.md)。
 
 ## 许可与致谢
 

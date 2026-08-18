@@ -337,3 +337,23 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 - **多窗口**：过滤器注册表、类型筛选状态、标注卡片的标签来源全部改为按窗口隔离；`getItems` 包装通过 `row.view._ownerDocument` 判断归属窗口，判断不出来就不过滤。
 - **生命周期**：标签树/图谱注入到 `mainPopupSet` 的菜单、`itemsView.onRefresh`/`collectionsView.onSelect` 监听器、分类计数徽章都在卸载时按窗口清理；热重载/升级留下的旧包装通过挂在函数上的 `__zestOriginal` 恢复。
 - **性能**：标签扫描每 200 条让出主线程；筛选一趟内缓存每条目的标签；`setting` 通知只在 `tagColors` 时重建（否则阅读器每翻一页都会触发）；搜索框 150 ms 去抖；`Retry-After` 上限 60 s。
+
+---
+
+## 11. 阶段 D 落地记录（2026-08-18）
+
+**新增模块**：`authors/pipeline.ts` + `columns/authors.ts`（作者三列）、`cite/{index,sources,extraFormat}.ts` + `columns/citations.ts`（被引数）、`columns/remark.ts`、`panes/infoSection.ts`（Zest 文献面板）、`panes/statsDialog.ts`（阅读统计 + 日历）、`panes/annotMatrix.ts`（标注矩阵）、`tabs/{model,sidebar}.ts`（垂直标签页）、`ui/icons.ts`（内联图标集）。
+
+**关键设计**
+- **作者**：角色由 `Zotero.CreatorTypes.getPrimaryIDForType` 动态解析（film→director、thesis→author + contributor 作导师），姓名顺序与分隔符按**相邻两名的文字系统**决定（王小明、李雷 / 王小明, John Smith），标记（†、我）作为独立 part 渲染，**永不进入排序键**；提供 better-authors 设置导入。
+- **被引数**：数值只存 `Extra` 的 `Citations: N (Source) [YYYY-MM-DD]`（citation-tally 同款），列直接读 Extra（O(1)、无缓存可陈旧）；读取 8 种历史格式（GSCC/ZSCC/eschnett 两代/openalex/裸行）并在写入时**替换而非叠加**；来源链 Crossref → OpenAlex → 可选 S2，**只在用户触发时联网**（Crossref 的 `/works/{doi}` 不支持 `select`，实测 400，已改为取整条记录）。
+- **面板**：`registerSection` 注册「Zest」与「Annotation Finder」两节；面板内每页热力条可点击跳页；渲染期间不发网络请求。
+- **统计 / 矩阵**：两个独立窗口（basicViewer 宿主）。日历最后一列必须是本周（否则今天被裁掉，已修）；`openDialog` 会复用同名窗口，因此已加载时立即渲染。矩阵搜索语法：空格＝且、`|`＝或、`-词`＝排除；导出 CSV / Markdown。
+- **垂直标签页**：五点探针（`add/close/move/select` + `_tabs`）不过就整块停用；分组按 `${libraryID}/${itemKey}` 存 `zest-config.json`（tab id 每次会话都变）；原生标签栏只在侧栏显示时用 CSS 隐藏，卸载即恢复。**默认关闭（用户拍板）**。Zotero 10 实测**没有**原生标签分组 API，不冲突。
+- **UI**：用户要求扁平化、无奇怪阴影、加图标 → 新增 `ui/icons.ts`（16 网格、1.5 描边、`currentColor`）用于标签树 / 图谱 / 面板 / 标注卡片 / 标签页侧栏 / 两个对话框；对话框按钮与下拉改为自绘扁平样式（`appearance:none`、无 box-shadow、自绘箭头）。
+
+**踩到并修掉的坑**：`sanitizeConfig` 会重建整份配置文档 → 以自由键写入的 tabGroups 被静默丢弃（改为一等字段）；`Components.Constructor("@mozilla.org/xmlextras/xmlhttprequest;1","nsIXMLHttpRequest")` 在现代 Gecko 抛 `Invalid InterfaceID`（改用主窗口的 `XMLHttpRequest`，无窗口时退回 `fetch`）；标签选择器容器在启动时可能尚未挂载 → 安装重试；图谱/侧栏/标签树的头部需要 `flex-wrap: nowrap` 才不会换行。
+
+**easyScholar 实测（用户提供真实密钥，仅存于隔离 dev profile 的登录管理器）**：Nature 返回 24 个数据集（`sciUp=综合性期刊1区`、`sciif=56.1`、`sci=Q1`…）；中华医学杂志返回 `cscd=核心库`、`pku=1`、`zhongguokejihexin` 等；密钥未出现在 Zotero 的 debug 日志、错误控制台或导出的配置包中。默认展示字段无命中时，回落顺序为 CN 常用索引（cscd/pku/cssci/…）→ OpenAlex `oa2yr`。
+
+**验收探针**：`scripts/phase-d-probe.js` —— Zotero 10.0 与 9.0.6 均 **22/22 通过**。
