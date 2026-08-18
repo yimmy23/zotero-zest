@@ -167,3 +167,24 @@ rank-menu-refresh =
     .label = Refresh journal data for the selected items
 rank-refresh-done = Updated { $count } journals
 rank-no-key = No easyScholar key set — using local datasets and OpenAlex only
+
+# ---- view groups ----
+views-menu = Zest views
+views-empty = No saved views
+views-add = Save current layout as a view…
+views-add-label = Name for this column layout
+views-update = Update a view with the current layout
+views-delete = Delete a view
+views-delete-confirm = Delete the view “{ $name }”? The columns themselves are not changed.
+views-restore = Restore the layout from before the last switch
+views-untitled = New view
+views-previous = Previous layout
+
+# ---- type filter / collection counts ----
+menu-typefilter =
+    .label = Filter by item type
+typefilter-clear =
+    .label = Show all types
+typefilter-active = Showing only: { $types }
+typefilter-unavailable =
+    .label = Not available on this Zotero version

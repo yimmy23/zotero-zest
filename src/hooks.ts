@@ -27,6 +27,19 @@ import {
 } from "./tags/nestedTree";
 import { clearItemFilters } from "./views/itemFilter";
 import {
+  installViewMenu,
+  uninstallViewMenu,
+  uninstallAllViewMenus,
+} from "./views/viewGroups";
+import {
+  installCollectionCounts,
+  uninstallCollectionCounts,
+  uninstallAllCollectionCounts,
+  syncCollectionCounts,
+  sweepBadges as sweepCollectionBadges,
+} from "./views/collectionCounts";
+import { resetTypeFilter } from "./views/typeFilter";
+import {
   registerAnnotSection,
   unregisterAnnotSection,
 } from "./panes/annotSection";
@@ -134,6 +147,16 @@ async function onStartup() {
         true,
       ),
       Zotero.Prefs.registerObserver(
+        `${P}.collectionCounts.enable`,
+        () => syncCollectionCounts(),
+        true,
+      ),
+      Zotero.Prefs.registerObserver(
+        `${P}.collectionCounts.mode`,
+        () => syncCollectionCounts(),
+        true,
+      ),
+      Zotero.Prefs.registerObserver(
         `${P}.tags.hideInTitle`,
         () => {
           for (const win of Zotero.getMainWindows()) {
@@ -175,10 +198,15 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   applyRootFlags(w, !!getPref("tags.hideInTitle"));
   installTitleDecor(w);
   installTagTree(w);
+  installViewMenu(w);
+  sweepCollectionBadges();
+  installCollectionCounts(w);
   restoreGraphPane(w);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  uninstallCollectionCounts(win);
+  uninstallViewMenu(win);
   uninstallTagTree(win);
   hideGraphPane(win);
   uninstallTitleDecor(win);
@@ -190,6 +218,9 @@ async function onShutdown() {
   readingTracker.stop();
   unregisterAnnotSection();
   uninstallAllTagTrees();
+  uninstallAllViewMenus();
+  uninstallAllCollectionCounts();
+  resetTypeFilter();
   clearItemFilters();
   uninstallGraphPanes();
   uninstallExportPatch();

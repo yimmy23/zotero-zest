@@ -3,7 +3,7 @@ import { getString, getLocaleID } from "../utils/locale";
 import { guard } from "../utils/guard";
 import { readableTextColor } from "../ui/color";
 import { hexToRgb } from "../reading/heat";
-import { selectedTagNames } from "../tags/nestedTree";
+import { selectedTagNames, onTagSelectionChange } from "../tags/nestedTree";
 
 /**
  * "Zest · Annotations" item-pane section — locator cards.
@@ -24,6 +24,7 @@ import { selectedTagNames } from "../tags/nestedTree";
  */
 
 let sectionID: string | false = false;
+let unsubscribeSelection: (() => void) | undefined;
 /** props.refresh per rendered body, so the tag tree can repaint the cards */
 const refreshers = new Map<Element, () => void>();
 
@@ -77,11 +78,14 @@ export function registerAnnotSection() {
       }
     },
   });
+  unsubscribeSelection = onTagSelectionChange(() => refreshAnnotSections());
   sectionID = typeof result === "string" ? result : false;
   if (!sectionID) ztoolkit.log("[annots] registerSection rejected the options");
 }
 
 export function unregisterAnnotSection() {
+  unsubscribeSelection?.();
+  unsubscribeSelection = undefined;
   refreshers.clear();
   if (!sectionID) return;
   try {

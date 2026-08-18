@@ -68,6 +68,8 @@ declare namespace _ZoteroTypes {
       "if.progress": boolean;
       "if.info": boolean;
       "if.color": string;
+      "collectionCounts.enable": boolean;
+      "collectionCounts.mode": number;
     };
   }
 }

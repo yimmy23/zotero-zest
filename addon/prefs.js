@@ -83,3 +83,7 @@ pref("if.max", 15);
 pref("if.progress", true);
 pref("if.info", true);
 pref("if.color", "");
+
+// Collection counts (off by default — Zotero deliberately hides these)
+pref("collectionCounts.enable", false);
+pref("collectionCounts.mode", 0);

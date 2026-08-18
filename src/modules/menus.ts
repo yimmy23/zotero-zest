@@ -12,6 +12,13 @@ import { runBatch } from "../ui/batch";
 import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
 import { refreshJournal } from "../rank";
+import {
+  typesInView,
+  toggleType,
+  clearTypeFilter,
+  activeTypes,
+  canTypeFilter,
+} from "../views/typeFilter";
 
 /**
  * Menus via the official `Zotero.MenuManager` (Zotero 8+; this plugin
@@ -132,6 +139,32 @@ async function clearReadingData(items: Zotero.Item[]) {
   }
 }
 
+/**
+ * The type submenu is rebuilt on every popup: MenuManager keeps our array by
+ * reference, so we return live-computed children through a getter-ish factory
+ * that Zotero calls when the menu is shown.
+ */
+function typeFilterMenus(): any[] {
+  const win = Zotero.getMainWindow() as unknown as Window;
+  const items: any[] = [];
+  if (!win) return items;
+  for (const { type, label, count } of typesInView(win).slice(0, 20)) {
+    items.push({
+      menuType: "menuitem",
+      label: count ? `${label} (${count})` : label,
+      isChecked: () => activeTypes().includes(type),
+      onCommand: () => void toggleType(win, type),
+    });
+  }
+  items.push({ menuType: "separator" });
+  items.push({
+    menuType: "menuitem",
+    l10nID: getLocaleID("typefilter-clear"),
+    onCommand: () => void clearTypeFilter(win),
+  });
+  return items;
+}
+
 export function registerMenus() {
   const mm = (Zotero as any).MenuManager;
   if (!mm?.registerMenu) {
@@ -236,6 +269,12 @@ export function registerMenus() {
               const win = Zotero.getMainWindow();
               if (win) toggleTagTree(win as unknown as Window);
             },
+          },
+          {
+            menuType: "submenu",
+            l10nID: getLocaleID("menu-typefilter"),
+            getVisibility: () => canTypeFilter(),
+            menus: typeFilterMenus(),
           },
           {
             menuType: "menuitem",

@@ -94,6 +94,13 @@ export function registerStyles(win: Window) {
     }
     .virtualized-table .cell.zest-if > .cell-text { font-variant-numeric: tabular-nums; }
 
+    /* Collection count badge */
+    #collection-tree .cell.primary .zest-count {
+      margin-inline-start: auto; padding-inline-start: 6px;
+      color: var(--fill-secondary); font-variant-numeric: tabular-nums;
+      font-size: calc(var(--zotero-font-size, 13px) * .846);
+    }
+
     /* ---------- nested tag tree ---------- */
     /* Zotero styles #zotero-tag-selector with display:flex, which beats the
        UA sheet's [hidden]{display:none} — so hiding it needs our own rule. */

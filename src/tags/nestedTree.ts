@@ -21,7 +21,6 @@ import {
 import { resolveTagStyle } from "./rules";
 import { setItemFilter, refreshItemView, canFilter } from "../views/itemFilter";
 import { showTagContextMenu } from "./menu";
-import { refreshAnnotSections } from "../panes/annotSection";
 
 /**
  * Nested tag tree — our own view of the tag selector.
@@ -413,9 +412,31 @@ export function clearSelection(win: Window) {
   render(state);
 }
 
+/**
+ * Listeners for "the selected tags changed" (the annotation cards subscribe).
+ * A callback registry rather than an import keeps this module free of a cycle
+ * with panes/annotSection — circular imports in the bundled IIFE evaluate in
+ * an unpredictable order and can blow up at load time.
+ */
+const selectionListeners = new Set<() => void>();
+
+export function onTagSelectionChange(fn: () => void): () => void {
+  selectionListeners.add(fn);
+  return () => selectionListeners.delete(fn);
+}
+
+function emitSelectionChange() {
+  for (const fn of selectionListeners) {
+    try {
+      fn();
+    } catch (e) {
+      ztoolkit.log("[tags] selection listener failed", e);
+    }
+  }
+}
+
 function applyTagFilter(state: TreeState) {
-  // the locator cards follow the same selection
-  refreshAnnotSections();
+  emitSelectionChange();
   const groups = [...state.selection.values()].map((set) => new Set(set));
   if (!groups.length) {
     setItemFilter("tags", null);

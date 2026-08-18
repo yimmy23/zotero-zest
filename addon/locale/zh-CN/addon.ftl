@@ -167,3 +167,24 @@ rank-menu-refresh =
     .label = 刷新所选条目的期刊数据
 rank-refresh-done = 已更新 { $count } 本期刊
 rank-no-key = 未填写 easyScholar 密钥——只使用本地数据集与 OpenAlex
+
+# ---- view groups ----
+views-menu = Zest 视图
+views-empty = 还没有保存的视图
+views-add = 把当前列布局保存为视图…
+views-add-label = 为这套列布局起个名字
+views-update = 用当前布局更新某个视图
+views-delete = 删除视图
+views-delete-confirm = 删除视图「{ $name }」？当前的列布局不会改变。
+views-restore = 恢复切换前的列布局
+views-untitled = 新视图
+views-previous = 上一次的布局
+
+# ---- type filter / collection counts ----
+menu-typefilter =
+    .label = 按条目类型筛选
+typefilter-clear =
+    .label = 显示全部类型
+typefilter-active = 仅显示：{ $types }
+typefilter-unavailable =
+    .label = 当前 Zotero 版本不支持
