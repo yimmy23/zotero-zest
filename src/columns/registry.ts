@@ -48,6 +48,29 @@ export interface ColumnSpec {
 
 const registered = new Map<string, string>(); // spec.key -> registered dataKey
 
+/**
+ * Column dataKeys are the same string in every plugin instance
+ * (`zest@zotero-zest.app-reading`), so `unregisterColumn` from an OLD instance
+ * removes the NEW instance's columns. That is not hypothetical: installing an
+ * updated xpi (and every dev hot reload) overlaps a shutdown with a startup,
+ * and the columns then vanish until Zotero is restarted while every
+ * `column.*.enable` preference still says true.
+ *
+ * So registration claims ownership on a Zotero-global marker, and teardown
+ * only touches the manager while it still holds that claim.
+ */
+const OWNER_KEY = "__zestColumnOwner";
+const INSTANCE_ID = (((Zotero as any)[OWNER_KEY]?.instance as number) ?? 0) + 1;
+
+function claimColumns() {
+  (Zotero as any)[OWNER_KEY] = { instance: INSTANCE_ID };
+}
+
+function ownsColumns(): boolean {
+  const owner = (Zotero as any)[OWNER_KEY];
+  return !owner || owner.instance === INSTANCE_ID;
+}
+
 export function registerColumn(spec: ColumnSpec): boolean {
   if (registered.has(spec.key)) return true;
   if (spec.enabledPref && !Zotero.Prefs.get(spec.enabledPref, true)) {
@@ -127,6 +150,7 @@ export function registerColumn(spec: ColumnSpec): boolean {
     return false;
   }
   registered.set(spec.key, key);
+  claimColumns();
   return true;
 }
 
@@ -134,6 +158,14 @@ export function unregisterColumn(key: string) {
   const dataKey = registered.get(key);
   if (!dataKey) return;
   registered.delete(key);
+  if (!ownsColumns()) {
+    // a newer instance of the plugin has re-registered these dataKeys; taking
+    // them out now would strip the columns from the running Zotero
+    ztoolkit.log(
+      `[columns] skipping unregister of ${key}: newer instance owns it`,
+    );
+    return;
+  }
   try {
     (Zotero as any).ItemTreeManager?.unregisterColumn?.(dataKey);
   } catch (e) {

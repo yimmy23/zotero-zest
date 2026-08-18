@@ -229,12 +229,18 @@ const resolve = (value) => {
   probeEl.style.backgroundColor = value;
   return win.getComputedStyle(probeEl).backgroundColor;
 };
+// Zotero has its own appearance setting; ui.systemUsesDarkTheme does nothing
+// once the user (or a previous probe) picked light/dark explicitly
+const themePref = "browser.theme.toolbar-theme";
+const themeBefore = Services.prefs.getIntPref(themePref, 2);
+Services.prefs.setIntPref(themePref, 1);
+await delay(2000);
 const light = resolve("var(--zest-accent-strong)");
-Services.prefs.setIntPref("ui.systemUsesDarkTheme", 1);
-await delay(1200);
+Services.prefs.setIntPref(themePref, 0);
+await delay(2000);
 const dark = resolve("var(--zest-accent-strong)");
-Services.prefs.clearUserPref("ui.systemUsesDarkTheme");
-await delay(600);
+Services.prefs.setIntPref(themePref, themeBefore);
+await delay(1200);
 probeEl.remove();
 check("accent.strongFollowsTheme", light !== dark, `${light} | ${dark}`);
 
