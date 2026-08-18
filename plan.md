@@ -329,3 +329,11 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **其它真机结论**：`Zotero.Tags.getAll` 是异步的（`getColors` 同步）；`collectionsView.renderItem` 是实例字段且以 React prop 形式传下去，取消挂钩后必须再扫一次 DOM 才能清掉徽章；OpenAlex 自 2026-02 起按信用点计费，Zest 只用 0 点的单体端点（`/sources/issn:`、`/works/doi:`、`/autocomplete/sources`），**永不按刊名 `.search`**；easyScholar 的错误码在 HTTP 200 的响应体里（40002/40005/40006），退避必须自己做；`unregisterEventListener` 在 9.0.6 仍是反向过滤（会误删其它插件的监听器），因此永不调用。
 
 **验收探针**：`scripts/phase-c-probe.js`（`scripts/dev-eval.sh -f scripts/phase-c-probe.js`），覆盖嵌套树挂载/筛选/搜索、标注卡片、9 个列注册、期刊链路、视图组应用与还原、类型筛选、分类计数开关、图谱渲染与拆除、阅读器主题与菜单钩子、错误控制台。
+
+**阶段 C 对抗审查（5 维 × 54 条原始发现 → 逐条反驳 → 27 条确认，全部修复）**：`.research/` 外的修复清单见 git 历史（commits `98e6755`、`5b01717`、`3af9edd`）。要点：
+- **数据**：本地数据集写盘用自有格式、读回却又走了一遍导入解析器 → 重启后字段全部塌成 `[object Object]`（已改为 `readStoredRows`）；网络不可达被当成「该刊没有分区」缓存 30 天（改为内存态 10 分钟退避）；`getItems` 过滤在 Trash / 快搜命中子条目时会误删子行（改为「父条目原本就不在集合里则保留」）；标注删除事件里 Zotero 只给 `{libraryID,key}`，原分支是死代码（改为在扫描时记录 annotation→条目 的归属表）。
+- **隐私**：easyScholar 密钥在 URL 里 → Zotero 会把每个请求 URL 写进 debug 日志（其内置脱敏只匹配 `key=`），我们自己的日志也会打印 → 改为 **绕过 `Zotero.HTTP` 用裸 XHR 发送 + 自有日志脱敏 + 该请求永不进 URL 缓存**；`politeEmail()` 不再伪造一个固定邮箱，用户没填就不带 `mailto`；配置导出永不包含任何含 `secret/key/token/password` 的项。
+- **默认值**：`rank.autoFetch` 与 `column.pubtags.enable` 改为默认关闭——全新安装不应在首帧就对第三方 API 发起成百上千次查询。
+- **多窗口**：过滤器注册表、类型筛选状态、标注卡片的标签来源全部改为按窗口隔离；`getItems` 包装通过 `row.view._ownerDocument` 判断归属窗口，判断不出来就不过滤。
+- **生命周期**：标签树/图谱注入到 `mainPopupSet` 的菜单、`itemsView.onRefresh`/`collectionsView.onSelect` 监听器、分类计数徽章都在卸载时按窗口清理；热重载/升级留下的旧包装通过挂在函数上的 `__zestOriginal` 恢复。
+- **性能**：标签扫描每 200 条让出主线程；筛选一趟内缓存每条目的标签；`setting` 通知只在 `tagColors` 时重建（否则阅读器每翻一页都会触发）；搜索框 150 ms 去抖；`Retry-After` 上限 60 s。
