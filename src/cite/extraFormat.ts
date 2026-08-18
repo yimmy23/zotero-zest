@@ -110,16 +110,37 @@ export function formatCitationLine(info: {
 }
 
 /**
+ * Lines that are ONLY a citation record. Anchored at both ends, because the
+ * loose patterns used for reading would also swallow a user's own sentence
+ * such as "3 citations still missing from the intro" — deleting a note the
+ * user wrote is far worse than leaving a duplicate count.
+ */
+const WHOLE_LINE_PATTERNS: RegExp[] = [
+  /^Citations:\s*\d+\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i,
+  /^\d+\s+citations?\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i,
+  /^Citations\s*\([^)]*\):\s*\d+\s*$/i,
+  /^GSCC:?\s*(?:\d+|NoCitationData)(?:\s+\S+)*\s*$/i,
+  /^ZSCC:?\s*(?:\d+|NoCitationData)\s*$/i,
+  /^openalex\.cit_count:\s*\d+\s*$/i,
+];
+
+export function isCitationOnlyLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  return WHOLE_LINE_PATTERNS.some((re) => re.test(trimmed));
+}
+
+/**
  * Replace whatever citation line the item has with ours, or append one.
  * Other plugins' lines are REPLACED, not duplicated — two counts in one Extra
- * is exactly the mess users complain about.
+ * is exactly the mess users complain about. Everything else, including blank
+ * lines the user put there, is preserved verbatim.
  */
 export function withCitationLine(extra: string, line: string): string {
   const lines = (extra || "").split(/\r?\n/);
-  const isCitationLine = (l: string) =>
-    PATTERNS.some(({ re }) => new RegExp(re.source, "i").test(l.trim())) ||
-    /^(GSCC|ZSCC):?\s*NoCitationData/i.test(l.trim());
-  const kept = lines.filter((l) => l.trim() && !isCitationLine(l));
+  const kept = lines.filter((l) => !isCitationOnlyLine(l));
+  // drop a trailing blank line so the appended record does not leave a gap
+  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
   kept.push(line);
   return kept.join("\n");
 }

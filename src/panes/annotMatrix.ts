@@ -126,9 +126,20 @@ interface Filters {
   tag: string;
 }
 
-const filters: Filters = { query: "", color: "", tag: "" };
+/** per window: two matrix windows must not share a search box */
+const filterState = new WeakMap<Window, Filters>();
+
+function filtersFor(win: Window): Filters {
+  let f = filterState.get(win);
+  if (!f) {
+    f = { query: "", color: "", tag: "" };
+    filterState.set(win, f);
+  }
+  return f;
+}
 
 export function render(win: Window) {
+  const filters = filtersFor(win);
   const doc = win.document;
   doc.title = getString("matrix-title");
   const body = (doc.body || doc.documentElement) as HTMLElement;

@@ -270,13 +270,30 @@ export function foldName(text: string): string {
     .trim();
 }
 
+/**
+ * "Is this me?" — matched on whole name parts, never as a substring: a
+ * substring test makes "Li" match "Alice" and quietly bolds the wrong author.
+ * Accepted forms: the family name alone, "family given", "given family", and
+ * "family g" (initial).
+ */
 function isSelf(c: NormalizedCreator, self: string[] | undefined): boolean {
   if (!self?.length) return false;
   const family = foldName(c.family);
-  const full = foldName(`${c.family} ${c.given}`);
+  const given = foldName(c.given);
+  if (!family && !given) return false;
+  const initial = given ? given[0] : "";
+  const forms = new Set(
+    [
+      family,
+      given && `${family} ${given}`,
+      given && `${given} ${family}`,
+      initial && `${family} ${initial}`,
+      initial && `${initial} ${family}`,
+    ].filter(Boolean) as string[],
+  );
   return self.some((raw) => {
     const s = foldName(raw);
-    return !!s && (s === family || s === full || full.includes(s));
+    return !!s && forms.has(s);
   });
 }
 

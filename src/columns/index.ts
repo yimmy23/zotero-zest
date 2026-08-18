@@ -138,6 +138,29 @@ export function registerAllColumns() {
   // textTags.match changes dataProvider output → recompute; the others only
   // change how cells are painted → repaint (a colour-picker drag emits a
   // stream of pref writes; both helpers are debounced)
+  // author formatting changes both what is drawn AND the sort key, so the
+  // memo has to be dropped before the rows are recomputed
+  for (const p of [
+    "authors.preset",
+    "authors.count",
+    "authors.order",
+    "authors.given",
+    "authors.initialsDot",
+    "authors.markLast",
+    "authors.lastMark",
+    "authors.selfNames",
+  ]) {
+    prefObservers.push(
+      Zotero.Prefs.registerObserver(
+        `${P}.${p}`,
+        () => {
+          bumpAuthorsVersion();
+          refreshAllRows();
+        },
+        true,
+      ),
+    );
+  }
   for (const p of [
     "textTags.match",
     "rank.fields",

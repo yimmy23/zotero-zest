@@ -24,6 +24,21 @@ import { icon, ICON_CSS } from "../ui/icons";
 const WEEKS = 53;
 const DAY_MS = 86400000;
 
+/**
+ * Calendar arithmetic has to work in LOCAL days: adding 86 400 000 ms across a
+ * DST change lands on the same date (or skips one), which shifted the grid and
+ * broke streaks for anyone outside UTC.
+ */
+function addDays(date: Date, days: number): Date {
+  const out = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + days,
+  );
+  out.setHours(0, 0, 0, 0);
+  return out;
+}
+
 interface Stats {
   byDay: Map<string, number>;
   totalSeconds: number;
@@ -62,11 +77,12 @@ export function collectStats(): Stats {
   // streaks, walking back from today
   const has = (d: Date) => (byDay.get(isoDay(d)) ?? 0) > 0;
   let streak = 0;
-  const cursor = new Date();
-  if (!has(cursor)) cursor.setTime(cursor.getTime() - DAY_MS);
+  let cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  if (!has(cursor)) cursor = addDays(cursor, -1);
   while (has(cursor)) {
     streak++;
-    cursor.setTime(cursor.getTime() - DAY_MS);
+    cursor = addDays(cursor, -1);
   }
   let longestStreak = 0;
   let run = 0;
@@ -111,11 +127,12 @@ function isoDay(d: Date): string {
 }
 
 function dayDiff(a: string, b: string): number {
-  return Math.round(
-    (new Date(`${b}T00:00:00`).getTime() -
-      new Date(`${a}T00:00:00`).getTime()) /
-      DAY_MS,
-  );
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const from = new Date(ay, am - 1, ad);
+  const to = new Date(by, bm - 1, bd);
+  // both are local midnights, so the rounding absorbs any DST hour
+  return Math.round((to.getTime() - from.getTime()) / DAY_MS);
 }
 
 let openWindow: Window | null = null;
@@ -273,15 +290,15 @@ function buildCalendar(doc: Document, stats: Stats): HTMLElement {
   // this week's Sunday — anchoring on "today minus 53 weeks" and then rewinding
   // to a Sunday loses up to six days off the end, hiding today itself
   const today = new Date();
-  const weekStart = new Date(today.getTime() - today.getDay() * DAY_MS);
-  weekStart.setHours(0, 0, 0, 0);
-  const start = new Date(weekStart.getTime() - (WEEKS - 1) * 7 * DAY_MS);
+  today.setHours(0, 0, 0, 0);
+  const weekStart = addDays(today, -today.getDay());
+  const start = addDays(weekStart, -(WEEKS - 1) * 7);
 
   for (let w = 0; w < WEEKS; w++) {
     const col = doc.createElement("div");
     col.className = "zest-cal-col";
     for (let d = 0; d < 7; d++) {
-      const date = new Date(start.getTime() + (w * 7 + d) * DAY_MS);
+      const date = addDays(start, w * 7 + d);
       const cell = doc.createElement("span");
       cell.className = "zest-cal-cell";
       if (date > today) {
