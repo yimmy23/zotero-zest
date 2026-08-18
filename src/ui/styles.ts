@@ -111,6 +111,13 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .846);
     }
 
+    /* icons: stroked, inherit the text colour, never add a shadow */
+    .zest-icon { flex: 0 0 auto; }
+    .zest-graph-title, .zest-graph-btn, .zest-info-btn, .zest-annot-copy,
+    .zest-tabbar-btn, .zest-tabbar-close, .zest-tagtree-btn {
+      display: inline-flex; align-items: center; gap: 5px; box-shadow: none;
+    }
+
     /* ---------- nested tag tree ---------- */
     /* Zotero styles #zotero-tag-selector with display:flex, which beats the
        UA sheet's [hidden]{display:none} — so hiding it needs our own rule. */
@@ -118,7 +125,7 @@ export function registerStyles(win: Window) {
     .zest-tagtree { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
     .zest-tagtree[hidden] { display: none; }
     .zest-tagtree-bar {
-      display: flex; align-items: center; gap: 2px; padding: 3px 6px;
+      display: flex; align-items: center; gap: 2px; padding: 3px 6px; flex-wrap: nowrap;
       border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
     }
     .zest-tagtree-btn {
@@ -128,7 +135,7 @@ export function registerStyles(win: Window) {
     }
     .zest-tagtree-btn:hover { background-color: var(--fill-quinary); }
     .zest-tagtree-search {
-      flex: 1 1 auto; min-width: 40px; margin: 0 4px; padding: 1px 6px;
+      flex: 1 1 auto; min-width: 0; margin: 0 4px; padding: 1px 6px;
       border: 1px solid var(--material-border-quinary, var(--fill-quinary));
       border-radius: 4px; background-color: var(--material-background, transparent);
       color: var(--fill-primary); font-size: calc(var(--zotero-font-size, 13px) * .923);
@@ -218,11 +225,42 @@ export function registerStyles(win: Window) {
     }
     .zest-annot-empty { color: var(--fill-secondary); padding: 6px 0; font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
+    /* ---------- vertical tab manager ---------- */
+    .zest-tabbar { display: flex; flex-direction: column; min-width: 160px; overflow: hidden;
+      background-color: var(--material-sidepane, var(--material-background, transparent));
+      border-inline-end: 1px solid var(--material-border-quinary, var(--fill-quinary)); }
+    .zest-tabbar-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-width: 1px; }
+    .zest-tabbar-head { display: flex; gap: 4px; padding: 5px 6px; align-items: center; flex-wrap: nowrap;
+      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary)); }
+    .zest-tabbar-search { flex: 1 1 auto; min-width: 0; padding: 2px 6px; border-radius: 4px;
+      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      background-color: var(--material-background, transparent); color: var(--fill-primary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-tabbar-btn { appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
+      background-color: transparent; color: var(--fill-secondary); }
+    .zest-tabbar-btn:hover { background-color: var(--fill-quinary); }
+    .zest-tabbar-list { flex: 1 1 auto; overflow: auto; padding: 3px 0 8px; }
+    .zest-tabbar-group { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
+      color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); text-transform: uppercase; letter-spacing: .04em; }
+    .zest-tabbar-group:hover { background-color: var(--fill-quinary); }
+    .zest-tabbar-row { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
+      border-radius: 4px; margin: 0 4px; font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-tabbar-row:hover { background-color: var(--fill-quinary); }
+    .zest-tabbar-row.selected { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
+    .zest-tabbar-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zest-tabbar-close { appearance: none; border: 0; background: transparent; cursor: pointer;
+      color: inherit; opacity: 0; padding: 0 2px; }
+    .zest-tabbar-row:hover .zest-tabbar-close { opacity: .7; }
+    .zest-tabbar-close:hover { opacity: 1; }
+    .zest-tabbar-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    :root.zest-hide-native-tabs #tab-bar-container > div { display: none !important; }
+
     /* ---------- graph pane ---------- */
     .zest-graph-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-height: 1px; }
     .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }
     .zest-graph-header {
       display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+      flex-wrap: nowrap; overflow: hidden;
       border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
@@ -235,7 +273,9 @@ export function registerStyles(win: Window) {
     }
     .zest-graph-mode:hover { background-color: var(--fill-quinary); }
     .zest-graph-mode.active { background-color: var(--accent-blue); color: var(--accent-white, #fff); }
-    .zest-graph-status { flex: 1 1 auto; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zest-graph-status { flex: 1 1 auto; min-width: 0; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .zest-graph-modes { flex: 0 0 auto; }
+    .zest-graph-title { flex: 0 0 auto; white-space: nowrap; }
     .zest-graph-btn {
       appearance: none; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);

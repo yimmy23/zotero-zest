@@ -22,6 +22,7 @@ import {
 import { resolveTagStyle } from "./rules";
 import { setItemFilter, refreshItemView, canFilter } from "../views/itemFilter";
 import { showTagContextMenu } from "./menu";
+import { iconButton, type IconName } from "../ui/icons";
 
 /**
  * Nested tag tree — our own view of the tag selector.
@@ -87,15 +88,28 @@ export function isTreeShown(): boolean {
 /* mount / unmount                                                     */
 /* ------------------------------------------------------------------ */
 
+/** windows we are still waiting on (the tag selector mounts asynchronously) */
+const pendingInstalls = new Map<Window, number>();
+
 export function installTagTree(win: Window) {
   if (states.has(win)) return;
   const doc = win.document;
   const container = doc.getElementById("zotero-tag-selector-container");
   const native = doc.getElementById("zotero-tag-selector");
   if (!container || !native) {
-    // the selector is collapsed at startup — try again when it appears
+    // The tag selector is created after the pane and may be collapsed at
+    // startup; retry for a while instead of silently never appearing.
+    const attempts = pendingInstalls.get(win) ?? 0;
+    if (attempts < 40) {
+      pendingInstalls.set(win, attempts + 1);
+      setTimeout(() => {
+        pendingInstalls.delete(win);
+        installTagTree(win);
+      }, 500);
+    }
     return;
   }
+  pendingInstalls.delete(win);
 
   const root = doc.createElement("div");
   root.id = `${config.addonRef}-tag-tree`;
@@ -106,25 +120,22 @@ export function installTagTree(win: Window) {
 
   const mkButton = (
     cls: string,
-    label: string,
+    name: IconName,
     tip: string,
     fn: () => void,
   ) => {
-    const b = doc.createElement("button");
-    b.className = `zest-tagtree-btn ${cls}`;
-    b.textContent = label;
-    b.title = tip;
+    const b = iconButton(doc, name, tip, `zest-tagtree-btn ${cls}`);
     b.addEventListener("click", guard("tag tree button", fn));
     return b;
   };
 
   bar.appendChild(
-    mkButton("zest-sort", "⇅", getString("tags-sort-tip"), () =>
+    mkButton("zest-sort", "sort", getString("tags-sort-tip"), () =>
       cycleSort(win),
     ),
   );
   bar.appendChild(
-    mkButton("zest-collapse", "⌄", getString("tags-collapse-tip"), () =>
+    mkButton("zest-collapse", "collapse", getString("tags-collapse-tip"), () =>
       toggleAll(win),
     ),
   );
@@ -151,12 +162,12 @@ export function installTagTree(win: Window) {
   count.className = "zest-tagtree-count";
   bar.appendChild(count);
   bar.appendChild(
-    mkButton("zest-clear", "✕", getString("tags-clear-tip"), () =>
+    mkButton("zest-clear", "clear", getString("tags-clear-tip"), () =>
       clearSelection(win),
     ),
   );
   bar.appendChild(
-    mkButton("zest-switch", "☰", getString("tags-switch-tip"), () =>
+    mkButton("zest-switch", "list", getString("tags-switch-tip"), () =>
       setTreeShown(win, false),
     ),
   );
@@ -231,6 +242,8 @@ export function uninstallAllTagTrees() {
 /** switch between Zotero's tag selector and ours */
 export function setTreeShown(win: Window, shown: boolean) {
   setPref("nestedTags.show", shown);
+  // the tree may not be mounted yet (collapsed selector at startup)
+  if (shown && !states.has(win)) installTagTree(win);
   for (const w of states.keys()) applyVisibility(w);
   if (shown) scheduleRefresh(win, 0);
   else clearSelection(win);

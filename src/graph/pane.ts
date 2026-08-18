@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { getPref, setPref, getNumPref } from "../utils/prefs";
+import { setTimeout, clearTimeout } from "../utils/timers";
 import { guard } from "../utils/guard";
 import {
   buildGraph,
@@ -9,6 +10,7 @@ import {
   type ZNode,
 } from "./build";
 import { GraphView } from "./view";
+import { icon, iconButton } from "../ui/icons";
 
 /**
  * Graph panel — a collapsible pane under the item list.
@@ -31,6 +33,10 @@ const MAX_HEIGHT = 900;
 
 interface PaneState {
   win: Window;
+  /** listener we attached to the item view, so it can be removed again */
+  refreshListener?: (...args: any[]) => void;
+  refreshTarget?: any;
+  rebuildTimer?: number;
   splitter: XULElement;
   box: XULElement;
   canvas: HTMLElement;
@@ -89,7 +95,10 @@ export function showGraphPane(win: Window) {
   header.className = "zest-graph-header";
   const title = doc.createElement("span");
   title.className = "zest-graph-title";
-  title.textContent = getString("graph-title");
+  title.appendChild(icon(doc, "graph", 14));
+  const titleText = doc.createElement("span");
+  titleText.textContent = getString("graph-title");
+  title.appendChild(titleText);
   header.appendChild(title);
 
   const modeButtons = new Map<GraphMode, HTMLElement>();
@@ -117,20 +126,27 @@ export function showGraphPane(win: Window) {
   status.className = "zest-graph-status";
   header.appendChild(status);
 
-  const refresh = doc.createElement("button");
-  refresh.className = "zest-graph-btn";
-  refresh.textContent = getString("graph-reanalyse");
-  refresh.title = getString("graph-reanalyse-tip");
+  const refresh = iconButton(
+    doc,
+    "refresh",
+    getString("graph-reanalyse-tip"),
+    "zest-graph-btn",
+  );
+  const refreshLabel = doc.createElement("span");
+  refreshLabel.textContent = getString("graph-reanalyse");
+  refresh.appendChild(refreshLabel);
   refresh.addEventListener(
     "click",
     guard("graph rebuild", () => void rebuild(win)),
   );
   header.appendChild(refresh);
 
-  const close = doc.createElement("button");
-  close.className = "zest-graph-btn zest-graph-close";
-  close.textContent = "✕";
-  close.title = getString("graph-close");
+  const close = iconButton(
+    doc,
+    "close",
+    getString("graph-close"),
+    "zest-graph-btn zest-graph-close",
+  );
   close.addEventListener(
     "click",
     guard("graph close", () => hideGraphPane(win)),
@@ -156,6 +172,7 @@ export function showGraphPane(win: Window) {
   };
   panes.set(win, state);
   syncModeButtons(win);
+  watchScope(win);
 
   try {
     state.view = new GraphView(canvas, {
@@ -189,6 +206,14 @@ export function hideGraphPane(win: Window, persist = true) {
   const state = panes.get(win);
   if (!state) return;
   panes.delete(win);
+  if (state.rebuildTimer) clearTimeout(state.rebuildTimer);
+  try {
+    if (state.refreshListener && state.refreshTarget?.removeListener) {
+      state.refreshTarget.removeListener(state.refreshListener);
+    }
+  } catch {
+    // view already gone
+  }
   try {
     state.view?.destroy();
   } catch {
@@ -220,6 +245,35 @@ function syncModeButtons(win: Window) {
   const active = graphMode();
   for (const [mode, btn] of state.modeButtons) {
     btn.classList.toggle("active", mode === active);
+  }
+}
+
+/**
+ * Rebuild when the item list changes scope. The graph is about the rows you
+ * are looking at, so leaving it on a previous collection's data (or on "0
+ * nodes" because it was opened while the view was empty) is just confusing —
+ * but it is debounced, because a collection switch fires several refreshes.
+ */
+function watchScope(win: Window) {
+  const state = panes.get(win);
+  if (!state) return;
+  try {
+    const target = (win as any).ZoteroPane?.itemsView?.onRefresh;
+    if (!target?.addListener) return;
+    const listener = guard("graph scope", () => {
+      const current = panes.get(win);
+      if (!current) return;
+      if (current.rebuildTimer) clearTimeout(current.rebuildTimer);
+      current.rebuildTimer = setTimeout(() => {
+        current.rebuildTimer = undefined;
+        void rebuild(win);
+      }, 600);
+    });
+    target.addListener(listener);
+    state.refreshListener = listener;
+    state.refreshTarget = target;
+  } catch (e) {
+    ztoolkit.log("[graph] scope listener unavailable", e);
   }
 }
 

@@ -10,6 +10,7 @@ import {
 import { hexToRgb } from "../reading/heat";
 import { heatColor } from "../columns/reading";
 import { HEAT_LEVELS } from "../ui/palette";
+import { icon, ICON_CSS } from "../ui/icons";
 
 /**
  * Reading statistics — a GitHub-style calendar of what you actually read.
@@ -126,6 +127,15 @@ export function openStatsDialog(parent?: Window) {
   ) as Window | null;
   if (!win) return;
   openWindow = win;
+  // openDialog reuses a window that already carries this name (e.g. one left
+  // over from a plugin reload); it is already loaded, so render right away
+  if (win.document?.readyState === "complete") {
+    try {
+      renderStats(win);
+    } catch (e) {
+      ztoolkit.log("[dialog] render failed", e);
+    }
+  }
   win.addEventListener(
     "load",
     guard("stats load", () => {
@@ -159,7 +169,10 @@ export function renderStats(win: Window) {
   body.appendChild(root);
 
   const h = doc.createElement("h1");
-  h.textContent = getString("stats-title");
+  h.appendChild(icon(doc, "chart", 18));
+  const hText = doc.createElement("span");
+  hText.textContent = getString("stats-title");
+  h.appendChild(hText);
   root.appendChild(h);
 
   const summary = doc.createElement("div");
@@ -277,15 +290,43 @@ function buildCalendar(doc: Document, stats: Stats): HTMLElement {
   return wrap;
 }
 
-const STATS_CSS = `
+const STATS_CSS =
+  ICON_CSS +
+  `
+  /* Flat by design: no native button chrome, no bevels, no shadows — only
+     background tints from the host theme. */
+  .zest-flat-btn {
+    appearance: none; -moz-appearance: none; border: 0; box-shadow: none;
+    background: color-mix(in srgb, FieldText 8%, transparent);
+    color: inherit; border-radius: 6px; padding: 4px 12px; cursor: pointer;
+    font: inherit; font-size: .875rem; line-height: 1.4;
+  }
+  .zest-flat-btn:hover { background: color-mix(in srgb, FieldText 14%, transparent); }
+  .zest-flat-btn:active { background: color-mix(in srgb, FieldText 20%, transparent); }
+  .zest-flat-btn:focus-visible { outline: 2px solid AccentColor; outline-offset: 1px; }
+  .zest-flat-input, .zest-flat-select {
+    appearance: none; -moz-appearance: none; box-shadow: none;
+    background: color-mix(in srgb, FieldText 6%, transparent);
+    border: 1px solid color-mix(in srgb, FieldText 14%, transparent);
+    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem;
+    padding: 4px 10px;
+  }
+  .zest-flat-select { padding-inline-end: 26px;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 13px center, right 8px center;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid AccentColor; outline-offset: -1px; }
+
   .zest-stats-body { margin: 0; font: message-box; background: Field; color: FieldText; }
   .zest-stats { padding: 18px 22px 28px; font-family: system-ui, sans-serif; }
-  .zest-stats h1 { font-size: 1.25rem; margin: 0 0 14px; }
+  .zest-stats h1 { font-size: 1.25rem; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
   .zest-stats h2 { font-size: 1rem; margin: 22px 0 8px; }
   .zest-stats-summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
   .zest-stats-card {
-    min-width: 110px; padding: 8px 12px; border-radius: 8px;
-    background: color-mix(in srgb, FieldText 8%, transparent);
+    min-width: 110px; padding: 8px 12px; border-radius: 8px; box-shadow: none;
+    background: color-mix(in srgb, FieldText 6%, transparent);
   }
   .zest-stats-value { font-size: 1.15rem; font-weight: 600; }
   .zest-stats-label { font-size: .8rem; opacity: .7; margin-top: 2px; }

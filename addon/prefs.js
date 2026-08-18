@@ -120,3 +120,8 @@ pref("column.remark.enable", false);
 pref("info.enable", true);
 pref("info.tldr", false);
 pref("info.abstract", true);
+
+// Vertical tab manager (off by default — it changes a window people know)
+pref("tabs.sidebar", false);
+pref("tabs.width", 200);
+pref("tabs.hideNative", false);

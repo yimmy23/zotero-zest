@@ -13,6 +13,7 @@ import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
 import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
+import { toggleSidebar } from "../tabs/sidebar";
 import { refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
 import {
@@ -312,6 +313,14 @@ export function registerMenus() {
             onCommand: () => openZestPreferences(),
           },
           { menuType: "separator" },
+          {
+            menuType: "menuitem",
+            l10nID: getLocaleID("menu-tabs"),
+            onCommand: () => {
+              const win = Zotero.getMainWindow();
+              if (win) toggleSidebar(win as unknown as Window);
+            },
+          },
           {
             menuType: "menuitem",
             l10nID: getLocaleID("menu-matrix"),

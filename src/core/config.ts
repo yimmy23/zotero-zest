@@ -50,11 +50,29 @@ export interface DatasetMeta {
   updated: number;
 }
 
+/** a tab group: members are `${libraryID}/${itemKey}`, so they survive restarts */
+export interface TabGroupConfig {
+  id: string;
+  name: string;
+  color?: string;
+  collapsed?: boolean;
+  members: string[];
+}
+
+export interface TabSessionConfig {
+  id: string;
+  name: string;
+  saved: number;
+  items: string[];
+}
+
 export interface ZestConfig {
   v: number;
   viewGroups: ViewGroup[];
   tagRules: TagRule[];
   datasets: DatasetMeta[];
+  tabGroups: TabGroupConfig[];
+  tabSessions: TabSessionConfig[];
 }
 
 const EMPTY: ZestConfig = {
@@ -62,6 +80,8 @@ const EMPTY: ZestConfig = {
   viewGroups: [],
   tagRules: [],
   datasets: [],
+  tabGroups: [],
+  tabSessions: [],
 };
 
 const str = (v: unknown, max = 200): string | undefined =>
@@ -135,12 +155,44 @@ function sanitizeDataset(raw: any): DatasetMeta | null {
   };
 }
 
+function sanitizeKeyList(raw: unknown, max: number): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((m): m is string => typeof m === "string" && m.length <= 80)
+    .slice(0, max);
+}
+
+function sanitizeTabGroup(raw: any): TabGroupConfig | null {
+  const name = str(raw?.name, 60);
+  if (!name) return null;
+  return {
+    id: str(raw?.id, 40) || newId("tg"),
+    name,
+    color: colour(raw?.color),
+    collapsed: raw?.collapsed === true,
+    members: sanitizeKeyList(raw?.members, 500),
+  };
+}
+
+function sanitizeTabSession(raw: any): TabSessionConfig | null {
+  const name = str(raw?.name, 60);
+  if (!name) return null;
+  return {
+    id: str(raw?.id, 40) || newId("ts"),
+    name,
+    saved: Math.max(0, Math.round(num(raw?.saved) ?? 0)),
+    items: sanitizeKeyList(raw?.items, 200),
+  };
+}
+
 export function sanitizeConfig(raw: any): ZestConfig {
   const out: ZestConfig = {
     v: CONFIG_VERSION,
     viewGroups: [],
     tagRules: [],
     datasets: [],
+    tabGroups: [],
+    tabSessions: [],
   };
   if (!raw || typeof raw !== "object") return out;
   const seen = new Set<string>();
@@ -169,6 +221,24 @@ export function sanitizeConfig(raw: any): ZestConfig {
     if (!ds || ids.has(ds.id)) continue;
     ids.add(ds.id);
     out.datasets.push(ds);
+  }
+  const groupIDs = new Set<string>();
+  for (const g of Array.isArray(raw.tabGroups)
+    ? raw.tabGroups.slice(0, 100)
+    : []) {
+    const group = sanitizeTabGroup(g);
+    if (!group || groupIDs.has(group.id)) continue;
+    groupIDs.add(group.id);
+    out.tabGroups.push(group);
+  }
+  const sessionIDs = new Set<string>();
+  for (const entry of Array.isArray(raw.tabSessions)
+    ? raw.tabSessions.slice(0, 20)
+    : []) {
+    const session = sanitizeTabSession(entry);
+    if (!session || sessionIDs.has(session.id)) continue;
+    sessionIDs.add(session.id);
+    out.tabSessions.push(session);
   }
   return out;
 }
@@ -395,6 +465,8 @@ export function importBundle(raw: any, replace: boolean): ImportReport {
       draft.viewGroups = incoming.viewGroups;
       draft.tagRules = incoming.tagRules;
       draft.datasets = incoming.datasets;
+      draft.tabGroups = incoming.tabGroups;
+      draft.tabSessions = incoming.tabSessions;
     } else {
       const gIds = new Set(draft.viewGroups.map((g) => g.id));
       const gNames = new Set(draft.viewGroups.map((g) => g.name));
@@ -411,6 +483,11 @@ export function importBundle(raw: any, replace: boolean): ImportReport {
       for (const d of incoming.datasets) {
         if (dIds.has(d.id)) continue;
         draft.datasets.push(d);
+      }
+      const tgIds = new Set(draft.tabGroups.map((g) => g.id));
+      for (const g of incoming.tabGroups) {
+        if (tgIds.has(g.id)) continue;
+        draft.tabGroups.push(g);
       }
     }
   });

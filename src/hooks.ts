@@ -43,6 +43,7 @@ import {
 } from "./views/collectionCounts";
 import { resetTypeFilter } from "./views/typeFilter";
 import { installColorSchemes } from "./reader/colorSchemes";
+import { restoreSidebar, hideSidebar, uninstallSidebars } from "./tabs/sidebar";
 import {
   registerAnnotSection,
   unregisterAnnotSection,
@@ -223,6 +224,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   sweepCollectionBadgesIn(w);
   installCollectionCounts(w);
   restoreGraphPane(w);
+  restoreSidebar(w);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
@@ -231,6 +233,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallViewShortcuts(win);
   uninstallTagTree(win);
   hideGraphPane(win, false);
+  hideSidebar(win, false);
   clearWindowFilters(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
@@ -248,6 +251,7 @@ async function onShutdown() {
   resetTypeFilter();
   clearItemFilters();
   uninstallGraphPanes();
+  uninstallSidebars();
   uninstallExportPatch();
   unregisterMenus();
   unregisterColumns();

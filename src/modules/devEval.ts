@@ -40,6 +40,8 @@ import * as citeExtra from "../cite/extraFormat";
 import * as infoSection from "../panes/infoSection";
 import * as stats from "../panes/statsDialog";
 import * as matrix from "../panes/annotMatrix";
+import * as tabsSidebar from "../tabs/sidebar";
+import * as tabsModel from "../tabs/model";
 import * as remark from "../columns/remark";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
@@ -149,6 +151,8 @@ export function registerDevEval() {
             infoSection,
             stats,
             matrix,
+            tabsSidebar,
+            tabsModel,
             remark,
             viewGroups,
             typeFilter,

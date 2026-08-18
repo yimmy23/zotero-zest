@@ -2,6 +2,7 @@ import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { guard } from "../utils/guard";
 import { collectAnnotations, type CardAnnotation } from "./annotSection";
+import { iconLabelButton, ICON_CSS } from "../ui/icons";
 
 /**
  * Annotation matrix — every annotation of the current view in one table.
@@ -85,6 +86,15 @@ export function openMatrix(parent?: Window) {
   ) as Window | null;
   if (!win) return;
   openWindow = win;
+  // openDialog reuses a window that already carries this name (e.g. one left
+  // over from a plugin reload); it is already loaded, so render right away
+  if (win.document?.readyState === "complete") {
+    try {
+      render(win);
+    } catch (e) {
+      ztoolkit.log("[dialog] render failed", e);
+    }
+  }
   win.addEventListener(
     "load",
     guard("matrix load", () => render(win)),
@@ -122,7 +132,7 @@ export function render(win: Window) {
   bar.className = "zest-matrix-bar";
   const search = doc.createElement("input");
   search.type = "search";
-  search.className = "zest-matrix-search";
+  search.className = "zest-matrix-search zest-flat-input";
   search.placeholder = getString("matrix-search-placeholder");
   search.value = filters.query;
   search.addEventListener(
@@ -135,7 +145,7 @@ export function render(win: Window) {
   bar.appendChild(search);
 
   const colorSelect = doc.createElement("select");
-  colorSelect.className = "zest-matrix-select";
+  colorSelect.className = "zest-matrix-select zest-flat-select";
   const colors = [...new Set(rows.map((r) => r.color).filter(Boolean))];
   const colorOptions: Array<[string, string]> = [
     ["", getString("matrix-all-colors")],
@@ -158,7 +168,7 @@ export function render(win: Window) {
   bar.appendChild(colorSelect);
 
   const tagSelect = doc.createElement("select");
-  tagSelect.className = "zest-matrix-select";
+  tagSelect.className = "zest-matrix-select zest-flat-select";
   const tags = [...new Set(rows.flatMap((r) => r.tags))].sort();
   const tagOptions: Array<[string, string]> = [
     ["", getString("matrix-all-tags")],
@@ -184,15 +194,23 @@ export function render(win: Window) {
   count.className = "zest-matrix-count";
   bar.appendChild(count);
 
-  const csv = doc.createElement("button");
-  csv.textContent = getString("matrix-export-csv");
+  const csv = iconLabelButton(
+    doc,
+    "download",
+    getString("matrix-export-csv"),
+    "zest-flat-btn",
+  );
   csv.addEventListener(
     "click",
     guard("matrix csv", () => void exportRows("csv", visible())),
   );
   bar.appendChild(csv);
-  const md = doc.createElement("button");
-  md.textContent = getString("matrix-export-md");
+  const md = iconLabelButton(
+    doc,
+    "download",
+    getString("matrix-export-md"),
+    "zest-flat-btn",
+  );
   md.addEventListener(
     "click",
     guard("matrix md", () => void exportRows("md", visible())),
@@ -348,13 +366,42 @@ async function exportRows(kind: "csv" | "md", list: MatrixRow[]) {
   }
 }
 
-const MATRIX_CSS = `
+const MATRIX_CSS =
+  ICON_CSS +
+  `
+  /* Flat by design: no native button chrome, no bevels, no shadows — only
+     background tints from the host theme. */
+  .zest-flat-btn {
+    appearance: none; -moz-appearance: none; border: 0; box-shadow: none;
+    background: color-mix(in srgb, FieldText 8%, transparent);
+    color: inherit; border-radius: 6px; padding: 4px 12px; cursor: pointer;
+    font: inherit; font-size: .875rem; line-height: 1.4;
+  }
+  .zest-flat-btn:hover { background: color-mix(in srgb, FieldText 14%, transparent); }
+  .zest-flat-btn:active { background: color-mix(in srgb, FieldText 20%, transparent); }
+  .zest-flat-btn:focus-visible { outline: 2px solid AccentColor; outline-offset: 1px; }
+  .zest-flat-input, .zest-flat-select {
+    appearance: none; -moz-appearance: none; box-shadow: none;
+    background: color-mix(in srgb, FieldText 6%, transparent);
+    border: 1px solid color-mix(in srgb, FieldText 14%, transparent);
+    border-radius: 6px; color: inherit; font: inherit; font-size: .875rem;
+    padding: 4px 10px;
+  }
+  .zest-flat-select { padding-inline-end: 26px;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 13px center, right 8px center;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  .zest-flat-input:focus, .zest-flat-select:focus { outline: 2px solid AccentColor; outline-offset: -1px; }
+
   body { margin: 0; font: message-box; background: Field; color: FieldText; }
   .zest-matrix { padding: 14px 18px 22px; font-family: system-ui, sans-serif; }
   .zest-matrix-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-  .zest-matrix-search { flex: 1 1 240px; padding: 4px 8px; border-radius: 6px;
-    border: 1px solid color-mix(in srgb, FieldText 25%, transparent); background: transparent; color: inherit; }
-  .zest-matrix-select { padding: 3px 6px; border-radius: 6px; }
+
+  .zest-matrix-search { flex: 1 1 240px; }
+  /* both dropdowns share a width so neither clips into its own chevron */
+  .zest-matrix-select { flex: 0 0 auto; min-width: 10em; max-width: 16em; }
   .zest-matrix-count { font-size: .85rem; opacity: .7; margin-inline: 4px; }
   .zest-matrix-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
   .zest-matrix-table th { text-align: left; font-weight: 600; padding: 4px 8px; opacity: .7;

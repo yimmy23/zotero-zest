@@ -4,6 +4,7 @@ import { guard } from "../utils/guard";
 import { readableTextColor } from "../ui/color";
 import { hexToRgb } from "../reading/heat";
 import { selectedTagNames, onTagSelectionChange } from "../tags/nestedTree";
+import { iconButton } from "../ui/icons";
 
 /**
  * "Zest · Annotations" item-pane section — locator cards.
@@ -273,10 +274,13 @@ function renderCard(
   where.title = attName;
   head.appendChild(where);
 
-  const copy = doc.createElement("button");
-  copy.className = "zest-annot-copy";
-  copy.textContent = "⧉";
-  copy.title = getString("anno-copy");
+  const copy = iconButton(
+    doc,
+    "copy",
+    getString("anno-copy"),
+    "zest-annot-copy",
+    13,
+  );
   copy.addEventListener(
     "click",
     guard("annot copy", (ev: Event) => {

@@ -20,6 +20,7 @@ import { displayFields, colorForRank, defaultRankColor } from "../rank/rank";
 import { citationOf, updateCitations } from "../cite";
 import { venueOf } from "../rank/normalize";
 import { formatAuthors } from "../authors/pipeline";
+import { iconButton } from "../ui/icons";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
@@ -177,9 +178,12 @@ function render(props: any) {
     ? `${cites.count} · ${cites.source ?? "?"} · ${cites.date ?? "—"}`
     : getString("info-citations-none");
   citeRow.appendChild(citeValue);
-  const refresh = doc.createElement("button");
-  refresh.className = "zest-info-btn";
-  refresh.textContent = getString("info-refresh");
+  const refresh = iconButton(
+    doc,
+    "refresh",
+    getString("info-refresh"),
+    "zest-info-btn",
+  );
   refresh.addEventListener(
     "click",
     guard("info citations", () => {
