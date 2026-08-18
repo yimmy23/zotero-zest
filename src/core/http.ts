@@ -304,47 +304,55 @@ async function rawRequest(
   url: string,
   options: RequestOptions,
 ): Promise<any> {
-  return new Promise((resolve) => {
-    let xhr: XMLHttpRequest;
+  const parse = (text: string) => {
+    if ((options.responseType ?? "json") !== "json") return text;
     try {
-      xhr = new (
-        Components.Constructor(
-          "@mozilla.org/xmlextras/xmlhttprequest;1",
-          "nsIXMLHttpRequest",
-        ) as any
-      )();
+      return JSON.parse(text || "null");
     } catch {
-      resolve(null);
-      return;
+      return null;
     }
-    try {
-      xhr.open(method, url, true);
-      xhr.timeout = options.timeout ?? DEFAULT_TIMEOUT;
-      for (const [k, v] of Object.entries(options.headers || {})) {
-        xhr.setRequestHeader(k, v);
+  };
+
+  // 1. the main window's XMLHttpRequest (the XPCOM contract id no longer
+  //    exposes nsIXMLHttpRequest, so it cannot be constructed directly)
+  const win = Zotero.getMainWindow() as any;
+  if (win?.XMLHttpRequest) {
+    return new Promise((resolve) => {
+      try {
+        const xhr = new win.XMLHttpRequest();
+        xhr.open(method, url, true);
+        xhr.timeout = options.timeout ?? DEFAULT_TIMEOUT;
+        for (const [k, v] of Object.entries(options.headers || {})) {
+          xhr.setRequestHeader(k, v);
+        }
+        xhr.onload = () => {
+          resolve(
+            xhr.status >= 200 && xhr.status < 300
+              ? parse(xhr.responseText)
+              : null,
+          );
+        };
+        xhr.onerror = () => resolve(null);
+        xhr.ontimeout = () => resolve(null);
+        xhr.send(options.body ?? undefined);
+      } catch {
+        resolve(null);
       }
-      xhr.onload = () => {
-        if (xhr.status < 200 || xhr.status >= 300) {
-          resolve(null);
-          return;
-        }
-        if ((options.responseType ?? "json") === "json") {
-          try {
-            resolve(JSON.parse(xhr.responseText || "null"));
-          } catch {
-            resolve(null);
-          }
-        } else {
-          resolve(xhr.responseText);
-        }
-      };
-      xhr.onerror = () => resolve(null);
-      xhr.ontimeout = () => resolve(null);
-      xhr.send(options.body ?? undefined);
-    } catch {
-      resolve(null);
-    }
-  });
+    });
+  }
+
+  // 2. no window (headless startup): fetch, which the plugin sandbox provides
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: options.headers,
+      body: options.body,
+    });
+    if (!res.ok) return null;
+    return parse(await res.text());
+  } catch {
+    return null;
+  }
 }
 
 export const http = new Http();

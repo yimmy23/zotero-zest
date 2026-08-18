@@ -26,14 +26,27 @@ import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
  */
 
 /**
- * The configured fields, falling back to OpenAlex's citation average when the
- * user has no easyScholar key: an empty column would otherwise be the default
- * experience for everyone outside China.
+ * Fallback chain for the badges:
+ *   1. the fields the user configured (default `sciUp, sciif, sci`)
+ *   2. the common Chinese indexes — a domestic journal has none of the JCR
+ *      fields, so the column would otherwise be empty for exactly the
+ *      libraries that care most about it
+ *   3. OpenAlex's citation average, for users with no easyScholar key
  */
+const FALLBACK_FIELDS = [
+  "cscd",
+  "pku",
+  "cssci",
+  "zhongguokejihexin",
+  "ncsti",
+  "oa2yr",
+];
+
 function shownValues(rec: ReturnType<typeof getJournalRecord>) {
   const shown = displayValues(rec, displayFields());
   if (shown.length) return shown;
-  return displayValues(rec, ["oa2yr"]);
+  const fallback = displayValues(rec, FALLBACK_FIELDS);
+  return fallback.slice(0, 2);
 }
 
 function badgeOpacity(): number {

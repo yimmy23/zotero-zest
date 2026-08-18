@@ -31,6 +31,8 @@ import * as rank from "../rank";
 import * as rankRank from "../rank/rank";
 import * as dataset from "../rank/sources/localDataset";
 import * as secrets from "../core/secrets";
+import * as easyscholarSrc from "../rank/sources/easyscholar";
+import * as httpMod from "../core/http";
 import * as viewGroups from "../views/viewGroups";
 import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
@@ -130,6 +132,8 @@ export function registerDevEval() {
             rankRank,
             dataset,
             secrets,
+            easyscholarSrc,
+            httpMod,
             viewGroups,
             typeFilter,
             collectionCounts,
