@@ -166,6 +166,10 @@ export function registerAllColumns() {
     "rank.fields",
     "rank.sortBy",
     "rank.map",
+    // toggling online lookups changes what dataProvider CAN return, so the
+    // rows have to be recomputed — without this the toolbar switch looks dead
+    // until something else happens to invalidate the tree
+    "rank.autoFetch",
   ]) {
     prefObservers.push(
       Zotero.Prefs.registerObserver(`${P}.${p}`, () => refreshAllRows(), true),

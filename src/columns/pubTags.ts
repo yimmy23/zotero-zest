@@ -2,7 +2,12 @@ import { getPref, getNumPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { hexToRgb } from "../reading/heat";
 import { readableTextColor } from "../ui/color";
-import { requestJournalRecord, getJournalRecord, displayValues } from "../rank";
+import {
+  requestJournalRecord,
+  getJournalRecord,
+  displayValues,
+  journalKeyOf,
+} from "../rank";
 import {
   colorForRank,
   displayFields,
@@ -58,8 +63,19 @@ function badgeOpacity(): number {
  * An empty journal cell is ambiguous: no data yet, no data at all, or Zest is
  * simply not allowed online (`rank.autoFetch` ships off, so on a fresh install
  * the whole column is blank and looks broken). Say which, in the tooltip.
+ *
+ * Only for rows that HAVE a journal, though. Attachments, notes, and regular
+ * items with no venue/ISSN/DOI (books, theses, films) are empty because there
+ * is nothing to look up — telling their owner to switch lookups on would send
+ * them after a setting that cannot help.
  */
-function emptyJournalCell(cell: HTMLElement): HTMLElement {
+function emptyJournalCell(
+  cell: HTMLElement,
+  item: Zotero.Item | null,
+): HTMLElement {
+  if (!item?.isRegularItem()) return cell;
+  const id = journalKeyOf(item);
+  if (!id.key && !id.issn && !id.doi) return cell;
   cell.title = getPref("rank.autoFetch")
     ? getString("rank-empty-tip")
     : getString("rank-offline-tip");
@@ -95,11 +111,11 @@ export function publicationTagsColumn(): ColumnSpec {
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "pubtags");
-      if (!data) return emptyJournalCell(cell);
       const item = rowItem(doc, index);
+      if (!data) return emptyJournalCell(cell, item);
       const rec = item ? getJournalRecord(item) : undefined;
       const shown = shownValues(rec);
-      if (!shown.length) return emptyJournalCell(cell);
+      if (!shown.length) return emptyJournalCell(cell, item);
       const wrap = doc.createElement("span");
       wrap.className = "zest-badges";
       const dark = !!doc.defaultView?.matchMedia?.(
@@ -152,12 +168,12 @@ export function impactFactorColumn(): ColumnSpec {
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "if");
-      if (!data) return emptyJournalCell(cell);
       const item = rowItem(doc, index);
+      if (!data) return emptyJournalCell(cell, item);
       const rec = item ? getJournalRecord(item) : undefined;
       const field = String(getPref("if.field") || "sciif");
       const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
-      if (n === undefined) return emptyJournalCell(cell);
+      if (n === undefined) return emptyJournalCell(cell, item);
       const max = Math.max(1, getNumPref("if.max", 15));
       if (getPref("if.progress")) {
         const track = doc.createElement("span");
