@@ -74,8 +74,11 @@ function emptyJournalCell(
   item: Zotero.Item | null,
 ): HTMLElement {
   if (!item?.isRegularItem()) return cell;
+  // the same identity test `requestJournalRecord` queues on — a DOI alone is
+  // NOT enough there, so promising a lookup for a DOI-only item would send the
+  // reader after a switch that cannot fill this cell
   const id = journalKeyOf(item);
-  if (!id.key && !id.issn && !id.doi) return cell;
+  if (!id.key && !id.issn) return cell;
   cell.title = getPref("rank.autoFetch")
     ? getString("rank-empty-tip")
     : getString("rank-offline-tip");

@@ -197,9 +197,30 @@ export async function applyView(
   }
 }
 
-/** `prefHasUserValue` exists on Zotero.Prefs but not in the shipped typings */
-function prefTouched(fullPref: string): boolean {
-  return !!(Zotero.Prefs as any).prefHasUserValue?.(fullPref, true);
+/**
+ * Wait until the item tree's column model actually contains `dataKeys`.
+ *
+ * Enabling a column writes a pref; `ItemTreeManager` then re-registers through
+ * a DB transaction and a notifier queue, so the model is NOT live on the next
+ * tick. `applyView` writes column prefs only for LIVE columns, so applying too
+ * early drops the widths, the ordinals and the undo snapshot for exactly the
+ * columns that were just turned on — the "you have to click it twice" bug.
+ */
+async function waitForColumns(
+  win: Window,
+  dataKeys: string[],
+  timeoutMs = 4000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const live = new Set(liveColumns(win).map((c) => c.dataKey));
+    if (dataKeys.every((k) => live.has(k))) return true;
+    if (Date.now() >= deadline) {
+      ztoolkit.log("[views] columns did not go live in time", dataKeys);
+      return false;
+    }
+    await Zotero.Promise.delay(50);
+  }
 }
 
 /**
@@ -230,20 +251,32 @@ export async function applyRecommendedLayout(win: Window): Promise<boolean> {
   const native = new Set(["title", "firstCreator", "date"]);
   // Most Zest columns ship off, so an untouched profile has nothing to lay out
   // and the action quietly produced a five-column layout — the "where is the
-  // journal-tag column?" report. Turn on the ones the layout needs, but only
-  // where the pref is still at its default: a user who switched a column off
-  // in Settings said something, and this must not talk over it.
-  for (const [key] of wanted) {
-    if (native.has(key) || registeredDataKey(key)) continue;
-    const pref = `column.${key}.enable`;
-    if (prefTouched(`${config.prefsPrefix}.${pref}`)) {
-      continue;
+  // journal-tag column?" report. The FIRST apply turns on the columns it needs;
+  // after that the user's switches are theirs.
+  //
+  // This used to ask `prefHasUserValue` instead, which cannot work here: Gecko
+  // drops the user value when a pref is set back to its default, so unticking
+  // a default-off column in Settings leaves no trace and the next apply would
+  // have switched it straight back on.
+  const seededPref = `${config.prefsPrefix}.layout.seeded`;
+  if (!Zotero.Prefs.get(seededPref, true)) {
+    for (const [key] of wanted) {
+      if (native.has(key) || registeredDataKey(key)) continue;
+      Zotero.Prefs.set(
+        `${config.prefsPrefix}.column.${key}.enable`,
+        true,
+        true,
+      );
     }
-    Zotero.Prefs.set(`${config.prefsPrefix}.${pref}`, true, true);
+    Zotero.Prefs.set(seededPref, true, true);
   }
-  // the pref observer registers the column synchronously, but yield once so
-  // this does not depend on that
-  await Zotero.Promise.delay(0);
+  // registration itself is synchronous; going LIVE in the tree is not
+  await waitForColumns(
+    win,
+    wanted
+      .map(([key]) => (native.has(key) ? key : registeredDataKey(key)))
+      .filter(Boolean) as string[],
+  );
   const columns: ViewGroupColumn[] = [];
   for (const [key, width] of wanted) {
     const dataKey = native.has(key) ? key : registeredDataKey(key);

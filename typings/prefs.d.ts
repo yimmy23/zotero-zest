@@ -14,6 +14,7 @@ declare namespace _ZoteroTypes {
       "statusAuto.enable": boolean;
       "statusAuto.readThreshold": number;
       "statusAuto.minMinutes": number;
+      "layout.seeded": boolean;
       "column.reading.enable": boolean;
       "column.status.enable": boolean;
       "column.rating.enable": boolean;

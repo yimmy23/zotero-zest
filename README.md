@@ -25,8 +25,8 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 不喜欢可以立刻还原：**工具 ▸ Zest ▸ 撤销上一次布局切换**。你也可以自己右键列标题勾选想要的列——Zest 的列
 和 Zotero 原生列一样，可以随意拖动、调宽、排序。
 
-> Zest 的列默认大多是关的（每一列都要按行算东西）。「套用推荐列布局」会顺手打开它需要的那几列——但只
-> 打开你从没动过的那些；你在**设置 ▸ Zest** 里主动关掉的列，它不会替你打开。
+> Zest 的列默认大多是关的（每一列都要按行算东西）。**第一次**套用推荐布局时，它会把自己需要的那几列
+> 一并打开；此后再套用就只排布局，不再动你的开关——你在**设置 ▸ Zest** 里关掉的列不会被翻回来。
 
 ## Z 按钮里有什么
 
@@ -149,8 +149,8 @@ The release notes carry the file's MD5.
 A **Z** button appears in the item toolbar, drawn in Zotero's own line-icon style. Click it →
 **Apply the Zest column layout**: title, creator, year, reading, status, rating, annotations, journal
 tags, IF and citations, sorted by reading time. Don't like it? **Tools ▸ Zest ▸ Undo layout change**.
-Most Zest columns ship off; the layout action turns on the ones it needs, but only those you never
-touched — a column you switched off in **Settings ▸ Zest** yourself stays off.
+Most Zest columns ship off, so the **first** apply also turns on the ones the layout needs. Every
+apply after that only arranges columns — a column you switch off in **Settings ▸ Zest** stays off.
 
 The same button opens the **graph**, the **reading statistics** window, the **annotation matrix** and
 the settings.

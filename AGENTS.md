@@ -26,7 +26,13 @@ src/
   utils/                       Extra lines, CSV, guard, prefs, timers, locale, item helpers
 addon/                         manifest, prefs.js, locales (en-US, zh-CN), preferences pane, dialog host
 scripts/                       dev-eval.sh, dev-shot.py, phase-c/d/e probes
+assets/                        icon sources; NOT shipped (build packs addon/** only).
+                               favicon.svg regenerates addon/content/icons/favicon{,@0.5x}.png
+                               via `rsvg-convert -w 96 -h 96` / `-w 48 -h 48`
 ```
+
+Everything under `addon/` ends up in the xpi, so an unreferenced file there is dead weight that
+users download. Design sources live in `assets/`.
 
 ## Invariants
 

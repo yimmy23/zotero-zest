@@ -10,6 +10,7 @@ pref("statusAuto.readThreshold", 90);
 pref("statusAuto.minMinutes", 5);
 
 // Columns
+pref("layout.seeded", false);
 pref("column.reading.enable", true);
 pref("column.status.enable", true);
 pref("column.rating.enable", true);
