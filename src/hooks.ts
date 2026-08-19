@@ -41,6 +41,7 @@ import {
   uninstallTagOptionsMenu,
   uninstallAllTagTrees,
   uninstallAllTagOptionsMenus,
+  syncTagPanes,
   isTreeShown,
   setTreeShown,
   refreshAllTagTrees,
@@ -241,6 +242,13 @@ async function onStartup() {
             setTreeShown(win as unknown as Window, want);
           }
         },
+        true,
+      ),
+      // which tab the pane shows is a pref like any other: Settings, the tab
+      // itself and a hand-edited pref must all land the same way
+      Zotero.Prefs.registerObserver(
+        `${P}.nestedTags.tab`,
+        () => syncTagPanes(),
         true,
       ),
       ...[

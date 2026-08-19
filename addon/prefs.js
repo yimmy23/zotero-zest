@@ -60,6 +60,7 @@ pref("graph.maxNodes", 250);
 
 // Nested tag tree
 pref("nestedTags.show", false);
+pref("nestedTags.tab", "tree");
 pref("nestedTags.linkSymbol", "/");
 pref("nestedTags.sort", "az");
 pref("nestedTags.showAllTags", false);

@@ -10,6 +10,7 @@ import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
 import { openZestPreferences } from "../modules/menus";
 import { applyRecommendedLayout } from "../views/viewGroups";
+import { isTreeShown, toggleTagTree } from "../tags/nestedTree";
 import { getPref, setPref } from "../utils/prefs";
 
 /**
@@ -111,6 +112,13 @@ export function installToolbarMenu(win: Window) {
         getString("menu-rank-fetch", "label"),
         () => setPref("rank.autoFetch", !getPref("rank.autoFetch")),
         { checked: !!getPref("rank.autoFetch") },
+      );
+      addItem(
+        doc,
+        popup,
+        getString("menu-tagtree", "label"),
+        () => toggleTagTree(win),
+        { checked: isTreeShown() },
       );
       addItem(doc, popup, getString("menu-settings", "label"), () =>
         openZestPreferences(),

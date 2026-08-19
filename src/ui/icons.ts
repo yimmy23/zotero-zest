@@ -14,6 +14,7 @@ export type IconName =
   | "expand"
   | "clear"
   | "list"
+  | "tagnest"
   | "tree"
   | "refresh"
   | "close"
@@ -42,6 +43,9 @@ const PATHS: Record<IconName, string[]> = {
   expand: ["M4.5 4.5L8 8l3.5-3.5", "M4.5 8.5L8 12l3.5-3.5"],
   clear: ["M4 4l8 8", "M12 4l-8 8"],
   list: ["M3 4.5h10", "M3 8h10", "M3 11.5h10"],
+  // the nested/flat pair differs only in indentation — which is exactly what
+  // separates the two tag views, so the tabs need no words
+  tagnest: ["M3 4.5h10", "M6.5 8h6.5", "M6.5 11.5h6.5"],
   tree: [
     "M3 4h4",
     "M6 4v7h4",

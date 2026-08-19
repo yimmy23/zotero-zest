@@ -46,6 +46,7 @@ declare namespace _ZoteroTypes {
       "graph.height": number;
       "graph.maxNodes": number;
       "nestedTags.show": boolean;
+      "nestedTags.tab": string;
       "nestedTags.linkSymbol": string;
       "nestedTags.sort": string;
       "nestedTags.showAllTags": boolean;

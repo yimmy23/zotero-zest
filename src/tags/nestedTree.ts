@@ -56,6 +56,10 @@ interface TreeState {
   searchTimer?: number;
   /** display path of the row that owns the tab stop (roving tabindex) */
   focusPath?: string;
+  /** the two tab buttons, keyed by mode */
+  tabs: Map<TagPaneMode, HTMLElement>;
+  /** bar controls that only make sense on the nested tab */
+  treeOnly: HTMLElement[];
   /** listeners we added to Zotero's views, so they can be removed again */
   viewListeners: Array<{ target: any; fn: (...args: any[]) => void }>;
 }
@@ -85,6 +89,34 @@ export function sortMode(): { mode: TagSortMode; descending: boolean } {
 
 export function isTreeShown(): boolean {
   return !!getPref("nestedTags.show");
+}
+
+/**
+ * Which view the tag pane is showing. This is a TAB, not an on/off switch:
+ * both views live in the pane at once, so reaching Zotero's flat tag list no
+ * longer means turning Zest's off (and then hunting for the way back).
+ *
+ * `nestedTags.show` is still the master switch — off means the tag pane is
+ * exactly what Zotero ships, tab strip included.
+ */
+export type TagPaneMode = "tree" | "native";
+
+export function tagPaneMode(): TagPaneMode {
+  return getPref("nestedTags.tab") === "native" ? "native" : "tree";
+}
+
+/** re-apply the pane layout in every window (pref observer, other writers) */
+export function syncTagPanes() {
+  for (const w of states.keys()) applyVisibility(w);
+}
+
+export function setTagPaneMode(win: Window, mode: TagPaneMode) {
+  setPref("nestedTags.tab", mode);
+  // the tree is about to leave the screen; a filter whose cause is invisible
+  // is worse than no filter
+  if (mode === "native") clearSelection(win);
+  for (const w of states.keys()) applyVisibility(w);
+  if (mode === "tree") scheduleRefresh(win, 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -132,12 +164,48 @@ export function installTagTree(win: Window) {
     return b;
   };
 
-  bar.appendChild(
+  // the tab strip rides in the toolbar row rather than adding a second row:
+  // the tag pane is short and a whole row of chrome for two words is a poor
+  // trade. On the native tab everything after it is hidden, so the row shrinks
+  // to just the tabs.
+  const tabs = new Map<TagPaneMode, HTMLElement>();
+  const tabStrip = doc.createElement("div");
+  tabStrip.className = "zest-tagtree-tabs";
+  tabStrip.setAttribute("role", "tablist");
+  for (const [mode, iconName, key] of [
+    ["tree", "tagnest", "tags-tab-tree"],
+    ["native", "list", "tags-tab-all"],
+  ] as Array<[TagPaneMode, IconName, "tags-tab-tree" | "tags-tab-all"]>) {
+    const tab = iconButton(
+      doc,
+      iconName,
+      getString(key),
+      "zest-tagtree-tab",
+      13,
+    );
+    tab.setAttribute("role", "tab");
+    tab.addEventListener(
+      "click",
+      guard("tag pane tab", () => setTagPaneMode(win, mode)),
+    );
+    tabStrip.appendChild(tab);
+    tabs.set(mode, tab);
+  }
+  bar.appendChild(tabStrip);
+
+  const treeOnly: HTMLElement[] = [];
+  const addTreeOnly = <T extends HTMLElement>(el: T): T => {
+    treeOnly.push(el);
+    bar.appendChild(el);
+    return el;
+  };
+
+  addTreeOnly(
     mkButton("zest-sort", "sort", getString("tags-sort-tip"), () =>
       cycleSort(win),
     ),
   );
-  bar.appendChild(
+  addTreeOnly(
     mkButton("zest-collapse", "collapse", getString("tags-collapse-tip"), () =>
       toggleAll(win),
     ),
@@ -160,18 +228,13 @@ export function installTagTree(win: Window) {
       }, 150);
     }),
   );
-  bar.appendChild(search);
+  addTreeOnly(search);
   const count = doc.createElement("span");
   count.className = "zest-tagtree-count";
-  bar.appendChild(count);
-  bar.appendChild(
+  addTreeOnly(count);
+  addTreeOnly(
     mkButton("zest-clear", "clear", getString("tags-clear-tip"), () =>
       clearSelection(win),
-    ),
-  );
-  bar.appendChild(
-    mkButton("zest-switch", "list", getString("tags-switch-tip"), () =>
-      setTreeShown(win, false),
     ),
   );
 
@@ -181,7 +244,9 @@ export function installTagTree(win: Window) {
 
   root.appendChild(bar);
   root.appendChild(body);
-  container.appendChild(root);
+  // above the native selector: the tab row has to head the pane in both
+  // modes, and our root is still a sibling, never inside the React root
+  container.insertBefore(root, native);
 
   const state: TreeState = {
     win,
@@ -193,6 +258,8 @@ export function installTagTree(win: Window) {
     query: "",
     inView: new Set(),
     libraryID: 1,
+    tabs,
+    treeOnly,
     viewListeners: [],
   };
   states.set(win, state);
@@ -252,9 +319,9 @@ export function setTreeShown(win: Window, shown: boolean) {
   setPref("nestedTags.show", shown);
   // the tree may not be mounted yet (collapsed selector at startup)
   if (shown && !states.has(win)) installTagTree(win);
+  if (!shown) clearSelection(win);
   for (const w of states.keys()) applyVisibility(w);
-  if (shown) scheduleRefresh(win, 0);
-  else clearSelection(win);
+  if (shown && tagPaneMode() === "tree") scheduleRefresh(win, 0);
 }
 
 export function toggleTagTree(win: Window) {
@@ -264,12 +331,25 @@ export function toggleTagTree(win: Window) {
 function applyVisibility(win: Window) {
   const state = states.get(win);
   if (!state) return;
-  const shown = isTreeShown();
+  const on = isTreeShown();
+  const tree = on && tagPaneMode() === "tree";
   const native = win.document.getElementById(
     "zotero-tag-selector",
   ) as HTMLElement | null;
-  if (native) native.hidden = shown;
-  state.root.hidden = !shown;
+  // master off → the pane is Zotero's, tab strip and all
+  if (native) native.hidden = tree;
+  state.root.hidden = !on;
+  // on the native tab our root is just the tab row: it must not eat the
+  // height the tag list needs
+  state.root.classList.toggle("zest-tagtree-baronly", on && !tree);
+  state.body.hidden = !tree;
+  for (const el of state.treeOnly) el.hidden = !tree;
+  for (const [mode, tab] of state.tabs) {
+    const active = on && tagPaneMode() === mode;
+    tab.classList.toggle("selected", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+  }
 }
 
 /* ------------------------------------------------------------------ */

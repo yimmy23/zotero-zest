@@ -175,6 +175,33 @@ export function registerStyles(win: Window) {
     #zotero-tag-selector[hidden] { display: none !important; }
     .zest-tagtree { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
     .zest-tagtree[hidden] { display: none; }
+    /* on the "All" tab our root is only the tab row — the native tag list
+       below it needs every remaining pixel */
+    .zest-tagtree.zest-tagtree-baronly { flex: 0 0 auto; }
+    /* the bar's children set display themselves, which outranks the UA rule
+       for [hidden] — without this the tree-only controls keep painting on the
+       flat tab */
+    .zest-tagtree-bar > [hidden], .zest-tagtree-body[hidden] { display: none; }
+    .zest-tagtree-tabs {
+      display: flex; flex: 0 0 auto; margin-inline-end: 4px; padding: 1px;
+      gap: 1px; border-radius: 5px; background-color: var(--fill-quinary);
+    }
+    /* icon tabs: the glyphs differ only in indentation (nested vs flat), and
+       both are stroked in currentColor, so they read on either theme */
+    .zest-tagtree-tab {
+      appearance: none; border: 0; background-color: transparent; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      width: 22px; height: 18px; padding: 0; border-radius: 4px;
+      color: var(--fill-secondary);
+    }
+    .zest-tagtree-tab:hover { color: var(--fill-primary); }
+    .zest-tagtree-tab.selected {
+      background-color: var(--material-background, var(--fill-quarternary));
+      color: var(--zest-accent-strong);
+    }
+    .zest-tagtree-tab:focus-visible {
+      outline: 2px solid var(--zest-accent); outline-offset: -2px;
+    }
     .zest-tagtree-bar {
       display: flex; align-items: center; gap: 2px; padding: 3px 6px; flex-wrap: nowrap;
       border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
