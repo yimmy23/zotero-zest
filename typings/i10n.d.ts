@@ -399,6 +399,7 @@ export type FluentMessageId =
   | 'tags-sort-za'
   | 'tags-switch-tip'
   | 'tags-tree-label'
+  | 'tags-tree-toggle'
   | 'typefilter-active'
   | 'typefilter-clear'
   | 'typefilter-unavailable'

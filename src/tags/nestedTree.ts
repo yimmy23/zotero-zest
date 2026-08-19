@@ -273,6 +273,72 @@ function applyVisibility(win: Window) {
 }
 
 /* ------------------------------------------------------------------ */
+/* the way back: Zotero's own tag-selector options menu                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Switching to Zotero's tag selector used to be a trapdoor: the button that
+ * did it lives inside the tree, so once the tree was gone the only way back
+ * was Tools ▸ Zest. Both directions now live in the widget you are actually
+ * looking at — the tree's own button on the way out, and a checkbox in
+ * Zotero's tag-selector options menu (the ≡ under its filter box) on the way
+ * back.
+ *
+ * That menu is a static XUL popup in zoteroPane.xhtml, NOT part of the tag
+ * selector's React tree, so appending to it on `popupshowing` is safe and
+ * leaves nothing behind — the same technique as the column-picker submenu.
+ */
+const OPTIONS_MENU_ID = "tag-selector-view-settings-menu";
+const TOGGLE_ITEM_ID = `${config.addonRef}-tagtree-toggle`;
+const optionsListeners = new Map<Window, (ev: Event) => void>();
+
+export function installTagOptionsMenu(win: Window) {
+  if (optionsListeners.has(win)) return;
+  const handler = guard("tag options menu", (ev: Event) => {
+    const popup = ev.target as Element | null;
+    if (popup?.id !== OPTIONS_MENU_ID) return;
+    const doc = win.document;
+    let item = doc.getElementById(TOGGLE_ITEM_ID);
+    if (!item) {
+      item = doc.createXULElement("menuitem");
+      item.id = TOGGLE_ITEM_ID;
+      item.setAttribute("type", "checkbox");
+      item.setAttribute("label", getString("tags-tree-toggle", "label"));
+      item.addEventListener(
+        "command",
+        guard("tag tree toggle", () => toggleTagTree(win)),
+      );
+      // with the other "what does this pane show" options, not next to the
+      // destructive "delete automatic tags"
+      const before = doc.getElementById("show-automatic");
+      if (before?.parentElement === popup) {
+        popup.insertBefore(item, before);
+      } else {
+        popup.appendChild(item);
+      }
+    }
+    item.setAttribute("checked", isTreeShown() ? "true" : "false");
+  });
+  win.document.addEventListener("popupshowing", handler);
+  optionsListeners.set(win, handler);
+}
+
+export function uninstallTagOptionsMenu(win: Window) {
+  const handler = optionsListeners.get(win);
+  optionsListeners.delete(win);
+  try {
+    if (handler) win.document.removeEventListener("popupshowing", handler);
+    win.document.getElementById(TOGGLE_ITEM_ID)?.remove();
+  } catch {
+    // window gone
+  }
+}
+
+export function uninstallAllTagOptionsMenus() {
+  for (const win of [...optionsListeners.keys()]) uninstallTagOptionsMenu(win);
+}
+
+/* ------------------------------------------------------------------ */
 /* data + rendering                                                    */
 /* ------------------------------------------------------------------ */
 

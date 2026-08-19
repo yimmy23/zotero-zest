@@ -37,7 +37,10 @@ import {
 import {
   installTagTree,
   uninstallTagTree,
+  installTagOptionsMenu,
+  uninstallTagOptionsMenu,
   uninstallAllTagTrees,
+  uninstallAllTagOptionsMenus,
   isTreeShown,
   setTreeShown,
   refreshAllTagTrees,
@@ -342,6 +345,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   // everything below reads ZoteroPane's trees
   if (!(await whenPaneReady(w))) return;
   installTagTree(w);
+  installTagOptionsMenu(w);
   installRevealGuard(w);
   sweepCollectionBadgesIn(w);
   installCollectionCounts(w);
@@ -355,6 +359,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallViewMenu(win);
   uninstallViewShortcuts(win);
   uninstallTagTree(win);
+  uninstallTagOptionsMenu(win);
   uninstallRevealGuard(win);
   hideGraphPane(win, false);
   uninstallToolbarMenu(win);
@@ -372,6 +377,7 @@ async function onShutdown() {
   closeStatsDialog();
   closeMatrix();
   uninstallAllTagTrees();
+  uninstallAllTagOptionsMenus();
   uninstallAllViewMenus();
   uninstallAllViewShortcuts();
   uninstallAllCollectionCounts();
