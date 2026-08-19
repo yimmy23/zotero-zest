@@ -54,6 +54,18 @@ function badgeOpacity(): number {
   return Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0.15;
 }
 
+/**
+ * An empty journal cell is ambiguous: no data yet, no data at all, or Zest is
+ * simply not allowed online (`rank.autoFetch` ships off, so on a fresh install
+ * the whole column is blank and looks broken). Say which, in the tooltip.
+ */
+function emptyJournalCell(cell: HTMLElement): HTMLElement {
+  cell.title = getPref("rank.autoFetch")
+    ? getString("rank-empty-tip")
+    : getString("rank-offline-tip");
+  return cell;
+}
+
 export function publicationTagsColumn(): ColumnSpec {
   return {
     key: "pubtags",
@@ -83,11 +95,11 @@ export function publicationTagsColumn(): ColumnSpec {
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "pubtags");
-      if (!data) return cell;
+      if (!data) return emptyJournalCell(cell);
       const item = rowItem(doc, index);
       const rec = item ? getJournalRecord(item) : undefined;
       const shown = shownValues(rec);
-      if (!shown.length) return cell;
+      if (!shown.length) return emptyJournalCell(cell);
       const wrap = doc.createElement("span");
       wrap.className = "zest-badges";
       const dark = !!doc.defaultView?.matchMedia?.(
@@ -140,12 +152,12 @@ export function impactFactorColumn(): ColumnSpec {
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "if");
-      if (!data) return cell;
+      if (!data) return emptyJournalCell(cell);
       const item = rowItem(doc, index);
       const rec = item ? getJournalRecord(item) : undefined;
       const field = String(getPref("if.field") || "sciif");
       const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
-      if (n === undefined) return cell;
+      if (n === undefined) return emptyJournalCell(cell);
       const max = Math.max(1, getNumPref("if.max", 15));
       if (getPref("if.progress")) {
         const track = doc.createElement("span");

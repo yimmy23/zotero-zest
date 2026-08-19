@@ -1,6 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="16" height="16">
-  <!-- Zest: a "Z" whose three strokes step through the reading-heat scale -->
-  <path d="M6.5 8h19" stroke="#63CF8B" stroke-width="4" stroke-linecap="round" fill="none"/>
-  <path d="M25 9.4 7.6 22.8" stroke="#3FB863" stroke-width="4" stroke-linecap="round" fill="none"/>
-  <path d="M6.5 24h19" stroke="#2A9350" stroke-width="4" stroke-linecap="round" fill="none"/>
+<svg width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- Zest: a "Z" drawn as a node-link graph — Zotero's own 20px line style
+     (1.25 stroke, context-fill so the toolbar theme colours it). -->
+<path d="M6.1 4.7H13.9M14.26 6.14L6.14 14.26M6.1 15.3H13.9" stroke="context-fill" stroke-width="1.25" stroke-linecap="round"/>
+<circle cx="4.7" cy="4.7" r="1.5" fill="context-fill"/>
+<circle cx="15.3" cy="4.7" r="1.5" fill="context-fill"/>
+<circle cx="4.7" cy="15.3" r="1.5" fill="context-fill"/>
+<circle cx="15.3" cy="15.3" r="1.5" fill="context-fill"/>
 </svg>

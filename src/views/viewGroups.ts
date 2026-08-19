@@ -197,6 +197,11 @@ export async function applyView(
   }
 }
 
+/** `prefHasUserValue` exists on Zotero.Prefs but not in the shipped typings */
+function prefTouched(fullPref: string): boolean {
+  return !!(Zotero.Prefs as any).prefHasUserValue?.(fullPref, true);
+}
+
 /**
  * The layout Zest is designed around, as one click.
  *
@@ -223,6 +228,22 @@ export async function applyRecommendedLayout(win: Window): Promise<boolean> {
     ["citations", 74],
   ];
   const native = new Set(["title", "firstCreator", "date"]);
+  // Most Zest columns ship off, so an untouched profile has nothing to lay out
+  // and the action quietly produced a five-column layout — the "where is the
+  // journal-tag column?" report. Turn on the ones the layout needs, but only
+  // where the pref is still at its default: a user who switched a column off
+  // in Settings said something, and this must not talk over it.
+  for (const [key] of wanted) {
+    if (native.has(key) || registeredDataKey(key)) continue;
+    const pref = `column.${key}.enable`;
+    if (prefTouched(`${config.prefsPrefix}.${pref}`)) {
+      continue;
+    }
+    Zotero.Prefs.set(`${config.prefsPrefix}.${pref}`, true, true);
+  }
+  // the pref observer registers the column synchronously, but yield once so
+  // this does not depend on that
+  await Zotero.Promise.delay(0);
   const columns: ViewGroupColumn[] = [];
   for (const [key, width] of wanted) {
     const dataKey = native.has(key) ? key : registeredDataKey(key);

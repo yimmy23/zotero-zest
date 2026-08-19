@@ -10,15 +10,19 @@ import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
 import { openZestPreferences } from "../modules/menus";
 import { applyRecommendedLayout } from "../views/viewGroups";
+import { getPref, setPref } from "../utils/prefs";
 
 /**
  * The Zest button in Zotero's item toolbar.
  *
  * Everything Zest opens as a window or a panel used to live in Tools ▸ Zest,
  * which is three clicks away from the item list where you actually are. The
- * button carries the plugin's mark (the only coloured icon in that toolbar, so
- * it is findable) and drops a short menu: graph, reading statistics,
- * annotation matrix, the recommended column layout, settings.
+ * button drops a short menu: graph, reading statistics, annotation matrix, the
+ * recommended column layout, settings.
+ *
+ * The icon is the 20px line mark, drawn in Zotero's own toolbar idiom (1.25
+ * stroke, `context-fill`) so it inherits the toolbar's colour in both themes
+ * instead of sitting there as the one coloured thing in the row.
  *
  * It is a plain XUL toolbarbutton with a menupopup child, so keyboard access,
  * theming and the popup arrow are Zotero's, not ours.
@@ -60,9 +64,14 @@ export function installToolbarMenu(win: Window) {
   button.id = BUTTON_ID;
   button.className = "zotero-tb-button";
   button.setAttribute("type", "menu");
+  // Zotero's own menu buttons in this toolbar carry the drop marker; without it
+  // the Zest button is the one that does not look clickable-into
+  button.setAttribute("wantdropmarker", "true");
+  // 20px like Zotero's own item-toolbar icons; the colour comes from
+  // `-moz-context-properties` in our stylesheet, not from the file
   button.setAttribute(
     "image",
-    `chrome://${config.addonRef}/content/icons/zest.svg`,
+    `chrome://${config.addonRef}/content/icons/20/zest.svg`,
   );
   button.setAttribute("tooltiptext", config.addonName);
 
@@ -92,6 +101,16 @@ export function installToolbarMenu(win: Window) {
       popup.appendChild(doc.createXULElement("menuseparator"));
       addItem(doc, popup, getString("menu-layout", "label"), () =>
         applyRecommendedLayout(win),
+      );
+      // the journal columns are empty until Zest may go online, and Settings
+      // is the one place a user who just noticed the empty column will not
+      // look — so the switch lives next to the layout that shows them
+      addItem(
+        doc,
+        popup,
+        getString("menu-rank-fetch", "label"),
+        () => setPref("rank.autoFetch", !getPref("rank.autoFetch")),
+        { checked: !!getPref("rank.autoFetch") },
       );
       addItem(doc, popup, getString("menu-settings", "label"), () =>
         openZestPreferences(),

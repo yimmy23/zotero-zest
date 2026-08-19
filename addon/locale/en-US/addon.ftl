@@ -332,3 +332,7 @@ tags-tree-label = Nested tag tree
 views-recommended = Zest layout
 menu-layout =
     .label = Apply the Zest column layout
+menu-rank-fetch =
+    .label = Look journal data up online (ranks / impact factor)
+rank-offline-tip = Publication tags and Impact factor need Zest to look journals up online. Turn it on from the Zest toolbar button ▸ "Look journal data up online". Lookups are per journal, send only the journal name, ISSN or DOI, and are cached locally. The Chinese ranking systems additionally need an easyScholar key, set in Settings.
+rank-empty-tip = No ranking data found for this journal yet. Right-click the cell to look it up again; the Chinese ranking systems need an easyScholar key.

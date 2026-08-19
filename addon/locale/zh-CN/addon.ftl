@@ -332,3 +332,7 @@ tags-tree-label = 嵌套标签树
 views-recommended = Zest 布局
 menu-layout =
     .label = 套用 Zest 推荐列布局
+menu-rank-fetch =
+    .label = 联网获取期刊数据（分区 / 影响因子）
+rank-offline-tip = 「期刊标签」和「影响因子」需要联网查询期刊数据。点工具栏的 Zest 按钮 ▸「联网获取期刊数据」开启；查询按期刊进行，只发送期刊名、ISSN 或 DOI，结果缓存在本地。中科院分区、北大核心等中文体系还需要在设置里填 easyScholar 密钥。
+rank-empty-tip = 尚未查到这本期刊的分级数据。右键该单元格可单独重新查询；中科院分区、北大核心等中文体系需要 easyScholar 密钥。

@@ -18,23 +18,26 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 
 ## 第一步：套用推荐布局
 
-装好后，条目工具栏上会出现一个绿色的 **Z** 按钮，点它 →**套用 Zest 推荐列布局**。
+装好后，条目工具栏上会出现一个 **Z** 按钮（线条风格，和 Zotero 自带图标同一套），点它 →**套用 Zest
+推荐列布局**。
 
 这一步会把标题、作者、年份、阅读、状态、评级、标注、期刊标签、影响因子、被引数排成一行，并按阅读时长排序。
 不喜欢可以立刻还原：**工具 ▸ Zest ▸ 撤销上一次布局切换**。你也可以自己右键列标题勾选想要的列——Zest 的列
 和 Zotero 原生列一样，可以随意拖动、调宽、排序。
 
-> 如果某一列的开关在**设置 ▸ Zest** 里是关的，它不会出现在右键菜单里。想用哪个就先在设置里打开。
+> Zest 的列默认大多是关的（每一列都要按行算东西）。「套用推荐列布局」会顺手打开它需要的那几列——但只
+> 打开你从没动过的那些；你在**设置 ▸ Zest** 里主动关掉的列，它不会替你打开。
 
 ## Z 按钮里有什么
 
-| 菜单项                | 作用                                                                       |
-| --------------------- | -------------------------------------------------------------------------- |
-| **图谱面板**          | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式 |
-| **阅读统计…**         | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目             |
-| **标注矩阵…**         | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                 |
-| **套用 Zest 推荐列布局** | 一键排好上面那套列                                                       |
-| **Zest 设置…**        | 打开设置页                                                                 |
+| 菜单项                   | 作用                                                                        |
+| ------------------------ | --------------------------------------------------------------------------- |
+| **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式 |
+| **阅读统计…**            | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目             |
+| **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                 |
+| **套用 Zest 推荐列布局** | 一键排好上面那套列                                                          |
+| **联网获取期刊数据**     | 分区 / 影响因子的联网开关（默认关）——不开这一项，期刊标签列会是空的         |
+| **Zest 设置…**           | 打开设置页                                                                  |
 
 ## 各个列怎么用
 
@@ -56,8 +59,10 @@ Alan Turing），「等 / et al.」取自 Zotero 自身语言。可在设置里�
 （标记不进排序键）。把自己的名字填进「我的名字」，你自己的署名会被高亮。
 
 **期刊标签 / 影响因子 / 期刊**——分区徽章与影响因子。数据来源依次是：你导入的本地数据集 → easyScholar
-（填了密钥才用）→ OpenAlex（免密钥）。**默认不联网**：在设置里打开「自动获取」，或右键条目 ▸ Zest ▸
-更新期刊分区。查到的结果按期刊缓存 30 天。
+（填了密钥才用）→ OpenAlex（免密钥）。**默认不联网**，所以刚装好时这两列是空的：从 **Z 按钮 ▸ 联网获取
+期刊数据**（等同于设置里的「自动获取」）打开，或右键条目 ▸ Zest ▸ 更新期刊分区。空单元格的悬停提示会告
+诉你是哪种情况。查询按期刊（不是按条目）进行，只发送期刊名、ISSN 或 DOI，结果按期刊缓存 30 天。
+中科院分区、北大核心等中文体系只有 easyScholar 有，需要在设置里填密钥。
 
 **被引数**——右键条目 ▸ Zest ▸ 更新被引数（可批量、可随时取消）。数值写进 `Extra` 的
 `Citations: 12 (Crossref) [2026-08-18]`，来源依次 Crossref → OpenAlex →（可选）Semantic Scholar。
@@ -91,12 +96,12 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 
 ## 阅读数据存在哪、怎么带走
 
-| 内容                                     | 位置                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| 阅读记录（每页时长、按天统计、总页数）   | Zotero 数据目录下的 `zest.sqlite`——**不写入文库、不参与同步**       |
-| 评级、阅读状态、简记、被引数             | 条目的 `Extra` 字段——随 Zotero 同步，**卸载 Zest 后依然保留**       |
-| 视图、标签规则、标签页分组与会话、数据集 | Zotero 数据目录下的 `zest-config.json`                              |
-| 分区 / 被引查询缓存                      | `zest-cache.json`（派生数据，删了会重新查）                         |
+| 内容                                     | 位置                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| 阅读记录（每页时长、按天统计、总页数）   | Zotero 数据目录下的 `zest.sqlite`——**不写入文库、不参与同步**         |
+| 评级、阅读状态、简记、被引数             | 条目的 `Extra` 字段——随 Zotero 同步，**卸载 Zest 后依然保留**         |
+| 视图、标签规则、标签页分组与会话、数据集 | Zotero 数据目录下的 `zest-config.json`                                |
+| 分区 / 被引查询缓存                      | `zest-cache.json`（派生数据，删了会重新查）                           |
 | API 密钥                                 | 系统登录管理器（钥匙串 / 凭据管理器）——不进 prefs、不进导出、不进日志 |
 
 - **阅读数据导入导出**：设置 ▸ Zest ▸ 阅读数据 → JSON / CSV，换机器直接搬。
@@ -141,10 +146,11 @@ The release notes carry the file's MD5.
 
 ## Start here
 
-A green **Z** button appears in the item toolbar. Click it → **Apply the Zest column layout**: title,
-creator, year, reading, status, rating, annotations, journal tags, IF and citations, sorted by reading
-time. Don't like it? **Tools ▸ Zest ▸ Undo layout change**. Columns you switched off in
-**Settings ▸ Zest** never appear in the column picker, so turn on what you want there first.
+A **Z** button appears in the item toolbar, drawn in Zotero's own line-icon style. Click it →
+**Apply the Zest column layout**: title, creator, year, reading, status, rating, annotations, journal
+tags, IF and citations, sorted by reading time. Don't like it? **Tools ▸ Zest ▸ Undo layout change**.
+Most Zest columns ship off; the layout action turns on the ones it needs, but only those you never
+touched — a column you switched off in **Settings ▸ Zest** yourself stays off.
 
 The same button opens the **graph**, the **reading statistics** window, the **annotation matrix** and
 the settings.
@@ -164,8 +170,11 @@ the settings.
   "et al." from Zotero's own locale, optional last-author mark that never enters the sort key, and
   your own name highlighted once you put it in Settings.
 - **Publication Tags / IF / Venue** — rank badges and impact factor from your own dataset →
-  easyScholar (only with a key) → OpenAlex (no key). Offline by default; enable auto-fetch or use
-  the item context menu. Results are cached per journal for 30 days.
+  easyScholar (only with a key) → OpenAlex (no key). Offline by default, so both columns start empty:
+  switch lookups on from **Z button ▸ Look journal data up online** (the same pref as auto-fetch in
+  Settings), or use the item context menu. Hovering an empty cell tells you which case you are in.
+  Lookups are per journal, send only the name, ISSN or DOI, and are cached for 30 days. The Chinese
+  ranking systems exist only in easyScholar and need a key.
 - **Citations** — right-click ▸ Zest ▸ update (batchable, cancellable). Written to `Extra` as
   `Citations: 12 (Crossref) [2026-08-18]`, sourced Crossref → OpenAlex → optional Semantic Scholar.
   Other plugins' records (`GSCC:`, `ZSCC:`, `openalex.cit_count:`) are read but never deleted.
@@ -199,11 +208,11 @@ Zotero's own column settings, so your columns stay put if you disable the plugin
 
 | What                                              | Where                                                                                  |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Reading records (time per page, days, page count) | `zest.sqlite` in your Zotero data directory — never in your library, never synced        |
-| Rating, read status, remark, citation counts      | the item's `Extra` field — syncs, and survives uninstalling Zest                         |
-| Views, tag rules, tab groups & sessions, datasets | `zest-config.json` in your Zotero data directory                                         |
-| Rank / citation lookup cache                      | `zest-cache.json` (derived, safe to delete)                                              |
-| API keys                                          | the OS login manager (Keychain / Credential Manager) — never in prefs, exports or logs   |
+| Reading records (time per page, days, page count) | `zest.sqlite` in your Zotero data directory — never in your library, never synced      |
+| Rating, read status, remark, citation counts      | the item's `Extra` field — syncs, and survives uninstalling Zest                       |
+| Views, tag rules, tab groups & sessions, datasets | `zest-config.json` in your Zotero data directory                                       |
+| Rank / citation lookup cache                      | `zest-cache.json` (derived, safe to delete)                                            |
+| API keys                                          | the OS login manager (Keychain / Credential Manager) — never in prefs, exports or logs |
 
 Reading data exports and re-imports as JSON or CSV; the whole configuration exports as one JSON file
 that deliberately contains no secrets. **No key is required** — journal ranks work from OpenAlex or

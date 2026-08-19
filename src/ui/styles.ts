@@ -218,7 +218,14 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
-    /* toolbar button: Zotero's own chrome, one extra "graph is open" state */
+    /* toolbar button: Zotero's own chrome, one extra "graph is open" state.
+       fill:currentColor + context-properties is exactly what Zotero does
+       for #zotero-tb-add and friends, so the mark tracks the toolbar colour
+       (light, dark, and the disabled/hover states) instead of being fixed. */
+    #zest-tb-menu {
+      fill: currentColor;
+      -moz-context-properties: fill, fill-opacity;
+    }
     #zest-tb-menu.zest-tb-on {
       background-color: var(--fill-quinary);
       border-radius: 5px;
