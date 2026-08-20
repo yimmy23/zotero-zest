@@ -29,6 +29,10 @@ const filters = new Map<Window, Map<string, ItemFilter>>();
 let original:
   ((this: any, ...args: any[]) => Promise<Zotero.Item[]>) | undefined;
 let target: any;
+/** the exact function we put on the prototype, so we can tell ours from a
+ *  wrapper another plugin (or another copy of this one) installed after us */
+let wrapper:
+  ((this: any, ...args: any[]) => Promise<Zotero.Item[]>) | undefined;
 
 function proto(): any {
   return (Zotero as any).CollectionTreeRow?.prototype;
@@ -70,8 +74,12 @@ function unwrapStale(p: any) {
 }
 
 function install(): boolean {
-  if (original) return true;
   const p = proto();
+  // `original` on its own is not proof that we are still installed. An upgrade
+  // loads the new copy BEFORE the old one shuts down, and the old copy's
+  // teardown puts Zotero's own function back — over the new copy's wrapper.
+  // Check the prototype rather than our own bookkeeping.
+  if (original && p?.getItems === wrapper) return true;
   if (typeof p?.getItems !== "function") {
     ztoolkit.log("[filter] CollectionTreeRow.getItems missing — no filtering");
     return false;
@@ -136,6 +144,7 @@ function install(): boolean {
   };
   (p.getItems as any).__zestWrapped = true;
   (p.getItems as any).__zestOriginal = original;
+  wrapper = p.getItems;
   return true;
 }
 
@@ -147,12 +156,20 @@ function uninstall() {
     return;
   }
   try {
-    target.getItems = original;
+    // Only put the original back if OUR wrapper is still the one on top.
+    // Someone else wrapping after us means restoring here would delete their
+    // hook — Zest degrading another plugin, which invariant 1 forbids. Leaving
+    // the chain alone is safe: with `filters` empty our wrapper is a
+    // pass-through.
+    if (target.getItems === wrapper) target.getItems = original;
+    else
+      ztoolkit.log("[filter] another wrapper sits on ours — chain left intact");
   } catch (e) {
     ztoolkit.log("[filter] restore failed", e);
   }
   original = undefined;
   target = undefined;
+  wrapper = undefined;
 }
 
 /**

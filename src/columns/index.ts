@@ -135,9 +135,14 @@ export function registerAllColumns() {
   // annotation summaries are computed lazily; when a batch finishes (or the
   // user annotates something) repaint exactly those rows
   startAnnotationWatch((ids) => refreshItems(ids));
-  // textTags.match changes dataProvider output → recompute; the others only
-  // change how cells are painted → repaint (a colour-picker drag emits a
-  // stream of pref writes; both helpers are debounced)
+  // These two lists are the whole contract between the settings pane and the
+  // item tree: Zotero fires pref observers on an EXACT name only — a
+  // prefix/branch registration never fires (verified on 10.0) — so every
+  // preference a column reads while drawing has to be named here or the
+  // control is dead until something else happens to invalidate the tree.
+  //   read in dataProvider → recompute (the row cache holds the old value)
+  //   read in renderCell   → repaint
+  // A colour-picker drag emits a stream of writes; both helpers are debounced.
   // author formatting changes both what is drawn AND the sort key, so the
   // memo has to be dropped before the rows are recomputed
   for (const p of [
@@ -170,6 +175,9 @@ export function registerAllColumns() {
     // rows have to be recomputed — without this the toolbar switch looks dead
     // until something else happens to invalidate the tree
     "rank.autoFetch",
+    // picks which metric the IF column reads — dataProvider, so the cached
+    // row value has to go, not just the paint
+    "if.field",
   ]) {
     prefObservers.push(
       Zotero.Prefs.registerObserver(`${P}.${p}`, () => refreshAllRows(), true),
@@ -187,10 +195,15 @@ export function registerAllColumns() {
     "annots.style",
     "annots.color",
     "textTags.color",
+    "textTags.textColor",
     "heat.color",
     "heat.opacity",
     "titleDecor.heat",
     "titleDecor.unreadBold",
+    "titleDecor.unreadIncludesEmpty",
+    "rating.mark",
+    "rating.option",
+    "rating.color",
   ]) {
     prefObservers.push(
       Zotero.Prefs.registerObserver(`${P}.${p}`, () => redrawAll(), true),

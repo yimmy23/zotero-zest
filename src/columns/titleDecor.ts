@@ -19,7 +19,7 @@ import { setTimeout, clearTimeout } from "../utils/timers";
  */
 
 const MARK = "__zestOrigRenderCell";
-const patched = new Map<Window, { proto: any; own: boolean }>();
+const patched = new Map<Window, { proto: any; own: boolean; wrapped: any }>();
 const waiters = new Map<Window, number>();
 
 /** unread = explicit New / To Read; items with no status only if opted in
@@ -58,9 +58,10 @@ function tryPatch(win: Window): boolean {
   if (!view) return false;
   const proto = Object.getPrototypeOf(view);
   if (!proto || typeof proto._renderCell !== "function") return false;
-  if (proto[MARK]) {
-    // a previous plugin instance (hot reload) left its wrapper: unwrap first
-    // so we never chain stale closures
+  // A previous instance of OURS (hot reload) left its wrapper: unwrap first so
+  // we never chain stale closures. Only when the function on top is actually
+  // one of ours — unwinding over another plugin's wrapper would delete it.
+  if (proto[MARK] && (proto._renderCell as any)?.__zestDecor) {
     try {
       proto._renderCell = proto[MARK];
       delete proto[MARK];
@@ -80,6 +81,8 @@ function tryPatch(win: Window): boolean {
     const cell = orig.call(this, index, data, column, ...rest);
     try {
       if (
+        // set when we had to leave the chain in place (see uninstall)
+        !(wrapped as any).__zestOff &&
         column?.primary &&
         cell &&
         (getPref("titleDecor.heat") || getPref("titleDecor.unreadBold"))
@@ -91,13 +94,14 @@ function tryPatch(win: Window): boolean {
     }
     return cell;
   };
+  (wrapped as any).__zestDecor = true;
   Object.defineProperty(proto, MARK, {
     value: orig,
     configurable: true,
     writable: true,
   });
   proto._renderCell = wrapped;
-  patched.set(win, { proto, own: true });
+  patched.set(win, { proto, own: true, wrapped });
   return true;
 }
 
@@ -123,9 +127,18 @@ export function uninstallTitleDecor(win?: Window) {
     if (!p) continue;
     try {
       const orig = p.proto[MARK];
-      if (orig) {
+      // Restore only while OUR wrapper is the one on top; another plugin
+      // wrapping after us would lose its hook. When we cannot unwind we
+      // switch our own wrapper off instead, so it keeps forwarding and
+      // stops decorating.
+      if (orig && p.proto._renderCell === p.wrapped) {
         p.proto._renderCell = orig;
         delete p.proto[MARK];
+      } else if (p.wrapped) {
+        p.wrapped.__zestOff = true;
+        ztoolkit.log(
+          "[titleDecor] another wrapper sits on ours — left in place, disabled",
+        );
       }
     } catch (e) {
       ztoolkit.log("[titleDecor] restore failed", e);

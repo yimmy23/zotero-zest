@@ -287,6 +287,81 @@ check(
 setPref("nestedTags.show", false);
 await delay(600);
 
+/* ---------- 6c. settings controls actually reach the item tree ------------- */
+// Zotero fires a pref observer on an EXACT name only — a prefix registration
+// never fires — so columns/index.ts carries a hand-written list of every pref
+// a column reads while drawing. Nothing couples that list to the drawing code,
+// and a pref missing from it produces a settings control that silently does
+// nothing. One representative pref stands in for the list.
+setPref("column.rating.enable", true);
+setPref("rating.mark", "★");
+await delay(2500);
+const repaintItem = await mk({ title: "Zest repaint probe", extra: "rate: 4" });
+trash.push(repaintItem);
+await delay(500);
+win.ZoteroPane.collectionsView.selectByID("L1");
+await delay(2500);
+const itemsView = win.ZoteroPane.itemsView;
+let ratedRow = -1;
+for (let i = 0; i < itemsView.rowCount; i++) {
+  if (itemsView.getRow(i)?.ref?.id === repaintItem.id) {
+    ratedRow = i;
+    break;
+  }
+}
+const starText = () =>
+  doc.querySelector(`#item-tree-main-default-row-${ratedRow} .zest-stars`)
+    ?.textContent ?? "NOCELL";
+const starsBefore = starText();
+setPref("rating.mark", "✦");
+await delay(1500);
+check(
+  "settings.reachesTheTree",
+  starsBefore !== "NOCELL" && starText() !== starsBefore,
+  `${starsBefore} -> ${starText()} (no manual repaint in between)`,
+);
+
+/* ---------- 6d. teardown never removes another plugin's hook -------------- */
+// Both prototype hooks used to put Zotero's own function back unconditionally,
+// which deletes the wrapper of any plugin that wrapped after us — invariant 1.
+{
+  const p = Zotero.CollectionTreeRow.prototype;
+  const zotOriginal = p.getItems.__zestOriginal || p.getItems;
+  dev.itemFilter.setItemFilter(win, "phase-e-foreign", (items) => items);
+  await delay(300);
+  const ours = p.getItems;
+  const foreign = async function (...a) {
+    return await ours.apply(this, a);
+  };
+  foreign.__foreignMark = true;
+  p.getItems = foreign;
+  dev.itemFilter.setItemFilter(win, "phase-e-foreign", null);
+  await delay(300);
+  check("teardown.keepsForeignGetItems", !!p.getItems.__foreignMark);
+  p.getItems = zotOriginal;
+}
+{
+  setPref("titleDecor.unreadBold", true);
+  const proto = Object.getPrototypeOf(win.ZoteroPane.itemsView);
+  dev.columns.uninstallTitleDecor(win);
+  await delay(200);
+  const zotOriginal = proto._renderCell;
+  dev.columns.installTitleDecor(win);
+  await delay(900);
+  const ours = proto._renderCell;
+  const foreign = function (...a) {
+    return ours.apply(this, a);
+  };
+  foreign.__foreignMark = true;
+  proto._renderCell = foreign;
+  dev.columns.uninstallTitleDecor(win);
+  await delay(300);
+  check("teardown.keepsForeignRenderCell", !!proto._renderCell.__foreignMark);
+  proto._renderCell = zotOriginal;
+  dev.columns.installTitleDecor(win);
+  await delay(500);
+}
+
 /* ---------- 7. accent is one knob, and legible in both themes ---------- */
 const rootStyle = win.getComputedStyle(doc.documentElement);
 check(

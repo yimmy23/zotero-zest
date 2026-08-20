@@ -52,9 +52,14 @@ These are not style preferences. Breaking one is a bug even if everything still 
    requests go through `core/http.ts` with `secret: true`, which bypasses Zotero's HTTP logging.
 4. **Nothing hits the network unless the user asked.** Auto-fetch is a preference; a batch stops when a
    source throttles; back-off is never cleared by a "force" flag.
-5. **Full teardown restores Zotero exactly.** Every install has an uninstall that puts back the
-   prototype method, the DOM, the stylesheet, the menus, the native tag selector and the native tab
-   bar — verified per window and on plugin shutdown.
+5. **Full teardown restores Zotero exactly — and nothing else.** Every install has an uninstall that
+   puts back the prototype method, the DOM, the stylesheet, the menus, the native tag selector and the
+   native tab bar — verified per window and on plugin shutdown. A prototype hook goes back **only
+   while our own wrapper is still the function on the prototype**: another plugin, or the incoming
+   copy during an upgrade, may have wrapped on top of us, and restoring the original there would
+   delete their hook. When that happens, leave the chain in place and switch our own wrapper off
+   (`itemFilter.uninstall`, `uninstallTitleDecor`). The install side needs the same test before it
+   unwinds a previous wrapper.
 6. **Never touch the user's own Zotero.** Development runs against `.scaffold/dev-profile` only; the
    kill command is scoped to that path. Do not read, write or launch `/Applications/Zotero.app` with
    the user's profile.
@@ -83,6 +88,12 @@ These are not style preferences. Breaking one is a bug even if everything still 
   new ids to `typings/i10n.d.ts`.
 - Every private-API call is feature-probed and wrapped in `guard()`; a failed probe disables that
   feature and logs once.
+- Zotero fires a preference observer on an **exact** pref name — a prefix or branch registration never
+  fires (verified on 10.0). So every preference a column reads while drawing has to be named in one of
+  the two lists in `columns/index.ts`: `dataProvider` reads need `refreshAllRows` (the row cache holds
+  the old value), `renderCell` reads need `redrawAll`. Adding a control to `preferences.xhtml` without
+  adding its pref there produces a setting that silently does nothing until something else invalidates
+  the tree.
 - Errors are logged with `ztoolkit.log("[area] what failed", e)` and never rethrown into Zotero's own
   call stacks.
 
