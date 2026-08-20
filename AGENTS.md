@@ -58,9 +58,13 @@ These are not style preferences. Breaking one is a bug even if everything still 
 6. **Never touch the user's own Zotero.** Development runs against `.scaffold/dev-profile` only; the
    kill command is scoped to that path. Do not read, write or launch `/Applications/Zotero.app` with
    the user's profile.
-7. **Render paths stay cheap.** `dataProvider` and `renderCell` run per row per frame: no DB call, no
-   recursive walk, no JSON parse, no network. Anything expensive is precomputed off the render path
-   and repainted through `refreshItems` / `redraw`.
+7. **Render paths stay cheap, and hidden surfaces compute nothing.** `dataProvider` and `renderCell`
+   run per row per frame: no DB call, no recursive walk, no JSON parse, no network. Anything expensive
+   is precomputed off the render path and repainted through `refreshItems` / `redraw`. A surface that
+   is off screen does no work at all: the nested tag tree stops refreshing behind the "All" tab and
+   while its master switch is off (`treeActive` in `tags/nestedTree.ts`). The other half of that deal
+   is that everything which brings it back — a tab, the toolbar menu, Settings, a hand-edited pref —
+   goes through `syncTagPanes`, which refetches; skip it and the pane returns showing stale tags.
 8. **One state per window.** Filters, tree state, sidebars and dialogs are keyed by window; closing one
    window must not disturb another.
 9. **No AI attribution** in commits, PRs or issues, and **no version bumps or releases** unless the

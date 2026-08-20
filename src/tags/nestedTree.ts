@@ -105,9 +105,32 @@ export function tagPaneMode(): TagPaneMode {
   return getPref("nestedTags.tab") === "native" ? "native" : "tree";
 }
 
-/** re-apply the pane layout in every window (pref observer, other writers) */
+/**
+ * The tree only has to hold data while it is on screen. Refreshing it behind
+ * the "All" tab walks every item in the view and re-queries the library's
+ * tags to fill a `hidden` element — the most expensive no-op in the plugin,
+ * and it would fire on every collection change, tag edit and sync burst.
+ * `syncTagPanes` refetches on the way back in, so nothing arrives stale.
+ */
+function treeActive(): boolean {
+  return isTreeShown() && tagPaneMode() === "tree";
+}
+
+/**
+ * Re-apply the pane layout in every window, and refetch.
+ *
+ * Both halves are load-bearing. The tree stops rebuilding while it is off
+ * screen (see `treeActive`), so whatever puts it back on screen has to fetch —
+ * and that can be a tab click, the toolbar menu, the Settings pane or a
+ * hand-edited pref, which is why the work lives here rather than in the
+ * setters. `scheduleRefresh` no-ops when the tree is not showing, so calling
+ * it unconditionally costs nothing.
+ */
 export function syncTagPanes() {
-  for (const w of states.keys()) applyVisibility(w);
+  for (const w of states.keys()) {
+    applyVisibility(w);
+    scheduleRefresh(w, 0);
+  }
 }
 
 export function setTagPaneMode(win: Window, mode: TagPaneMode) {
@@ -115,8 +138,7 @@ export function setTagPaneMode(win: Window, mode: TagPaneMode) {
   // the tree is about to leave the screen; a filter whose cause is invisible
   // is worse than no filter
   if (mode === "native") clearSelection(win);
-  for (const w of states.keys()) applyVisibility(w);
-  if (mode === "tree") scheduleRefresh(win, 0);
+  syncTagPanes();
 }
 
 /* ------------------------------------------------------------------ */
@@ -191,6 +213,19 @@ export function installTagTree(win: Window) {
     tabStrip.appendChild(tab);
     tabs.set(mode, tab);
   }
+  // roving tabindex (applyVisibility parks the inactive tab at -1) means Tab
+  // alone can never reach the other view — the arrows have to be the way
+  // across, as in the WAI-ARIA tabs pattern the tree rows already follow
+  tabStrip.addEventListener(
+    "keydown",
+    guard("tag pane tabs", (ev: KeyboardEvent) => {
+      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      ev.preventDefault();
+      const next: TagPaneMode = tagPaneMode() === "tree" ? "native" : "tree";
+      setTagPaneMode(win, next);
+      tabs.get(next)?.focus();
+    }),
+  );
   bar.appendChild(tabStrip);
 
   const treeOnly: HTMLElement[] = [];
@@ -266,7 +301,7 @@ export function installTagTree(win: Window) {
   applyVisibility(win);
   watchLibrary(win);
   startNotifier();
-  if (isTreeShown()) scheduleRefresh(win, 0);
+  scheduleRefresh(win, 0);
 }
 
 export function uninstallTagTree(win: Window) {
@@ -320,8 +355,7 @@ export function setTreeShown(win: Window, shown: boolean) {
   // the tree may not be mounted yet (collapsed selector at startup)
   if (shown && !states.has(win)) installTagTree(win);
   if (!shown) clearSelection(win);
-  for (const w of states.keys()) applyVisibility(w);
-  if (shown && tagPaneMode() === "tree") scheduleRefresh(win, 0);
+  syncTagPanes();
 }
 
 export function toggleTagTree(win: Window) {
@@ -426,6 +460,8 @@ function scheduleRefresh(win: Window, delay = 300) {
   const state = states.get(win);
   if (!state) return;
   if (state.refreshTimer) clearTimeout(state.refreshTimer);
+  state.refreshTimer = undefined;
+  if (!treeActive()) return;
   state.refreshTimer = setTimeout(() => {
     state.refreshTimer = undefined;
     void refreshTagTree(win);
@@ -462,7 +498,7 @@ export async function refreshTagTree(win: Window): Promise<void> {
 
 async function runTagTreeRefresh(win: Window) {
   const state = states.get(win);
-  if (!state || !isTreeShown()) return;
+  if (!state || !treeActive()) return;
   try {
     const zp = (win as any).ZoteroPane;
     const libraryID = selectedLibraryID(win);

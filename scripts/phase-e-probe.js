@@ -215,6 +215,78 @@ check(
   doc.getElementById("zotero-tag-selector")?.hidden === false,
 );
 
+/* ---------- 6b. the two tag-pane tabs, and the idle guard behind them ------- */
+// The tree stops rebuilding while the "All" tab is up. Both failure modes of
+// that saving are silent: either it keeps walking the whole library to fill a
+// hidden element, or it comes back from the All tab showing yesterday's tags.
+// Nothing throws in either case, so both directions are pinned here.
+setPref("textTags.match", "#"); // display path drops the rule's prefix
+setPref("nestedTags.show", true);
+setPref("nestedTags.tab", "tree");
+setPref("nestedTags.showAllTags", true);
+await delay(2500);
+const paneBody = doc.querySelector(".zest-tagtree-body");
+const paneStrip = doc.querySelector(".zest-tagtree-tabs");
+const paneTabs = [...doc.querySelectorAll(".zest-tagtree-tab")];
+const paneTags = () =>
+  [...(paneBody ? paneBody.querySelectorAll(".zest-tagtree-row") : [])].map(
+    (r) => r.getAttribute("data-tag"),
+  );
+const probeTags = () => paneTags().filter((t) => /ZestTab/.test(String(t)));
+check("tagpane.tabs", !!paneStrip && paneTabs.length === 2);
+
+const tabbed = await mk({ title: "Zest tab probe" });
+trash.push(tabbed);
+tabbed.addTag("#ZestTabAlpha");
+await tabbed.saveTx();
+await delay(2000);
+check(
+  "tagpane.treeSeesNewTag",
+  paneTags().includes("ZestTabAlpha"),
+  probeTags().join("|"),
+);
+
+setPref("nestedTags.tab", "native");
+await delay(800);
+tabbed.addTag("#ZestTabGamma");
+await tabbed.saveTx();
+await delay(2000);
+check(
+  "tagpane.idleWhileHidden",
+  !paneTags().includes("ZestTabGamma"),
+  "no rebuild behind the All tab",
+);
+check(
+  "tagpane.nativeGetsTheRoom",
+  paneBody &&
+    win.getComputedStyle(paneBody).display === "none" &&
+    doc.getElementById("zotero-tag-selector")?.hidden === false &&
+    [...doc.querySelectorAll(".zest-tagtree-bar > *")].filter(
+      (e) => win.getComputedStyle(e).display !== "none",
+    ).length === 1,
+);
+
+// a roving tabindex parks the inactive tab at -1, so Tab alone can never
+// reach the other view: the arrows have to work
+paneTabs[1].focus();
+paneStrip.dispatchEvent(
+  new win.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }),
+);
+await delay(2000);
+check(
+  "tagpane.arrowSwitchesTab",
+  Zotero.Prefs.get(prefKey("nestedTags.tab"), true) === "tree" &&
+    doc.activeElement === paneTabs[0],
+  String(Zotero.Prefs.get(prefKey("nestedTags.tab"), true)),
+);
+check(
+  "tagpane.catchUpOnReturn",
+  paneTags().includes("ZestTabGamma"),
+  probeTags().join("|"),
+);
+setPref("nestedTags.show", false);
+await delay(600);
+
 /* ---------- 7. accent is one knob, and legible in both themes ---------- */
 const rootStyle = win.getComputedStyle(doc.documentElement);
 check(
