@@ -8,11 +8,13 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 
 
 <img width="4098" height="2464" alt="2026-08-21 精读 Must-Read - Zotero 001173" src="https://github.com/user-attachments/assets/e0f74c95-d707-4da9-9e75-b18559bbd1ce" />
+
 ---
+
 ## 安装
 
 1. 从 [最新 Release](https://github.com/yimmy23/zotero-zest/releases/latest) 下载 `zest.xpi`。
-2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →**Install Plugin From File…**→ 选中该 `.xpi`。
+2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
 
 Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.xpi`（macOS）/ `md5sum zest.xpi`（Linux）/
