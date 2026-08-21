@@ -83,12 +83,6 @@ Alan Turing），「等 / et al.」取自 Zotero 自身语言。可在设置里�
 
 **Annotation Finder**——这条文献的全部标注，按标签树里选中的标签过滤，双击直接跳进阅读器里那条标注。
 
-**标题翻译 / 摘要翻译**（默认关，**设置 ▸ Zest ▸ 条目面板**里打开）——zotero-pdf-translate 把译文塞进
-`Extra` 的 `titleTranslation` / `abstractTranslation` 行，于是「其他」栏越来越像一份日志。打开后，信息栏
-里紧跟「其他」多出这两栏，没有译文的条目不显示；分成好几段的摘要译文**整段都读得到**，就地改一行只会
-重写它自己那几行，`Read_Status` / `Citations` / `JCR分区` 都不动。zotero-pdf-translate 自己也有同名两栏
-（设置 ▸ 翻译 ▸ 信息栏：显示标题翻译 / 显示摘要翻译），两边同时打开会重复。
-
 ## 嵌套标签树
 
 如果你用 `#文献密码/研究方法/统计` 这种层级标签，在**设置 ▸ Zest ▸ 标签**里打开嵌套标签树：它会挂在
@@ -244,14 +238,6 @@ inline, abstract, and links out to DOI, Google Scholar, PubMed and Semantic Scho
 
 **Annotation Finder** — every annotation of the item, filtered by whatever you selected in the tag
 tree; double-click jumps into the reader at that annotation.
-
-**Title / abstract translation rows** (off by default; **Settings ▸ Zest ▸ Item panel**) —
-zotero-pdf-translate keeps its output in `Extra` as `titleTranslation` / `abstractTranslation`, which
-is how the "Extra" row turns into a log file. Turn these on and the two values get their own labelled
-rows right after Extra; items without a translation show neither. Abstract translations that run over
-several paragraphs are shown **in full**, and editing a row rewrites only its own lines —
-`Read_Status`, `Citations`, `JCR分区` and anything else stay put. zotero-pdf-translate ships the same
-two rows (Settings ▸ Translate ▸ Info box); turning both on shows each row twice.
 
 ## Nested tag tree
 

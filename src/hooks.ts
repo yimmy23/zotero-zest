@@ -86,10 +86,6 @@ import {
   registerInfoSection,
   unregisterInfoSection,
 } from "./panes/infoSection";
-import {
-  syncTranslationRows,
-  unregisterTranslationRows,
-} from "./panes/translationRows";
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
 import { getPref } from "./utils/prefs";
@@ -184,7 +180,6 @@ async function onStartup() {
   step("itemPane", () => {
     registerInfoSection();
     registerAnnotSection();
-    syncTranslationRows();
   });
   // `Zotero.Zest.api` — the surface Better Notes templates, Actions & Tags
   // scripts and Tools ▸ Run JavaScript call. Published after the reading store
@@ -298,11 +293,6 @@ async function onStartup() {
         true,
       ),
       Zotero.Prefs.registerObserver(
-        `${P}.info.translations`,
-        () => syncTranslationRows(),
-        true,
-      ),
-      Zotero.Prefs.registerObserver(
         `${P}.tags.hideInTitle`,
         () => {
           for (const win of Zotero.getMainWindows()) {
@@ -400,7 +390,6 @@ async function onShutdown() {
   readingTracker.stop();
   unregisterAnnotSection();
   unregisterInfoSection();
-  unregisterTranslationRows();
   closeStatsDialog();
   closeMatrix();
   uninstallAllTagTrees();

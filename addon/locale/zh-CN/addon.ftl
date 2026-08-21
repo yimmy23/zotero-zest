@@ -266,8 +266,6 @@ info-status-none = 未设置
 info-abstract = 摘要
 info-open = 在其它平台打开
 info-heat-tip = 跳到第 { $page } 页
-inforow-title-translation = 标题翻译
-inforow-abstract-translation = 摘要翻译
 
 # ---- reading statistics ----
 menu-stats =

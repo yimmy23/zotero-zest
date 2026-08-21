@@ -242,10 +242,7 @@ pref-info-abstract =
     .label = 面板中包含可折叠的摘要
 pref-column-remark =
     .label = 简记列——一行备注，保存在 Extra 字段
-pref-info-translations =
-    .label = 信息栏加「标题翻译 / 摘要翻译」两栏（读取 Extra）
 pref-panel-hint = 面板里的阅读热力条可以点击：点哪一段就在阅读器里打开对应页码。
-pref-translations-hint = 翻译文本由 zotero-pdf-translate 写在 Extra 的 titleTranslation / abstractTranslation 里，这两栏只是把它显示出来，整段摘要（含分段）都能看全。该插件自己也有同名两栏（设置 → 翻译 → 信息栏），两边同时打开会出现重复行。
 
 pref-group-tabs = 垂直标签页
 pref-tabs-sidebar =

@@ -294,18 +294,6 @@ export function registerStyles(win: Window) {
     .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-info-abstract > div { margin-top: 4px; color: var(--fill-secondary); white-space: pre-wrap; }
 
-    /* ---------- translation rows in the native Info box ---------- */
-    /* editable-text mirrors its content to a "value" attribute, so an empty
-       row can be hidden in CSS. Doing it here rather than through the API
-       setEnabled() hook keeps it live: onItemChange only fires when the
-       DISPLAYED item changes, so a translation added to the item already on
-       screen would otherwise stay hidden until the user clicked away and
-       back. */
-    .meta-row[data-custom-row-id$="-zestTitleTranslation"]:not(:focus-within):has(editable-text[value=""]),
-    .meta-row[data-custom-row-id$="-zestAbstractTranslation"]:not(:focus-within):has(editable-text[value=""]) {
-      display: none !important; /* Zotero's own .meta-row rule wins otherwise */
-    }
-
     /* ---------- annotation locator cards ---------- */
     .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }
     .zest-annot-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
