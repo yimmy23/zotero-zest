@@ -28,7 +28,8 @@ src/
   ui/                          stylesheet + accent tokens, icon set, palette, batch runner
   utils/                       Extra lines, CSV, guard, prefs, timers, locale, item helpers
 addon/                         manifest, prefs.js, locales (en-US, zh-CN), preferences pane, dialog host
-scripts/                       dev-eval.sh, dev-shot.py, phase-c/d/e probes
+scripts/                       dev-eval.sh, dev-shot.py, phase-c/d/e probes,
+                               upgrade-probe.js (destructive; upgrade ordering)
 assets/                        icon sources; NOT shipped (build packs addon/** only).
                                favicon.svg regenerates addon/content/icons/favicon{,@0.5x}.png
                                via `rsvg-convert -w 96 -h 96` / `-w 48 -h 48`
@@ -62,7 +63,10 @@ These are not style preferences. Breaking one is a bug even if everything still 
    copy during an upgrade, may have wrapped on top of us, and restoring the original there would
    delete their hook. When that happens, leave the chain in place and switch our own wrapper off
    (`itemFilter.uninstall`, `uninstallTitleDecor`). The install side needs the same test before it
-   unwinds a previous wrapper.
+   unwinds a previous wrapper. **The same rule covers the plugin's own global**: `onShutdown` hands
+   `Zotero[addonInstance]` back only when it still points at this copy's `addon`, and `index.ts`
+   claims it whenever this copy has no `addon` yet. Deleting a global the incoming copy already owns
+   leaves a running plugin with no handle — the UI keeps working and `Zotero.Zest.api` is gone.
 6. **Never touch the user's own Zotero.** Development runs against `.scaffold/dev-profile` only; the
    kill command is scoped to that path. Do not read, write or launch `/Applications/Zotero.app` with
    the user's profile.
@@ -113,6 +117,7 @@ scripts/dev-eval.sh 'return Zotero.version' # run arbitrary JS inside the dev in
 scripts/dev-eval.sh -f scripts/phase-c-probe.js   # tags · ranks · views · graph · reader
 scripts/dev-eval.sh -f scripts/phase-d-probe.js   # authors · citations · panels · stats · matrix · tabs
 scripts/dev-eval.sh -f scripts/phase-e-probe.js   # the audit regression suite
+scripts/dev-eval.sh -f scripts/upgrade-probe.js   # DESTRUCTIVE: shuts the plugin down; restart after
 scripts/dev-shot.py out.png [selector] [--dark|--light|--prefs|--stats|--matrix]
 ```
 

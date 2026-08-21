@@ -429,8 +429,16 @@ async function onShutdown() {
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   addon.data.alive = false;
+  // Hand the name back only if we still hold it. On an upgrade the new copy
+  // has already claimed `Zotero.Zest`, and deleting it here would leave the
+  // RUNNING plugin without its handle: columns and the tag pane keep working
+  // (the new copy installed those), but `Zotero.Zest.api` is gone and every
+  // note template or script that calls it breaks until the next restart.
   // @ts-expect-error - Plugin instance is not typed
-  delete Zotero[config.addonInstance];
+  if (Zotero[config.addonInstance] === addon) {
+    // @ts-expect-error - Plugin instance is not typed
+    delete Zotero[config.addonInstance];
+  }
 }
 
 /** APP_SHUTDOWN: only persist — Zotero closes its DB right after us. */

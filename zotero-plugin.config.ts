@@ -7,9 +7,11 @@ export default defineConfig({
   name: pkg.config.addonName,
   id: pkg.config.addonID,
   namespace: pkg.config.addonRef,
-  updateURL: `https://github.com/{{owner}}/{{repo}}/releases/download/release/${
-    pkg.version.includes("-") ? "update-beta.json" : "update.json"
-  }`,
+  // One channel. A second manifest for prereleases only pays off once there
+  // are prereleases to put in it, and an unmaintained one is worse than none:
+  // it sat at 1.0.0 while the real channel moved on, ready to offer a
+  // downgrade to anyone who ever ran a beta build.
+  updateURL: `https://github.com/{{owner}}/{{repo}}/releases/download/release/update.json`,
   xpiDownloadLink:
     "https://github.com/{{owner}}/{{repo}}/releases/download/v{{version}}/{{xpiName}}.xpi",
 

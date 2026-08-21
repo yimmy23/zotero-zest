@@ -4,8 +4,13 @@ import { config } from "../package.json";
 
 const basicTool = new BasicTool();
 
-// @ts-expect-error - Plugin instance is not typed
-if (!basicTool.getGlobal("Zotero")[config.addonInstance]) {
+// The guard is on OUR copy having an addon, not on the global being free.
+// An upgrade loads the new copy while the old one is still registered, so a
+// global that is already taken says nothing about whether this copy is set up
+// — deferring to it would leave this copy with no `addon` at all, and every
+// hook below would throw. The outgoing copy's shutdown hands the name back
+// only if it still owns it (see hooks.onShutdown).
+if (!_globalThis.addon) {
   _globalThis.addon = new Addon();
   defineGlobal("ztoolkit", () => {
     return _globalThis.addon.data.ztoolkit;
