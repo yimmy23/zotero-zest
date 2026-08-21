@@ -9,6 +9,9 @@ history and the verified Zotero API facts; the README is for users.
 ```
 src/
   index.ts hooks.ts addon.ts   startup / shutdown / per-window bind / pref observers
+  api.ts                       `Zotero.Zest.api` — read-only surface for Better Notes templates,
+                               Actions & Tags scripts and Run JavaScript. Never throws, never
+                               returns an internal type, never writes
   columns/                     every item-tree column + registry helpers + title decoration
   authors/pipeline.ts          resolveRoles → normalize → select → format → decorate
   cite/                        citation counts: Extra format, sources (Crossref/OpenAlex/S2)

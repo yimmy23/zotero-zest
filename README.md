@@ -118,6 +118,51 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 - **外观**：一个主色贯穿全部界面，设置 ▸ Zest ▸ 外观里有取色器和 5 个预设，可一并套用到热力图与徽章。
   默认避开蓝色——Zotero 选中行用的就是系统选区蓝。
 
+## 给模板和脚本用的 API
+
+Zest 把它算出来的东西挂在 `Zotero.Zest.api` 上，供 Better Notes 模板、Actions & Tags 脚本、
+以及 `工具 ▸ 开发者 ▸ 运行 JavaScript` 调用。全部只读，**任何一个都不会抛异常**——取不到就返回
+空值，模板不会因为某一格没数据而整个中断。传条目对象或条目 ID 都行，传附件会自动上溯到父条目。
+
+```js
+const zest = Zotero.Zest.api;
+
+zest.readingTime(item); // "1.5 h"      阅读列显示的那个值
+zest.readingSeconds(item); // 5400         总秒数
+zest.pagesRead(item); // 23           停留超过 5 秒的页数
+zest.pagesTotal(item); // 31
+zest.readingProgress(item); // 74           百分比
+zest.firstRead(item); // "2026-03-04"
+zest.lastRead(item); // "2026-08-19"
+zest.readingByDay(item); // { "2026-08-19": 930, … }   每天的秒数
+zest.readingByPage(item); // { 0: 120, 1: 45, … }       每页的秒数
+
+zest.readStatus(item); // "In Progress"
+zest.rating(item); // 4
+zest.ratingStars(item); // "★★★★☆"
+
+zest.citations(item); // 42
+zest.citationInfo(item); // { count: 42, source: "Crossref", date: "2026-08-20" }
+
+zest.journalRank(item); // "综合性期刊1区 · Q1"
+zest.journalRanks(item); // [{ field, value, source }, …]  按你配置的字段顺序
+zest.impactFactor(item); // 56.1
+zest.journalName(item); // "Nature"
+
+zest.annotationCount(item); // 18
+zest.annotationChars(item); // 4210
+zest.annotationColors(item); // [{ color: "#ffd400", count: 12 }, …]
+zest.textTags(item); // [{ tag: "#Method/Cohort", text: "Method/Cohort", color }]
+```
+
+在 Better Notes 模板里直接插值即可：
+
+```
+读了 ${Zotero.Zest.api.readingTime(topItem)}，看到第 ${Zotero.Zest.api.pagesRead(topItem)} 页
+评分 ${Zotero.Zest.api.ratingStars(topItem)}
+${Zotero.Zest.api.journalRank(topItem)}
+```
+
 ## 环境要求
 
 Zotero **10.x**。不支持 Zotero 7 / 8。
@@ -223,6 +268,44 @@ your own dataset, citations from Crossref. Nothing is fetched unless you ask for
 Vertical tab sidebar with persistent groups and saved sessions (off by default), three reader
 backgrounds and extra highlight palettes, optional collection counts, and one accent colour driving
 every Zest surface (picker plus five presets in **Settings ▸ Zest ▸ Appearance**).
+
+## API for templates and scripts
+
+Everything Zest computes is published on `Zotero.Zest.api`, for Better Notes templates, Actions &
+Tags scripts and **Tools ▸ Developer ▸ Run JavaScript**. It is read-only and **nothing throws** — a
+missing record answers with an empty value rather than aborting the caller's template. Pass an item
+or an item id; an attachment resolves to its parent.
+
+```js
+const zest = Zotero.Zest.api;
+
+zest.readingTime(item); // "1.5 h"      what the Reading column shows
+zest.readingSeconds(item); // 5400
+zest.pagesRead(item); // 23           pages that got more than 5 seconds
+zest.pagesTotal(item); // 31
+zest.readingProgress(item); // 74           percent
+zest.firstRead(item); // "2026-03-04"
+zest.lastRead(item); // "2026-08-19"
+zest.readingByDay(item); // { "2026-08-19": 930, … }   seconds per day
+zest.readingByPage(item); // { 0: 120, 1: 45, … }       seconds per page
+
+zest.readStatus(item); // "In Progress"
+zest.rating(item); // 4
+zest.ratingStars(item); // "★★★★☆"
+
+zest.citations(item); // 42
+zest.citationInfo(item); // { count: 42, source: "Crossref", date: "2026-08-20" }
+
+zest.journalRank(item); // "综合性期刊1区 · Q1"
+zest.journalRanks(item); // [{ field, value, source }, …]  in your configured order
+zest.impactFactor(item); // 56.1
+zest.journalName(item); // "Nature"
+
+zest.annotationCount(item); // 18
+zest.annotationChars(item); // 4210
+zest.annotationColors(item); // [{ color: "#ffd400", count: 12 }, …]
+zest.textTags(item); // [{ tag: "#Method/Cohort", text: "Method/Cohort", color }]
+```
 
 ## Requirements
 

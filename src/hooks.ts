@@ -1,5 +1,6 @@
 import { config } from "../package.json";
 import { initLocale } from "./utils/locale";
+import { api } from "./api";
 import {
   registerPrefsScripts,
   onPrefsCommand,
@@ -179,6 +180,13 @@ async function onStartup() {
   step("itemPane", () => {
     registerInfoSection();
     registerAnnotSection();
+  });
+  // `Zotero.Zest.api` — the surface Better Notes templates, Actions & Tags
+  // scripts and Tools ▸ Run JavaScript call. Published after the reading store
+  // has loaded, so a caller never reads a half-filled record; it disappears
+  // with `Zotero.Zest` on shutdown.
+  step("api", () => {
+    addon.api = api;
   });
   step("reader", () => installColorSchemes());
   step("menus", () => registerMenus());

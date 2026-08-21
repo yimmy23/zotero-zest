@@ -362,6 +362,61 @@ check(
   await delay(500);
 }
 
+/* ---------- 6e. the public API is safe for a template to interpolate ------- */
+// Zotero.Zest.api is called from Better Notes templates and Actions & Tags
+// scripts. A throw from any one field aborts the caller's whole template, and
+// a Map or a class instance renders as "[object Object]" in a note — so the
+// contract is: never throw, only interpolation-safe values.
+{
+  const api = Zotero.Zest?.api;
+  check("api.published", !!api && typeof api.readingTime === "function");
+  if (api) {
+    const probeItem = await mk({
+      title: "Zest api probe",
+      extra:
+        "rate: 4\nRead_Status: In Progress\nCitations: 42 (Crossref) [2026-08-20]",
+    });
+    trash.push(probeItem);
+    await delay(500);
+    check(
+      "api.readsWhatTheColumnsShow",
+      api.rating(probeItem) === 4 &&
+        api.readStatus(probeItem) === "In Progress" &&
+        api.citations(probeItem) === 42,
+      `${api.rating(probeItem)} / ${api.readStatus(probeItem)} / ${api.citations(probeItem)}`,
+    );
+    // a template's `item` is often the PDF, not the parent
+    check(
+      "api.acceptsIdsAndChildren",
+      api.rating(probeItem.id) === 4 &&
+        api.readStatus(probeItem.id) === "In Progress",
+    );
+    const threw = [];
+    for (const [name, fn] of Object.entries(api)) {
+      if (typeof fn !== "function") continue;
+      for (const junk of [null, undefined, 0, -1, 999999, "nope", {}, []]) {
+        try {
+          const v = fn(junk);
+          if (v instanceof Map || v instanceof Set)
+            threw.push(name + ": returned a " + v.constructor.name);
+        } catch (e) {
+          threw.push(name + "(" + JSON.stringify(junk) + "): " + e);
+        }
+      }
+    }
+    check("api.neverThrows", threw.length === 0, threw.slice(0, 3).join(" | "));
+    // the marks have to differ in plain text even when the prefs collide,
+    // because a note has no CSS to tell a filled star from an empty one
+    setPref("rating.mark", "★");
+    setPref("rating.option", "★");
+    check(
+      "api.ratingStarsReadableAsText",
+      api.ratingStars(probeItem) === "★★★★☆",
+      api.ratingStars(probeItem),
+    );
+  }
+}
+
 /* ---------- 7. accent is one knob, and legible in both themes ---------- */
 const rootStyle = win.getComputedStyle(doc.documentElement);
 check(
