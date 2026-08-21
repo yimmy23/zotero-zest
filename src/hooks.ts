@@ -70,6 +70,7 @@ import {
 } from "./views/collectionCounts";
 import { resetTypeFilter } from "./views/typeFilter";
 import { installColorSchemes } from "./reader/colorSchemes";
+import { repairEmptyThemeSetting } from "./reader/themes";
 import {
   restoreSidebar,
   showSidebar,
@@ -188,7 +189,15 @@ async function onStartup() {
   step("api", () => {
     addon.api = api;
   });
-  step("reader", () => installColorSchemes());
+  step("reader", () => {
+    installColorSchemes();
+    // an empty `readerCustomThemes` array fails the whole settings upload with
+    // a 400; older Zest builds could write one when the last preset was
+    // removed, so clear it before the first sync of the session
+    void repairEmptyThemeSetting().catch((e) =>
+      ztoolkit.log("[reader] theme repair failed", e),
+    );
+  });
   step("menus", () => registerMenus());
   step("exportPatch", () => installExportPatch());
   step("tracker", () => {

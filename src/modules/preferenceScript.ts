@@ -34,6 +34,8 @@ const IDS = {
   dbPath: "zest-pref-dbpath",
   key: "zest-pref-eskey",
   keyStatus: "zest-pref-keystatus",
+  s2Key: "zest-pref-s2key",
+  s2KeyStatus: "zest-pref-s2keystatus",
   datasets: "zest-pref-datasets",
   viewsList: "zest-pref-views",
 };
@@ -114,21 +116,77 @@ function doc(): Document | undefined {
   }
 }
 
-async function refreshKeyField() {
+/** the two API keys the settings pane can hold, and where each one lives */
+const KEY_FIELDS = {
+  easyscholar: { input: IDS.key, status: IDS.keyStatus },
+  semanticscholar: { input: IDS.s2Key, status: IDS.s2KeyStatus },
+} as const;
+
+type KeyField = keyof typeof KEY_FIELDS;
+
+const MASK = "••••••••";
+
+/**
+ * The key fields never hold the stored key — they hold a fixed mask — so a
+ * password field's reveal button could only ever "unhide" eight bullets, which
+ * is what made it look broken. Idle the field as plain text showing the mask
+ * (no reveal button, nothing secret in it) and switch it to a real password
+ * field the moment the user starts entering a key, where the reveal button
+ * does something useful: show what they just typed.
+ */
+function idleKeyField(input: HTMLInputElement) {
+  input.type = "text";
+  input.value = input.dataset.hasKey === "1" ? MASK : "";
+  input.dataset.zestDirty = "";
+}
+
+/** true while the field holds a real (or deliberately cleared) user entry */
+function keyFieldEdited(input: HTMLInputElement): boolean {
+  return input.type === "password";
+}
+
+function bindKeyField(input: HTMLInputElement) {
+  if (input.dataset.zestBound) return;
+  input.dataset.zestBound = "1";
+  input.addEventListener("focus", () => {
+    if (keyFieldEdited(input)) return;
+    input.type = "password";
+    input.value = "";
+    input.dataset.zestDirty = "";
+  });
+  input.addEventListener("input", () => {
+    input.dataset.zestDirty = "1";
+  });
+  input.addEventListener("blur", () => {
+    // an accidental click into the box must not read as "delete my key";
+    // only a field the user actually typed in (or emptied on purpose) is kept
+    if (input.dataset.zestDirty !== "1") idleKeyField(input);
+  });
+}
+
+async function refreshKeyField(name?: KeyField) {
+  const names = name ? [name] : (Object.keys(KEY_FIELDS) as KeyField[]);
   const d = doc();
   if (!d) return;
-  const input = d.getElementById(IDS.key) as HTMLInputElement | null;
-  const status = d.getElementById(IDS.keyStatus);
-  if (input) {
-    const key = await getSecret("easyscholar");
-    // never show the key itself back to the screen
-    input.value = key ? "••••••••" : "";
-    input.dataset.hasKey = key ? "1" : "";
-  }
-  if (status) {
-    status.textContent = secretIsInPrefs("easyscholar")
-      ? getString("pref-key-plaintext")
-      : "";
+  for (const which of names) {
+    const ids = KEY_FIELDS[which];
+    const input = d.getElementById(ids.input) as HTMLInputElement | null;
+    const status = d.getElementById(ids.status);
+    if (input) {
+      const key = await getSecret(which);
+      input.value = key ? MASK : "";
+      input.dataset.hasKey = key ? "1" : "";
+      idleKeyField(input);
+      bindKeyField(input);
+    }
+    if (status) {
+      const key = input?.dataset.hasKey === "1";
+      status.textContent = secretIsInPrefs(which)
+        ? getString("pref-key-plaintext")
+        : key
+          ? getString("pref-key-stored")
+          : "";
+    }
   }
 }
 
@@ -318,15 +376,20 @@ async function importDatasetFile() {
   }
 }
 
-async function saveKey() {
+async function saveKey(name: KeyField = "easyscholar") {
   const d = doc();
-  const input = d?.getElementById(IDS.key) as HTMLInputElement | null;
+  const input = d?.getElementById(
+    KEY_FIELDS[name].input,
+  ) as HTMLInputElement | null;
   if (!input) return;
+  // untouched field: it is still showing the mask, so there is nothing to save
+  if (!keyFieldEdited(input)) return;
   const value = input.value.trim();
-  if (value === "••••••••") return; // unchanged placeholder
-  const where = await setSecret("easyscholar", value);
-  clearRankCache();
-  await refreshKeyField();
+  const where = await setSecret(name, value);
+  // a new easyScholar key can change the ranks themselves; a Semantic Scholar
+  // key only lifts the rate limit, so the counts already fetched stay valid
+  if (name === "easyscholar") clearRankCache();
+  await refreshKeyField(name);
   alertUser(
     getString("pref-key-save"),
     where === "login-manager"
@@ -359,7 +422,10 @@ export async function onPrefsCommand(type: string) {
       await importDatasetFile();
       break;
     case "key-save":
-      await saveKey();
+      await saveKey("easyscholar");
+      break;
+    case "s2key-save":
+      await saveKey("semanticscholar");
       break;
     case "accent-apply":
       // the heat map and the badges keep their own colours; this copies the

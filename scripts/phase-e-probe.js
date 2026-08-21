@@ -492,6 +492,75 @@ check(
   panelStar ? panelStar.textContent : "no star",
 );
 
+/* ---------- 9. readerCustomThemes is never stored as an empty array ---------- */
+/* The sync API answers `readerCustomThemes: []` with a 400, and one rejected
+   setting fails the whole POST /settings, so the library silently stops
+   syncing. Zotero clears the setting instead of storing []; so must Zest. */
+{
+  const LIB = Zotero.Libraries.userLibraryID;
+  const SS = Zotero.SyncedSettings;
+  const backup = SS.get(LIB, "readerCustomThemes");
+  const themeOf = (p) => ({
+    id: p.id,
+    label: p.label,
+    background: p.background,
+    foreground: p.foreground,
+    ...(p.invertImages ? { invertImages: true } : {}),
+  });
+  try {
+    // only our presets are installed → removing them must CLEAR, not store []
+    await SS.set(
+      LIB,
+      "readerCustomThemes",
+      dev.readerThemes.PRESETS.map(themeOf),
+    );
+    await dev.readerThemes.removePresets();
+    check(
+      "readerThemes.removeClearsInsteadOfEmptyArray",
+      SS.get(LIB, "readerCustomThemes") === null,
+      JSON.stringify(SS.get(LIB, "readerCustomThemes")),
+    );
+
+    // a user theme alongside ours survives, and the setting stays present
+    const mine = {
+      id: "custom-mine",
+      label: "Mine",
+      background: "#fff",
+      foreground: "#000",
+    };
+    await SS.set(LIB, "readerCustomThemes", [
+      mine,
+      ...dev.readerThemes.PRESETS.map(themeOf),
+    ]);
+    await dev.readerThemes.removePresets();
+    check(
+      "readerThemes.removeKeepsForeignThemes",
+      JSON.stringify(SS.get(LIB, "readerCustomThemes")) ===
+        JSON.stringify([mine]),
+      JSON.stringify(SS.get(LIB, "readerCustomThemes")),
+    );
+
+    // the repair removes a bad value left by an older build, and only that
+    await SS.set(LIB, "readerCustomThemes", []);
+    const repaired = await dev.readerThemes.repairEmptyThemeSetting();
+    check(
+      "readerThemes.repairsEmptyArray",
+      repaired === true && SS.get(LIB, "readerCustomThemes") === null,
+    );
+    await SS.set(LIB, "readerCustomThemes", [mine]);
+    const noop = await dev.readerThemes.repairEmptyThemeSetting();
+    check(
+      "readerThemes.repairLeavesRealThemesAlone",
+      noop === false &&
+        JSON.stringify(SS.get(LIB, "readerCustomThemes")) ===
+          JSON.stringify([mine]),
+    );
+  } finally {
+    if (backup === null) await SS.clear(LIB, "readerCustomThemes");
+    else await SS.set(LIB, "readerCustomThemes", backup);
+  }
+}
+
 /* ---------- cleanup ---------- */
 for (const [name, value] of saved) {
   if (value === undefined) Zotero.Prefs.clear(prefKey(name), true);

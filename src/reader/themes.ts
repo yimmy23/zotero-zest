@@ -16,7 +16,14 @@ import { getString } from "../utils/locale";
  *   - compare before writing: SyncedSettings.set does a `===` check, so writing
  *     an equal-but-new array marks the setting dirty and re-uploads it;
  *   - write the setting BEFORE the pref, or the pref points at an unknown id
- *     and the reader silently falls back to Original.
+ *     and the reader silently falls back to Original;
+ *   - NEVER store an empty array. The sync API rejects `readerCustomThemes: []`
+ *     with a 400, and one rejected setting fails the whole `POST /settings`,
+ *     so the library stops syncing until the row is removed. Zotero itself
+ *     clears the setting instead of storing `[]` (`xpcom/reader.js`:
+ *     `if (customThemes?.length) … else await SyncedSettings.clear(…)`), and
+ *     so must we — see `repairEmptyThemeSetting()` for the installs that got
+ *     the bad value before this rule existed.
  */
 
 export interface ReaderTheme {
@@ -83,6 +90,46 @@ function clean(theme: ReaderTheme): ReaderTheme {
   return out;
 }
 
+/**
+ * The only place the setting is written. An empty list removes the setting
+ * rather than storing `[]`, which the sync API rejects with a 400.
+ */
+async function writeThemes(themes: ReaderTheme[]): Promise<void> {
+  const settings = (Zotero as any).SyncedSettings;
+  if (themes.length) {
+    await settings.set(userLibraryID(), "readerCustomThemes", themes);
+    return;
+  }
+  await settings.clear?.(userLibraryID(), "readerCustomThemes");
+}
+
+/**
+ * Repair an install that already stored `readerCustomThemes: []`.
+ *
+ * Removing the last preset used to write the empty array, and the sync API
+ * answers the whole settings upload with a 400 — the library then never syncs
+ * again, with nothing in the UI to explain why. Zotero never writes `[]`
+ * itself, so an empty array can only be ours to clean up. Absent or non-empty
+ * values are left completely alone.
+ */
+export async function repairEmptyThemeSetting(): Promise<boolean> {
+  if (!readerThemesAvailable()) return false;
+  const settings = (Zotero as any).SyncedSettings;
+  if (typeof settings.clear !== "function") return false;
+  let value: unknown;
+  try {
+    value = settings.get(userLibraryID(), "readerCustomThemes");
+  } catch {
+    return false; // unloaded data — nothing to repair yet
+  }
+  if (!Array.isArray(value) || value.length > 0) return false;
+  await settings.clear(userLibraryID(), "readerCustomThemes");
+  ztoolkit.log(
+    "[reader] removed an empty readerCustomThemes setting (it makes POST /settings fail with 400)",
+  );
+  return true;
+}
+
 /** add/update our presets without touching the user's own themes */
 export async function installPresets(): Promise<number> {
   if (!readerThemesAvailable()) return 0;
@@ -101,11 +148,7 @@ export async function installPresets(): Promise<number> {
     }
   }
   if (!changed) return 0;
-  await (Zotero as any).SyncedSettings.set(
-    userLibraryID(),
-    "readerCustomThemes",
-    merged,
-  );
+  await writeThemes(merged);
   return changed;
 }
 
@@ -120,11 +163,7 @@ export async function removePresets(): Promise<number> {
     const current = String(Zotero.Prefs.get(pref) ?? "");
     if (ids.has(current)) Zotero.Prefs.set(pref, "");
   }
-  await (Zotero as any).SyncedSettings.set(
-    userLibraryID(),
-    "readerCustomThemes",
-    kept,
-  );
+  await writeThemes(kept);
   return existing.length - kept.length;
 }
 

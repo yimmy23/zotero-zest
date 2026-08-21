@@ -3,6 +3,18 @@
    that window's fonts and colours; everything here is layout and de-emphasis
    only, expressed in Zotero's CSS variables so light and dark both work. */
 
+/* Zotero's own settings window packs XUL boxes with no gap, so a row of four
+   buttons reads as one long slab. Scoped to our own pane root — this sheet is
+   loaded into the shared preferences window, so an unscoped rule would relayout
+   Zotero's panes too. */
+#zest-prefs hbox {
+  gap: 8px;
+}
+
+#zest-prefs hbox > button {
+  margin-inline: 0;
+}
+
 .zest-pref-hint {
   font-size: 0.85em;
   opacity: 0.7;

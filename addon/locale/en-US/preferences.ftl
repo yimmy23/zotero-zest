@@ -232,6 +232,8 @@ pref-cite-openalex =
     .label = OpenAlex (no key)
 pref-cite-s2 =
     .label = Semantic Scholar (works better with a key)
+pref-s2key-label = Semantic Scholar key
+pref-s2key-hint = Optional: lookups work without one, but share a global rate limit (~1 request/second) that batch updates run into. Free keys at semanticscholar.org/product/api; stored in the system login manager like the easyScholar key — never in prefs, never synced.
 pref-cite-stale = Consider a count out of date after this many days
 pref-cite-hint = Counts are only fetched when you ask for them, from the item context menu (Zest ▸ Update citation counts). Existing GSCC / ZSCC / openalex lines from other plugins are read and replaced, never duplicated.
 

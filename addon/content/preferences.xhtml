@@ -5,7 +5,10 @@
     href="chrome://__addonRef__/content/preferences.css"
   />
 </linkset>
-<vbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
+<vbox
+  id="zest-prefs"
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+>
   <groupbox>
     <label><html:h2 data-l10n-id="pref-group-columns"></html:h2></label>
     <checkbox
@@ -250,14 +253,6 @@
   </groupbox>
 
   <groupbox>
-    <label><html:h2 data-l10n-id="pref-group-about"></html:h2></label>
-    <description data-l10n-id="pref-about-text"></description>
-    <description id="zest-pref-build"
-      >Build __buildVersion__ · __buildTime__</description
-    >
-  </groupbox>
-
-  <groupbox>
     <label><html:h2 data-l10n-id="pref-group-tags"></html:h2></label>
     <checkbox
       preference="nestedTags.show"
@@ -425,6 +420,7 @@
       <html:input
         type="password"
         id="zest-pref-eskey"
+        class="zest-pref-key"
         style="flex: 1"
       ></html:input>
       <button
@@ -771,6 +767,26 @@
       native="true"
     />
     <hbox align="center">
+      <html:label data-l10n-id="pref-s2key-label"></html:label>
+      <html:input
+        type="password"
+        id="zest-pref-s2key"
+        class="zest-pref-key"
+        style="flex: 1"
+      ></html:input>
+      <button
+        data-l10n-id="pref-key-save"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('s2key-save', { window })
+        "
+      />
+    </hbox>
+    <description id="zest-pref-s2keystatus" class="zest-pref-hint"></description>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-s2key-hint"
+    ></description>
+    <hbox align="center">
       <html:label data-l10n-id="pref-cite-stale"></html:label>
       <html:input
         type="number"
@@ -835,5 +851,13 @@
       class="zest-pref-hint"
       data-l10n-id="pref-tabs-hint"
     ></description>
+  </groupbox>
+
+  <groupbox>
+    <label><html:h2 data-l10n-id="pref-group-about"></html:h2></label>
+    <description data-l10n-id="pref-about-text"></description>
+    <description id="zest-pref-build"
+      >Build __buildVersion__ · __buildTime__</description
+    >
   </groupbox>
 </vbox>

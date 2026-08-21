@@ -213,6 +213,7 @@ pref-config-export = 导出配置…
 pref-config-import = 导入配置…
 pref-key-plaintext = 以明文存储：无法使用登录管理器
 pref-key-saved = 密钥已存入登录管理器
+pref-key-stored = 已保存一个密钥（存在系统登录管理器里，这里不回显）。要换就直接输入新的；清空后保存即删除。
 pref-datasets-empty = 还没有导入本地数据集
 pref-dataset-remove = 移除
 pref-dataset-empty = 该文件中没有可用的数据行

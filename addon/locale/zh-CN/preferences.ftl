@@ -232,6 +232,8 @@ pref-cite-openalex =
     .label = OpenAlex（免密钥）
 pref-cite-s2 =
     .label = Semantic Scholar（有密钥更稳定）
+pref-s2key-label = Semantic Scholar 密钥
+pref-s2key-hint = 可留空：不带密钥也能查，只是共享限流（约每秒 1 次），批量更新容易被拒。密钥在 semanticscholar.org/product/api 免费申请，和 easyScholar 密钥一样存在系统登录管理器里，不进偏好设置、不随同步走。
 pref-cite-stale = 超过多少天视为过期
 pref-cite-hint = 只有你主动触发时才会联网获取（条目右键 → Zest ▸ 更新被引数）。其它插件写下的 GSCC / ZSCC / openalex 行会被读取并替换，不会重复堆积。
 

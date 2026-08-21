@@ -213,6 +213,7 @@ pref-config-export = Export configuration…
 pref-config-import = Import configuration…
 pref-key-plaintext = Stored in plain text: the login manager was unavailable
 pref-key-saved = Key stored in the login manager
+pref-key-stored = A key is stored (in the system login manager; never shown back here). Type a new one to replace it, or clear the box and save to remove it.
 pref-datasets-empty = No local dataset imported yet
 pref-dataset-remove = Remove
 pref-dataset-empty = No usable rows in that file
