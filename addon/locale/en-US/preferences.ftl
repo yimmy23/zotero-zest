@@ -167,11 +167,7 @@ pref-collections-mode-2 =
 pref-group-reader = Reader
 pref-reader-schemes =
     .label = Enable Zest's reader colour schemes
-pref-themes-install =
-    .label = Install themes
-pref-themes-remove =
-    .label = Remove themes
-pref-reader-hint = The three presets are written into Zotero's own reader theme list and can be picked from the reader's Appearance menu.
+pref-reader-hint = Colour schemes hang off the reader's annotation colour menu. For reader backgrounds, use Zotero's own Appearance menu.
 
 pref-group-config = Configuration
 pref-config-export =

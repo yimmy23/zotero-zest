@@ -362,6 +362,39 @@ export function toggleTagTree(win: Window) {
   setTreeShown(win, !isTreeShown());
 }
 
+/**
+ * Make Zotero re-measure its tag widths after we hand the pane back.
+ *
+ * Zotero sizes each tag from a hidden `div` it appends **inside**
+ * `#zotero-tag-selector` (`containers/tagSelectorContainer.js`: `divMeasure`),
+ * and on a HiDPI screen emoji tags — plus the first few coloured ones — are
+ * measured through that div rather than through canvas, because canvas is off
+ * by enough to show. While the element carries our `hidden` attribute its
+ * `clientWidth` is 0, so every tag measured in that state gets width 0 and the
+ * value is cached; switching back to Zotero's tab then paints those tags on
+ * top of each other. Measured on 10.0: "⭐" is 0px hidden, 13px shown.
+ *
+ * `handleUIPropertiesChange` is Zotero's own cache-clearing path (it is what
+ * runs when the UI font or pixel density changes), so we reuse it instead of
+ * reaching into the width maps.
+ */
+function remeasureNativeTags(win: Window) {
+  const selector = (win as any).ZoteroPane?.tagSelector;
+  if (!selector) return;
+  // one tick: the attribute is off, but let the pane get its layout back
+  // before Zotero reads clientWidth out of it
+  win.setTimeout(() => {
+    try {
+      if (typeof selector.handleUIPropertiesChange === "function") {
+        selector.handleUIPropertiesChange({});
+      }
+      if (typeof selector.handleResize === "function") selector.handleResize();
+    } catch (e) {
+      ztoolkit.log("[tags] native tag re-measure failed", e);
+    }
+  }, 0);
+}
+
 function applyVisibility(win: Window) {
   const state = states.get(win);
   if (!state) return;
@@ -371,7 +404,9 @@ function applyVisibility(win: Window) {
     "zotero-tag-selector",
   ) as HTMLElement | null;
   // master off → the pane is Zotero's, tab strip and all
+  const wasHidden = !!native?.hidden;
   if (native) native.hidden = tree;
+  if (native && wasHidden && !tree) remeasureNativeTags(win);
   state.root.hidden = !on;
   // on the native tab our root is just the tab row: it must not eat the
   // height the tag list needs

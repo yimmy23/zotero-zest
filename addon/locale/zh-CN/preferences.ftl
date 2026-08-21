@@ -167,11 +167,7 @@ pref-collections-mode-2 =
 pref-group-reader = 阅读器
 pref-reader-schemes =
     .label = 启用 Zest 阅读器配色方案
-pref-themes-install =
-    .label = 安装主题
-pref-themes-remove =
-    .label = 移除主题
-pref-reader-hint = 三套预设主题会写入 Zotero 自带的阅读器主题列表，可在阅读器「外观」菜单中选用。
+pref-reader-hint = 配色方案挂在阅读器的标注颜色菜单里。阅读器背景主题请用 Zotero 自带的「外观」菜单。
 
 pref-group-config = 配置
 pref-config-export =

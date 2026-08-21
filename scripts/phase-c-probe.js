@@ -240,18 +240,7 @@ check("graph.render", nodes > 0, `${nodes} nodes`);
 dev.graphPane.hideGraphPane(win);
 check("graph.teardown", !doc.getElementById("zest-graph-pane"));
 
-// ---------- 9. reader themes ----------
-const installed = await dev.readerThemes.installPresets();
-const themeIDs = dev.readerThemes.currentThemes().map((t) => t.id);
-check(
-  "reader.themes",
-  themeIDs.includes("custom-zest-sepia"),
-  `${themeIDs.length} themes, ${installed} written`,
-);
-check(
-  "reader.themesIdempotent",
-  (await dev.readerThemes.installPresets()) === 0,
-);
+// ---------- 9. reader colour schemes ----------
 const listeners = (Zotero.Reader._registeredListeners || []).filter((l) =>
   String(l.pluginID || "").includes("zest"),
 );

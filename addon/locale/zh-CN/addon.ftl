@@ -192,23 +192,16 @@ typefilter-active = 仅显示：{ $types }
 typefilter-unavailable =
     .label = 当前 Zotero 版本不支持
 
-# ---- reader themes / colour schemes ----
-reader-theme-original = Zotero 原始
-reader-theme-sepia = Zest 米黄
-reader-theme-eyecare = Zest 护眼绿
-reader-theme-graphite = Zest 石墨灰
+# ---- reader colour schemes ----
 reader-scheme-menu = Zest 配色方案
 reader-scheme-classic = 经典（黄 · 红 · 绿）
 reader-scheme-warm = 暖色（橙 · 红 · 洋红）
 reader-scheme-cool = 冷色（蓝 · 绿 · 紫）
-reader-themes-installed = 已添加 { $count } 个阅读器主题，可在阅读器「外观」菜单中选择
-reader-themes-removed = 已移除 { $count } 个 Zest 阅读器主题
 
 # ---- settings pane (rendered from JS) ----
 pref-key-save = 保存
 pref-rank-clear = 清空分级缓存
 pref-dataset-import = 导入数据集…
-pref-themes-install = 安装主题
 pref-config-export = 导出配置…
 pref-config-import = 导入配置…
 pref-key-plaintext = 以明文存储：无法使用登录管理器

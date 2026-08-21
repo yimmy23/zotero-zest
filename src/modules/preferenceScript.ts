@@ -14,7 +14,6 @@ import {
 } from "../rank/sources/localDataset";
 import { clearRankCache } from "../rank";
 import { getSecret, setSecret, secretIsInPrefs } from "../core/secrets";
-import { installPresets, removePresets } from "../reader/themes";
 import { views, removeView, renameView } from "../views/viewGroups";
 import { setPref } from "../utils/prefs";
 import { accentColor, syncAccent, ACCENT_FALLBACK } from "../ui/styles";
@@ -441,21 +440,5 @@ export async function onPrefsCommand(type: string) {
       clearRankCache();
       alertUser(getString("pref-rank-clear"), getString("pref-rank-cleared"));
       break;
-    case "themes-install": {
-      const n = await installPresets();
-      alertUser(
-        getString("pref-themes-install"),
-        getString("reader-themes-installed", { args: { count: n } }),
-      );
-      break;
-    }
-    case "themes-remove": {
-      const n = await removePresets();
-      alertUser(
-        getString("pref-themes-install"),
-        getString("reader-themes-removed", { args: { count: n } }),
-      );
-      break;
-    }
   }
 }

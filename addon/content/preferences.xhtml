@@ -595,24 +595,6 @@
       data-l10n-id="pref-reader-schemes"
       native="true"
     />
-    <hbox align="center">
-      <button
-        data-l10n-id="pref-themes-install"
-        oncommand="
-          Zotero.__addonInstance__.hooks.onPrefsEvent('themes-install', {
-            window,
-          })
-        "
-      />
-      <button
-        data-l10n-id="pref-themes-remove"
-        oncommand="
-          Zotero.__addonInstance__.hooks.onPrefsEvent('themes-remove', {
-            window,
-          })
-        "
-      />
-    </hbox>
     <description
       class="zest-pref-hint"
       data-l10n-id="pref-reader-hint"

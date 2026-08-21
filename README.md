@@ -5,8 +5,6 @@
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
 
-
-
 <img width="4098" height="2464" alt="2026-08-21 精读 Must-Read - Zotero 001173" src="https://github.com/user-attachments/assets/e0f74c95-d707-4da9-9e75-b18559bbd1ce" />
 
 ---
@@ -117,7 +115,7 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 
 - **垂直标签页**（默认关）：把 Zotero 的标签页竖着排在侧边，支持分组（跨重启保留）、保存会话、搜索、拖拽
   排序。若 Zotero 改动了标签页内部实现，这块会自动停用而不是崩掉。
-- **阅读器**：三套护眼背景写进 Zotero 官方的阅读器主题列表；取色菜单里多几套高亮配色。
+- **阅读器**：取色菜单里多几套标注高亮配色。（阅读器背景主题请用 Zotero 自带的「外观」菜单。）
 - **分类计数**（默认关）：分类名旁显示条目数，可选「本分类 / 含子分类 / 两者都显示」。
 - **外观**：一个主色贯穿全部界面，设置 ▸ Zest ▸ 外观里有取色器和 5 个预设，可一并套用到热力图与徽章。
   默认避开蓝色——Zotero 选中行用的就是系统选区蓝。
@@ -269,9 +267,9 @@ your own dataset, citations from Crossref. Nothing is fetched unless you ask for
 
 ## Also included
 
-Vertical tab sidebar with persistent groups and saved sessions (off by default), three reader
-backgrounds and extra highlight palettes, optional collection counts, and one accent colour driving
-every Zest surface (picker plus five presets in **Settings ▸ Zest ▸ Appearance**).
+Vertical tab sidebar with persistent groups and saved sessions (off by default), extra highlight
+palettes in the reader's colour menu, optional collection counts, and one accent colour driving every
+Zest surface (picker plus five presets in **Settings ▸ Zest ▸ Appearance**).
 
 ## API for templates and scripts
 

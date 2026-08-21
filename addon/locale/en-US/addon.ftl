@@ -192,23 +192,16 @@ typefilter-active = Showing only: { $types }
 typefilter-unavailable =
     .label = Not available on this Zotero version
 
-# ---- reader themes / colour schemes ----
-reader-theme-original = Zotero Original
-reader-theme-sepia = Zest Sepia
-reader-theme-eyecare = Zest Eye Care
-reader-theme-graphite = Zest Graphite
+# ---- reader colour schemes ----
 reader-scheme-menu = Zest colour scheme
 reader-scheme-classic = Classic (yellow · red · green)
 reader-scheme-warm = Warm (orange · red · magenta)
 reader-scheme-cool = Cool (blue · green · purple)
-reader-themes-installed = { $count } reader themes are now available in the reader's Appearance menu
-reader-themes-removed = Removed { $count } Zest reader themes
 
 # ---- settings pane (rendered from JS) ----
 pref-key-save = Save
 pref-rank-clear = Clear ranking cache
 pref-dataset-import = Import dataset…
-pref-themes-install = Install themes
 pref-config-export = Export configuration…
 pref-config-import = Import configuration…
 pref-key-plaintext = Stored in plain text: the login manager was unavailable
