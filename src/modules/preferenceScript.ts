@@ -124,19 +124,16 @@ const KEY_FIELDS = {
 
 type KeyField = keyof typeof KEY_FIELDS;
 
-const MASK = "••••••••";
-
 /**
- * The key fields never hold the stored key — they hold a fixed mask — so a
- * password field's reveal button could only ever "unhide" eight bullets, which
- * is what made it look broken. Idle the field as plain text showing the mask
- * (no reveal button, nothing secret in it) and switch it to a real password
- * field the moment the user starts entering a key, where the reveal button
- * does something useful: show what they just typed.
+ * The key fields never hold the stored key, so an idle field is simply empty
+ * plain text — no reveal button that could only ever "unhide" a placeholder,
+ * and nothing secret sitting in the DOM. Whether a key is stored is said in
+ * words underneath. Typing switches it to a real password field, where the
+ * reveal button does something useful: show what you just entered.
  */
 function idleKeyField(input: HTMLInputElement) {
   input.type = "text";
-  input.value = input.dataset.hasKey === "1" ? MASK : "";
+  input.value = "";
   input.dataset.zestDirty = "";
 }
 
@@ -151,7 +148,6 @@ function bindKeyField(input: HTMLInputElement) {
   input.addEventListener("focus", () => {
     if (keyFieldEdited(input)) return;
     input.type = "password";
-    input.value = "";
     input.dataset.zestDirty = "";
   });
   input.addEventListener("input", () => {
@@ -174,7 +170,6 @@ async function refreshKeyField(name?: KeyField) {
     const status = d.getElementById(ids.status);
     if (input) {
       const key = await getSecret(which);
-      input.value = key ? MASK : "";
       input.dataset.hasKey = key ? "1" : "";
       idleKeyField(input);
       bindKeyField(input);
