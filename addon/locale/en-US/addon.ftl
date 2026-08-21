@@ -266,6 +266,8 @@ info-status-none = No status
 info-abstract = Abstract
 info-open = Open in
 info-heat-tip = Open at page { $page }
+inforow-title-translation = Title translation
+inforow-abstract-translation = Abstract translation
 
 # ---- reading statistics ----
 menu-stats =

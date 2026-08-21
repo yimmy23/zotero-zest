@@ -242,7 +242,10 @@ pref-info-abstract =
     .label = Include a collapsible abstract
 pref-column-remark =
     .label = Remark column — a one-line note kept in Extra
+pref-info-translations =
+    .label = Title / abstract translation rows in the Info box (read from Extra)
 pref-panel-hint = The reading strip in the panel is clickable: each segment opens the reader at that page.
+pref-translations-hint = zotero-pdf-translate keeps translations in Extra as titleTranslation / abstractTranslation; these rows just show them, including abstracts that run over several paragraphs. That plugin ships its own pair of rows (Settings → Translate → Info box) — turning both on shows each row twice.
 
 pref-group-tabs = Vertical tabs
 pref-tabs-sidebar =

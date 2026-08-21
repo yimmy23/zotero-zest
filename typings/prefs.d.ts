@@ -95,6 +95,7 @@ declare namespace _ZoteroTypes {
       "info.enable": boolean;
       "info.tldr": boolean;
       "info.abstract": boolean;
+      "info.translations": boolean;
       "tabs.sidebar": boolean;
       "tabs.width": number;
       "tabs.hideNative": boolean;

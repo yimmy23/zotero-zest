@@ -492,6 +492,75 @@ check(
   panelStar ? panelStar.textContent : "no star",
 );
 
+/* ---------- 9. translation rows read the WHOLE Extra block ---------- */
+/* zotero-pdf-translate writes multi-paragraph abstract translations as a key
+   line plus bare continuation lines. A line-oriented read shows the first
+   paragraph only, and a line-oriented write orphans the rest — invariant 2. */
+setPref("info.translations", true);
+await delay(600);
+const trAbstract = ["\u80cc\u666f\uff1a\u4e00", "\u65b9\u6cd5\uff1a\u4e8c", "\u7ed3\u679c\uff1a\u4e09"].join("\n");
+const trExtra = [
+  "Citations: 4 (Crossref) [2026-08-19]",
+  "titleTranslation: \u6807\u9898\u8bd1\u6587",
+  "abstractTranslation: " + trAbstract,
+  "JCR\u5206\u533a: Q1",
+].join("\n");
+const translated = await mk({ title: "phase-e translation", extra: trExtra });
+trash.push(translated);
+const plain = await mk({ title: "phase-e no translation", extra: "Citations: 1 (Crossref) [2026-08-19]" });
+trash.push(plain);
+
+await win.ZoteroPane.selectItem(translated.id);
+await delay(1600);
+const trRow = (suffix) =>
+  doc.querySelector(`.meta-row[data-custom-row-id$="-zest${suffix}Translation"]`);
+const trValue = (suffix) =>
+  trRow(suffix)?.querySelector("editable-text")?.getAttribute("value") || "";
+check("translations.titleRow", trValue("Title") === "\u6807\u9898\u8bd1\u6587", trValue("Title"));
+check(
+  "translations.abstractKeepsParagraphs",
+  trValue("Abstract") === trAbstract,
+  JSON.stringify(trValue("Abstract")),
+);
+check(
+  "translations.afterExtra",
+  (() => {
+    const rows = Array.from(doc.querySelector("info-box").querySelectorAll(".meta-row"));
+    const iExtra = rows.findIndex((r) => r.querySelector(".meta-label-extra"));
+    const iTitle = rows.indexOf(trRow("Title"));
+    const iAbstract = rows.indexOf(trRow("Abstract"));
+    return iExtra >= 0 && iTitle === iExtra + 1 && iAbstract === iTitle + 1;
+  })(),
+);
+
+/* an untranslated item shows neither row */
+await win.ZoteroPane.selectItem(plain.id);
+await delay(1400);
+check(
+  "translations.hiddenWhenEmpty",
+  win.getComputedStyle(trRow("Title")).display === "none" &&
+    win.getComputedStyle(trRow("Abstract")).display === "none",
+);
+
+/* editing one row rewrites only its own block */
+await win.ZoteroPane.selectItem(translated.id);
+await delay(1400);
+const mgr = Zotero.ItemPaneManager;
+const rowID = mgr.customInfoRowData.options.find((o) =>
+  o.rowID.endsWith("zestAbstractTranslation"),
+)?.rowID;
+mgr.getInfoRowHook(rowID, "onSetData")({
+  item: translated,
+  value: trAbstract + "\n\u7ed3\u8bba\uff1a\u56db",
+});
+await delay(900);
+check(
+  "translations.editKeepsOtherLines",
+  translated.getField("extra") ===
+    trExtra.replace("JCR\u5206\u533a: Q1", "\u7ed3\u8bba\uff1a\u56db\nJCR\u5206\u533a: Q1"),
+  JSON.stringify(translated.getField("extra")),
+);
+
 /* ---------- cleanup ---------- */
 for (const [name, value] of saved) {
   if (value === undefined) Zotero.Prefs.clear(prefKey(name), true);
