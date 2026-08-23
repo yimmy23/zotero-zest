@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.0.0 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.0.4 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
