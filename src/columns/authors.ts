@@ -22,14 +22,7 @@ import { makeCell, rowItem, type ColumnSpec } from "./registry";
  * the parts, so a "†" on the last author never changes the sort order.
  */
 
-type Preset =
-  | "creator-like"
-  | "all"
-  | "first"
-  | "last"
-  | "first-last"
-  | "first3"
-  | "advisor";
+type Preset = "all" | "first" | "last" | "first-last" | "first3" | "advisor";
 
 const cache = new Map<
   number,
@@ -63,25 +56,38 @@ function policyFor(preset: Preset): SelectPolicy {
     case "last":
       return { kind: "last" };
     case "first-last":
-      return { kind: "first+last", n: 1 };
+      // the first N names, the gap marker, then the last author
+      return { kind: "first+last", n };
     case "first3":
       return { kind: "first", n, etAl: "append" };
     case "advisor":
       return { kind: "advisor" };
     default:
-      // Zotero's own rule: one name, two names joined with "and", otherwise
-      // "A et al." (verified against Items.getFirstCreatorFromData)
-      return { kind: "creator-like" };
+      return { kind: "first", n, etAl: "append" };
   }
 }
 
-/** Zotero's own localized "et al.", so the plugin never ships its own */
+/** the user's own "et al." text, else Zotero's localized one */
 export function etAlText(): string {
+  const own = String(getPref("authors.etAl") || "").trim();
+  if (own) return own;
   try {
     return Zotero.getString("general.etAl") || "et al.";
   } catch {
     return "et al.";
   }
+}
+
+/** separator between names: the user's own, or per-script automatic */
+function separatorPref(): string | undefined {
+  const raw = String(getPref("authors.separator") ?? "");
+  return raw === "" ? undefined : raw;
+}
+
+/** marker where names were left out ("…" unless the user set one) */
+function omittedPref(): string {
+  const raw = String(getPref("authors.omitted") ?? "");
+  return raw === "" ? "…" : raw;
 }
 
 function marks() {
@@ -101,28 +107,31 @@ function optionsFor(preset: Preset): FormatOptions {
   const rules = nameRules();
   return {
     policy: policyFor(preset),
-    // the creator-like preset copies Zotero's Creator column, and that column
-    // shows family names only — the user's given-name rule is for the other
-    // presets
-    rules: preset === "creator-like" ? { ...rules, given: "none" } : rules,
+    rules,
     marks: marks(),
     roles: { include: "primary+fallback" },
     etAlText: etAlText(),
-    pairJoiner: preset === "creator-like" ? andJoiner() : undefined,
+    separator: separatorPref(),
+    omittedText: omittedPref(),
   };
 }
 
-/** Zotero's own "A and B" string, as a {a}/{b} template */
-function andJoiner(): string {
-  try {
-    const raw = Zotero.getString("general.andJoiner", ["\u0001", "\u0002"]);
-    if (raw.includes("\u0001") && raw.includes("\u0002")) {
-      return raw.replace("\u0001", "{a}").replace("\u0002", "{b}");
-    }
-  } catch {
-    // fall through
-  }
-  return "{a} and {b}";
+/**
+ * The Zest item-pane section lists EVERY author on one line with the user's
+ * own name rules and marks — Zotero's Info box shows creators one row at a
+ * time (first five, then "N more"), which the maintainer found not enough to
+ * scan. Same rules and marks as the Authors column, so the two agree.
+ */
+export function panelAuthorOptions(): FormatOptions {
+  return {
+    policy: { kind: "all" },
+    rules: nameRules(),
+    marks: marks(),
+    roles: { include: "primary+fallback" },
+    etAlText: etAlText(),
+    separator: separatorPref(),
+    omittedText: omittedPref(),
+  };
 }
 
 /** cheap per-item stamp: any save (including a synced one) moves it */
@@ -153,7 +162,6 @@ function compute(item: Zotero.Item, preset: Preset): FormattedAuthors {
 }
 
 const PRESET_INDEX: Record<Preset, number> = {
-  "creator-like": 0,
   all: 1,
   first: 2,
   last: 3,
@@ -209,8 +217,10 @@ function authorColumn(
 }
 
 function configuredPreset(): Preset {
-  const preset = String(getPref("authors.preset") || "creator-like") as Preset;
-  return PRESET_INDEX[preset] === undefined ? "creator-like" : preset;
+  // "creator-like" (a copy of Zotero's own Creator column) was retired: a
+  // stored value of it, or anything unknown, reads as the first-N preset
+  const preset = String(getPref("authors.preset") || "first3") as Preset;
+  return PRESET_INDEX[preset] === undefined ? "first3" : preset;
 }
 
 export function authorsColumn(): ColumnSpec {
@@ -308,16 +318,38 @@ export function importBetterAuthors(): {
     );
     applied.push("given");
   }
-  const indicator = read("indicator-lastauthor");
+  const indicator = read("indicator-for-lastauthor");
   if (indicator !== undefined) {
-    Zotero.Prefs.set(
-      `${config.prefsPrefix}.authors.markLast`,
-      !!indicator,
-      true,
-    );
+    const mark = String(indicator || "").trim();
+    Zotero.Prefs.set(`${config.prefsPrefix}.authors.markLast`, !!mark, true);
+    if (mark)
+      Zotero.Prefs.set(`${config.prefsPrefix}.authors.lastMark`, mark, true);
     applied.push("markLast");
   }
-  for (const unsupported of ["sep-author", "sep-name", "show-role"]) {
+  const sep = read("sep-inter-author");
+  if (sep !== undefined) {
+    Zotero.Prefs.set(
+      `${config.prefsPrefix}.authors.separator`,
+      String(sep),
+      true,
+    );
+    applied.push("separator");
+  }
+  const omitted = read("sep-omitted-authors");
+  if (omitted !== undefined) {
+    Zotero.Prefs.set(
+      `${config.prefsPrefix}.authors.omitted`,
+      String(omitted),
+      true,
+    );
+    applied.push("omitted");
+  }
+  // within-name separators and a mark BEFORE the name have no Zest equivalent
+  for (const unsupported of [
+    "sep-intra-author",
+    "sep-intra-author-cjk",
+    "indicator-position",
+  ]) {
     if (read(unsupported) !== undefined) skipped.push(unsupported);
   }
   bumpAuthorsVersion();

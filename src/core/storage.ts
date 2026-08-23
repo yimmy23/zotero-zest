@@ -122,10 +122,12 @@ class JsonCache {
   set(ns: string, key: string, data: unknown) {
     if (!key || key.length > 400) return;
     const s = this.space(ns);
+    // Map preserves insertion order, but `set` on an existing key keeps the
+    // old position — delete first so a rewrite moves to the back and the
+    // eviction below really drops the least recently written
+    s.entries.delete(key);
     s.entries.set(key, { t: Date.now(), d: data });
     if (s.entries.size > s.max) {
-      // Map preserves insertion order, but `set` on an existing key keeps the
-      // old position, so re-insert to make it a true LRU-by-write.
       const excess = s.entries.size - s.max;
       let i = 0;
       for (const k of s.entries.keys()) {

@@ -248,6 +248,9 @@ interface TabInfo {
   itemKey: string;
   item?: Zotero.Item;
   selected: boolean;
+  /** what a saved session stores for this tab: the item key for readers,
+   *  "note:<libraryID>/<key>" for note tabs ("" = not restorable) */
+  sessionKey: string;
 }
 
 function readTabs(win: Window): TabInfo[] {
@@ -255,18 +258,26 @@ function readTabs(win: Window): TabInfo[] {
   const out: TabInfo[] = [];
   for (const tab of T?._tabs ?? []) {
     let item: Zotero.Item | undefined;
+    let sessionKey = "";
     try {
       // `tab.data.itemID` is written by Zotero_Tabs.add() and round-trips
       // through session.json, so it is there for reader, reader-unloaded and
       // note tabs alike; a live reader is only a fallback. Without it, every
       // tab restored at startup (all of them are `reader-unloaded`) would look
       // item-less and drop out of its group.
-      const attachmentID =
+      const itemID =
         (tab as any).data?.itemID ??
         (Zotero.Reader as any).getByTabID?.(tab.id)?.itemID;
-      if (attachmentID) {
-        const attachment = Zotero.Items.get(attachmentID) as Zotero.Item;
-        item = ((attachment as any)?.parentItem as Zotero.Item) || attachment;
+      if (itemID) {
+        const opened = Zotero.Items.get(itemID) as Zotero.Item;
+        // groups are keyed by the PARENT (a note and its PDF sit together);
+        // a session must reopen the note itself, not the parent's PDF
+        item = ((opened as any)?.parentItem as Zotero.Item) || opened;
+        if (String(tab.type).startsWith("note") && opened?.isNote?.()) {
+          sessionKey = `note:${opened.libraryID}/${opened.key}`;
+        } else {
+          sessionKey = itemKeyOf(item);
+        }
       }
     } catch {
       item = undefined;
@@ -278,6 +289,7 @@ function readTabs(win: Window): TabInfo[] {
       itemKey: itemKeyOf(item),
       item,
       selected: tab.id === T.selectedID,
+      sessionKey,
     });
   }
   return out;
@@ -373,14 +385,14 @@ function tabRow(doc: Document, win: Window, tab: TabInfo): HTMLElement {
   row.className = "zest-tabbar-row";
   if (tab.selected) row.classList.add("selected");
   row.setAttribute("data-tab", tab.id);
-  row.draggable = tab.type !== "library";
+  row.draggable = true;
 
   const label = doc.createElement("span");
   label.className = "zest-tabbar-title";
   label.textContent = tab.title || getString("tabs-untitled");
   row.appendChild(label);
 
-  if (tab.type !== "library") {
+  {
     const close = iconButton(
       doc,
       "close",
@@ -470,20 +482,13 @@ function moveTab(win: Window, draggedID: string, targetID: string) {
   scheduleRender(win, 60);
 }
 
-/** close a set of tabs in one call when Zotero accepts an array (10 does) */
+/** close a set of tabs in one call (Zotero_Tabs.close accepts an array) */
 function closeMany(win: Window, ids: string[]) {
   if (!ids.length) return;
-  const T = (win as any).Zotero_Tabs;
   try {
-    T.close(ids);
-  } catch {
-    for (const id of ids) {
-      try {
-        T.close(id);
-      } catch {
-        // already gone
-      }
-    }
+    (win as any).Zotero_Tabs.close(ids);
+  } catch (e) {
+    ztoolkit.log("[tabs] close failed", e);
   }
   scheduleRender(win, 80);
 }
@@ -647,8 +652,8 @@ function showBarMenu(win: Window, x: number, y: number) {
   const popup = popupFor(win);
   addItem(win, popup, getString("tabs-save-session"), () => {
     const items = readTabs(win)
-      .filter((t) => t.itemKey)
-      .map((t) => t.itemKey);
+      .filter((t) => t.sessionKey)
+      .map((t) => t.sessionKey);
     if (!items.length) return;
     const out = { value: new Date().toLocaleString() };
     const ok = Services.prompt.prompt(
@@ -727,8 +732,10 @@ async function restoreSession(win: Window, sessionID: string) {
     );
     if (!ok) return;
   }
-  for (const key of session.items) {
+  for (const entry of session.items) {
     try {
+      const isNote = entry.startsWith("note:");
+      const key = isNote ? entry.slice(5) : entry;
       const [libraryID, itemKey] = key.split("/");
       const id = Zotero.Items.getIDFromLibraryAndKey(
         Number(libraryID),
@@ -736,6 +743,13 @@ async function restoreSession(win: Window, sessionID: string) {
       );
       if (!id) continue;
       const item = Zotero.Items.get(id as number) as Zotero.Item;
+      if (isNote || item.isNote()) {
+        await (Zotero as any).Notes.open(item.id, undefined, {
+          openInBackground: true,
+        });
+        await Zotero.Promise.delay(150);
+        continue;
+      }
       const attachmentID = item.isAttachment()
         ? item.id
         : bestAttachment(item)?.id;
@@ -751,6 +765,24 @@ async function restoreSession(win: Window, sessionID: string) {
     }
   }
   scheduleRender(win, 200);
+}
+
+/** the width preference changed (Settings, or the splitter wrote it back) */
+export function applySidebarWidth() {
+  const width = Math.min(
+    MAX_WIDTH,
+    Math.max(MIN_WIDTH, Number(getPref("tabs.width")) || 220),
+  );
+  for (const state of bars.values()) {
+    try {
+      const box = state.box as unknown as HTMLElement | undefined;
+      if (box && Math.round(box.getBoundingClientRect().width) !== width) {
+        box.style.width = `${width}px`;
+      }
+    } catch {
+      // window closing
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ */

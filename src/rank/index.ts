@@ -92,6 +92,7 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
     values,
     updated: Number(r.updated) || 0,
     misses: Array.isArray(r.misses) ? r.misses.slice(0, 4) : undefined,
+    partial: r.partial === true ? true : undefined,
   };
 }
 
@@ -139,25 +140,43 @@ export function requestJournalRecord(
   item: Zotero.Item,
 ): JournalRecord | undefined {
   const hit = getJournalRecord(item);
-  if (hit) return hit;
-  if (!getPref("rank.autoFetch")) return undefined;
+  if (!getPref("rank.autoFetch")) return hit;
   const { key, issn } = journalKeyOf(item);
-  if (!key && !issn) return undefined;
+  if (!key && !issn) return hit;
   const cacheKey = key || `issn:${issn}`;
   const age = cache.ageOf(NS, cacheKey);
+  if (hit) {
+    // a record built while one source was throttled or offline is shown as
+    // it is, and re-asked once the back-off is over — not after 30 days
+    if (hit.partial && age !== undefined && age > FAILURE_TTL) {
+      const failedAt = failures.get(cacheKey);
+      if (failedAt === undefined || Date.now() - failedAt >= FAILURE_TTL) {
+        refreshPartial.add(cacheKey);
+        enqueue(cacheKey, item.id);
+      }
+    }
+    return hit;
+  }
   const failedAt = failures.get(cacheKey);
   if (failedAt !== undefined && Date.now() - failedAt < FAILURE_TTL) {
     return undefined; // the last attempt could not reach anything
   }
   if (age !== undefined && age < MISS_TTL) return undefined; // asked recently
+  enqueue(cacheKey, item.id);
+  return undefined;
+}
+
+/** journals whose cached record is partial and due for another try */
+const refreshPartial = new Set<string>();
+
+function enqueue(cacheKey: string, itemID: number) {
   let ids = queue.get(cacheKey);
   if (!ids) {
     ids = new Set();
     queue.set(cacheKey, ids);
   }
-  ids.add(item.id);
+  ids.add(itemID);
   scheduleDrain();
-  return undefined;
 }
 
 function scheduleDrain() {
@@ -185,7 +204,8 @@ async function drain() {
       const first = Zotero.Items.get([...itemIDs][0]) as Zotero.Item | false;
       if (!first) continue;
       try {
-        const rec = await lookupJournal(first);
+        const again = refreshPartial.delete(cacheKey);
+        const rec = await lookupJournal(first, again);
         if (rec) onReady?.([...itemIDs]);
       } catch (e) {
         ztoolkit.log("[rank] lookup failed", e);
@@ -283,6 +303,10 @@ export async function lookupJournal(
     values,
     updated: Date.now(),
     misses: misses.length ? misses : undefined,
+    // something answered while another source (easyScholar throttled, offline)
+    // could not be asked: cache what we have, flagged, so it is re-asked after
+    // the back-off instead of standing for 30 days as "no Chinese ranking"
+    partial: values.length && unreachable ? true : undefined,
   };
   if (!values.length && unreachable) {
     // remember the failure in memory only: nothing is written to the cache, so
@@ -290,7 +314,8 @@ export async function lookupJournal(
     failures.set(cacheKey, Date.now());
     return rec;
   }
-  failures.delete(cacheKey);
+  if (rec.partial) failures.set(cacheKey, Date.now());
+  else failures.delete(cacheKey);
   cache.set(NS, cacheKey, rec);
   if (resolvedISSN && cacheKey !== `issn:${resolvedISSN}`) {
     cache.set(NS, `issn:${resolvedISSN}`, rec);

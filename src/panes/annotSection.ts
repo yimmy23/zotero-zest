@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { guard } from "../utils/guard";
+import { openAttachmentAt } from "../utils/items";
 import { readableTextColor } from "../ui/color";
 import { hexToRgb } from "../reading/heat";
 import { selectedTagNames, onTagSelectionChange } from "../tags/nestedTree";
@@ -340,8 +341,11 @@ export async function openAnnotation(card: CardAnnotation) {
       await open.navigate(location);
       const tabID = open.tabID;
       if (tabID) {
-        const win = Zotero.getMainWindow() as any;
+        // the reader belongs to the main window it was opened in — not
+        // necessarily the front-most one
+        const win = (open._window || Zotero.getMainWindow()) as any;
         win?.Zotero_Tabs?.select?.(tabID);
+        win?.focus?.();
       }
       return;
     }
@@ -349,17 +353,8 @@ export async function openAnnotation(card: CardAnnotation) {
     ztoolkit.log("[annots] navigate failed, opening instead", e);
   }
   try {
-    const handlers = (Zotero as any).FileHandlers;
-    if (handlers?.open) {
-      await handlers.open(card.attachment, { location });
-      return;
-    }
+    await openAttachmentAt(card.attachment, location);
   } catch (e) {
-    ztoolkit.log("[annots] FileHandlers.open failed", e);
-  }
-  try {
-    await Zotero.Reader.open(card.attachment.id, location as any);
-  } catch (e) {
-    ztoolkit.log("[annots] Reader.open failed", e);
+    ztoolkit.log("[annots] open failed", e);
   }
 }

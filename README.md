@@ -46,25 +46,34 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 **阅读**——阅读总时长，底下是每页热力条（4 级台阶，颜色越深看得越久）。计时只在阅读器窗口处于活动状态时
 走，无输入 120 秒自动停表，朗读时不停。
 
-**状态**——点圆点循环切换：未读 → 待读 → 在读 → 已读 → 不再读。写在条目 `Extra` 的 `Read_Status` 行，
-与 Reading List 插件同键。也可以让它自动：开始阅读 → 在读；页数与时长同时达标 → 已读（阈值在设置里，
-永远不覆盖你手动设过的值）。
+**状态**——不用你动手也有答案：没设置过状态的条目，Zest 按阅读记录自动判定——有 PDF 但从没打开过是
+**未读**，读过（本机记录 ≥ 30 秒，或 Zotero 自己记下的「最近阅读」/ 阅读位置，在别的设备上翻过也算）是
+**在读**，页数与时长都达标（默认 90% 页 + 5 分钟）是**已读**。自动判定画成**空心圈**、灰字，手动设置的
+是**实心点**；手动永远优先。要改：点圆点弹出菜单，直接选（选中多行时对整批生效）；也可以在条目右键
+▸ Zest ▸ 阅读状态、或右侧 Zest 面板的状态按钮里改（阅读器标签页右侧的上下文面板里也有这一栏）。
+手动值写在条目 `Extra` 的 `Read_Status` 行，与 Reading List 插件同键；「设置 ▸ 阅读记录」里还可以让达标
+时顺手把在读 / 已读写进 Extra（同步到其它设备）。
 
 **评级**——点第几颗星就是几分；再点当前最高那颗降一分，点第一颗清零。存 `Extra`。符号和颜色可改
 （设置里能换成 ♥ 或任意字符）。
 
-**标签 / #标签**——彩色与 emoji 标签单独成列；`#标签` 列把符合规则的标签显示成文字徽章。规则语法：
-`#` 表示以 # 开头的标签、`~~X` 表示**不**以 X 开头、`/正则/` 用正则（有捕获组就只显示捕获的部分）。
+**标签 / #标签**——`#标签` 列把符合规则的标签显示成文字徽章。规则语法：`#` 表示以 # 开头的标签、
+`~~X` 表示**不**以 X 开头、`/正则/` 用正则（有捕获组就只显示捕获的部分）。「标签」列把彩色与 emoji 标签
+单独成列、可排序——Zotero 本身已在标题里画这些色点，所以这一列默认关，配合「隐藏标题列里的标签色点」用。
 
-**作者 / 第一作者 / 末位作者**——姓名顺序和分隔符按文字系统自动决定（王小明、李雷 / Ada Lovelace,
-Alan Turing），「等 / et al.」取自 Zotero 自身语言。可在设置里选显示几位、是否缩写名、给末位作者加标记
-（标记不进排序键）。把自己的名字填进「我的名字」，你自己的署名会被高亮。
+**作者 / 第一作者 / 末位作者**——Zotero 自带的「创建者」列只显示「第一作者 et al.」，这三列是它的扩展：
+显示方式（全部 / 前 N 位 + et al. / 前 N 位 … 末位 / 仅第一 / 仅末位 / 导师）、显示几位、姓名顺序（自动按
+文字系统 / 名前 / 姓前）、名的写法（全名 / 首字母 / 不显示）、**分隔符**（留空 = 王小明、李雷 / Ada Lovelace,
+Alan Turing 自动）、**「等」文案**（留空 = Zotero 自身语言）、省略标记、末位作者标记（标记不进排序键）都可以
+自己定；把自己的名字填进「我的名字」，你自己的署名会被高亮。装过 better-authors 的，工具 ▸ Zest ▸ 导入其设置。
 
-**期刊标签 / 影响因子 / 期刊**——分区徽章与影响因子。数据来源依次是：你导入的本地数据集 → easyScholar
-（填了密钥才用）→ OpenAlex（免密钥）。**默认不联网**，所以刚装好时这两列是空的：从 **Z 按钮 ▸ 联网获取
-期刊数据**（等同于设置里的「自动获取」）打开，或右键条目 ▸ Zest ▸ 更新期刊分区。空单元格的悬停提示会告
-诉你是哪种情况。查询按期刊（不是按条目）进行，只发送期刊名、ISSN 或 DOI，结果按期刊缓存 30 天。
-中科院分区、北大核心等中文体系只有 easyScholar 有，需要在设置里填密钥。
+**期刊标签 / 影响因子 / 期刊**——分区徽章与影响因子；「期刊」列把期刊名 / 会议名 / 书名 / 出版者按条目
+类型合成一列（Zotero 自带的「出版物」列只有期刊名，混合文库要开三列）。影响因子默认画成数字底下一层**热力色块**：IF 越高颜色
+越深，分四档（刻度上限的 1/15、1/5、1/2、上限，上限默认 15，设置里可改；也可以换回进度条或只显示数字）。
+数据来源依次是：你导入的本地数据集 → easyScholar（填了密钥才用）→ OpenAlex（免密钥）。**默认不联网**，
+所以刚装好时这两列是空的：从 **Z 按钮 ▸ 联网获取期刊数据**（等同于设置里的「自动获取」）打开，或右键条目
+▸ Zest ▸ 更新期刊分区。空单元格的悬停提示会告诉你是哪种情况。查询按期刊（不是按条目）进行，只发送期刊名、
+ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等中文体系只有 easyScholar 有，需要在设置里填密钥。
 
 **被引数**——右键条目 ▸ Zest ▸ 更新被引数（可批量、可随时取消）。数值写进 `Extra` 的
 `Citations: 12 (Crossref) [2026-08-18]`，来源依次 Crossref → OpenAlex →（可选）Semantic Scholar。
@@ -76,8 +85,11 @@ Alan Turing），「等 / et al.」取自 Zotero 自身语言。可在设置里�
 
 ## 条目面板里的两栏
 
-**Zest**——作者、期刊与分区徽章、被引数（带刷新按钮）、阅读时长 + **可点击的每页热力条**（点哪一段就跳到
-那一页）、状态 / 评级 / 简记直接编辑、摘要、以及跳转 DOI / Google Scholar / PubMed / Semantic Scholar。
+**Zest**——**全部作者一行列出**（按作者列的姓名规则，自己的名字高亮、末位标记；Zotero 信息栏一行一个、
+超过五个就折叠）、期刊与分区徽章、被引数（带刷新按钮）、阅读时长 + **可点击的每页热力条**（点哪一段就跳
+到那一页）、状态 / 评级 / 简记直接编辑、以及一排外部链接：DOI、PubMed（有 PMID 直达，没有就按标题搜）、
+arXiv（有编号时）、Google Scholar、Semantic Scholar、OpenAlex、Connected Papers。摘要不在这里——Zotero 10
+自带的摘要栏就在上面。Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
 
 **Annotation Finder**——这条文献的全部标注，按标签树里选中的标签过滤，双击直接跳进阅读器里那条标注。
 
@@ -115,7 +127,7 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 
 - **垂直标签页**（默认关）：把 Zotero 的标签页竖着排在侧边，支持分组（跨重启保留）、保存会话、搜索、拖拽
   排序。若 Zotero 改动了标签页内部实现，这块会自动停用而不是崩掉。
-- **阅读器**：取色菜单里多几套标注高亮配色。（阅读器背景主题请用 Zotero 自带的「外观」菜单。）
+- **阅读器**：Zest 不往阅读器里加东西；背景主题与高亮颜色请用 Zotero 自带的「外观」菜单和颜色下拉。
 - **分类计数**（默认关）：分类名旁显示条目数，可选「本分类 / 含子分类 / 两者都显示」。
 - **外观**：一个主色贯穿全部界面，设置 ▸ Zest ▸ 外观里有取色器和 5 个预设，可一并套用到热力图与徽章。
   默认避开蓝色——Zotero 选中行用的就是系统选区蓝。
@@ -139,7 +151,8 @@ zest.lastRead(item); // "2026-08-19"
 zest.readingByDay(item); // { "2026-08-19": 930, … }   每天的秒数
 zest.readingByPage(item); // { 0: 120, 1: 45, … }       每页的秒数
 
-zest.readStatus(item); // "In Progress"
+zest.readStatus(item); // "In Progress"  状态列显示的那个值（手动或自动判定）
+zest.readStatusSource(item); // "manual" | "auto" | "none"
 zest.rating(item); // 4
 zest.ratingStars(item); // "★★★★☆"
 
@@ -206,22 +219,39 @@ the settings.
 
 - **Reading** — total time plus a per-page heat strip (4 steps). The clock only runs while the reader
   window is active, stops after 120 s without input, and keeps running during Read Aloud.
-- **Status** — click the dot to cycle New → To Read → In Progress → Read → Not Reading. Stored in
-  `Extra` as `Read_Status`, the key Reading List uses. Optional automation: reading starts → In
-  Progress; enough pages and minutes → Read (thresholds configurable, never overrides your own value).
+- **Status** — answered without your help: an item with no status set is read off the reading
+  record — a PDF nobody has opened is **New**, one you have read (≥ 30 s here, or Zotero's own
+  last-read stamp / resume position, so a page turned on another device counts) is **In Progress**,
+  and enough pages plus minutes (90 % + 5 min by default) is **Read**. Automatic statuses are drawn as
+  a **ring** with a grey label, set ones as a **filled dot**; a set status always wins. To set one:
+  click the dot and pick from the menu (applies to the whole selection when the row is part of it),
+  or use the item context menu ▸ Zest ▸ Read Status or the status button in the Zest pane (which
+  Zotero also shows in a reader tab's context pane). Set values go to `Extra` as
+  `Read_Status`, the key Reading List uses; Settings ▸ Reading Tracker can also write In Progress /
+  Read into Extra when the thresholds are crossed (so they sync).
 - **Rating** — click star _k_ to rate; click the current top star to lower it. Stored in `Extra`;
   symbol and colour are configurable.
-- **Tags / #Tags** — coloured and emoji tags in their own column; rule-matched tags as text badges
-  (`#` prefix, `~~X` = everything NOT starting with X, `/regex/` with optional capture group).
-- **Authors / First author / Last author** — name order and separators decided per writing system,
-  "et al." from Zotero's own locale, optional last-author mark that never enters the sort key, and
-  your own name highlighted once you put it in Settings.
-- **Publication Tags / IF / Venue** — rank badges and impact factor from your own dataset →
-  easyScholar (only with a key) → OpenAlex (no key). Offline by default, so both columns start empty:
+- **Tags / #Tags** — rule-matched tags as text badges (`#` prefix, `~~X` = everything NOT starting
+  with X, `/regex/` with optional capture group). The Tags column puts the coloured and emoji tags in
+  a sortable column of their own; Zotero already paints those swatches in the Title cell, so it ships
+  off and pairs with "Hide tag swatches in the Title column".
+- **Authors / First author / Last author** — Zotero's own Creator column shows "First et al." and
+  nothing else; these three extend it: preset (all / first N + et al. / first N … last / first only
+  / last only / advisor), how many, name order (per script / given first / family first), given
+  names (full / initials / hidden), **separator** (empty = 王小明、李雷 / Ada Lovelace, Alan Turing
+  by script), **"et al." text** (empty = Zotero's own), gap marker, last-author mark that never
+  enters the sort key, and your own name highlighted. better-authors users: Tools ▸ Zest ▸ import
+  its settings.
+- **Publication Tags / IF / Venue** — rank badges and impact factor from your own dataset → easyScholar
+  (only with a key) → OpenAlex (no key). The IF sits on a **heat wash**: darker for higher, four
+  steps on a log-ish ladder (1/15, 1/5, 1/2 and the top of the scale, 15 by default — or switch to a
+  bar / plain number in Settings). Offline by default, so both columns start empty:
   switch lookups on from **Z button ▸ Look journal data up online** (the same pref as auto-fetch in
   Settings), or use the item context menu. Hovering an empty cell tells you which case you are in.
   Lookups are per journal, send only the name, ISSN or DOI, and are cached for 30 days. The Chinese
-  ranking systems exist only in easyScholar and need a key.
+  ranking systems exist only in easyScholar and need a key. **Venue** merges publication title,
+  proceedings, book title and publisher into one column by item type — Zotero's own Publication
+  column is journal titles only.
 - **Citations** — right-click ▸ Zest ▸ update (batchable, cancellable). Written to `Extra` as
   `Citations: 12 (Crossref) [2026-08-18]`, sourced Crossref → OpenAlex → optional Semantic Scholar.
   Other plugins' records (`GSCC:`, `ZSCC:`, `openalex.cit_count:`) are read but never deleted.
@@ -230,9 +260,13 @@ the settings.
 
 ## Item pane
 
-**Zest** — authors, venue and rank badges, citations with a refresh button, reading time and a
-**clickable** per-page heat strip (click a segment, land on that page), status / rating / remark
-inline, abstract, and links out to DOI, Google Scholar, PubMed and Semantic Scholar.
+**Zest** — **every author on one line** (the Authors column's name rules, your own name highlighted,
+the last-author mark; Zotero's Info box folds after five), venue and rank badges, citations with a
+refresh button, reading time and a **clickable** per-page heat strip (click a segment, land on that
+page), status / rating / remark inline, and one row of links out: DOI, PubMed (by PMID, else a title
+search), arXiv when there is an id, Google Scholar, Semantic Scholar, OpenAlex, Connected Papers. No
+abstract here — Zotero 10's own Abstract section is two sections up. Zotero shows the same section in
+a reader tab's context pane.
 
 **Annotation Finder** — every annotation of the item, filtered by whatever you selected in the tag
 tree; double-click jumps into the reader at that annotation.
@@ -267,9 +301,10 @@ your own dataset, citations from Crossref. Nothing is fetched unless you ask for
 
 ## Also included
 
-Vertical tab sidebar with persistent groups and saved sessions (off by default), extra highlight
-palettes in the reader's colour menu, optional collection counts, and one accent colour driving every
-Zest surface (picker plus five presets in **Settings ▸ Zest ▸ Appearance**).
+Vertical tab sidebar with persistent groups and saved sessions (off by default), optional collection
+counts, and one accent colour driving every Zest surface (picker plus five presets in **Settings ▸
+Zest ▸ Appearance**). Zest adds nothing to the reader; backgrounds and highlight colours are
+Zotero 10's own (Appearance menu, colour dropdown).
 
 ## API for templates and scripts
 
@@ -291,7 +326,8 @@ zest.lastRead(item); // "2026-08-19"
 zest.readingByDay(item); // { "2026-08-19": 930, … }   seconds per day
 zest.readingByPage(item); // { 0: 120, 1: 45, … }       seconds per page
 
-zest.readStatus(item); // "In Progress"
+zest.readStatus(item); // "In Progress"  what the Status column shows (set or automatic)
+zest.readStatusSource(item); // "manual" | "auto" | "none"
 zest.rating(item); // 4
 zest.ratingStars(item); // "★★★★☆"
 

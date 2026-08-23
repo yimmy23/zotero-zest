@@ -86,19 +86,29 @@ export function registerStyles(win: Window) {
     .virtualized-table .cell.primary.zest-heat-cell { background-repeat: no-repeat; background-size: 100% 100%; background-origin: padding-box; }
     .virtualized-table .cell.primary.zest-unread .cell-text { font-weight: 600; }
 
-    /* Status dot */
+    /* Status dot: filled = set by the user, ring = read from the data.
+       The visible dot is 10px; a pseudo-element widens the click target so the
+       picker opens without pixel-hunting. Every colour rule carries the same
+       prefix as the base rule — a shorter selector would lose to the base
+       rule's border shorthand and the ring would never show. */
     .virtualized-table .cell.zest-status .zest-status-dot {
-      flex: 0 0 auto; width: 9px; height: 9px; margin-inline-end: 6px; border-radius: 50%;
-      box-sizing: border-box; border: 1px solid transparent; cursor: pointer;
+      flex: 0 0 auto; width: 10px; height: 10px; margin-inline-end: 6px; border-radius: 50%;
+      box-sizing: border-box; border: 2px solid var(--fill-quinary); cursor: pointer; position: relative;
     }
-    .zest-status-dot.zest-status-none        { border-color: var(--fill-quinary); }
-    .zest-status-dot.zest-status-new         { background-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-to-read     { background-color: var(--accent-teal); }
-    .zest-status-dot.zest-status-in-progress { background-color: var(--accent-wood); }
-    .zest-status-dot.zest-status-read        { background-color: var(--zest-accent); }
-    .zest-status-dot.zest-status-not-reading { border-color: var(--fill-tertiary); }
-    .zest-status-dot.zest-status-custom      { background-color: var(--accent-yellow); }
-    .zest-status-dot:hover { outline: 2px solid var(--fill-quinary); outline-offset: 1px; }
+    .virtualized-table .cell.zest-status .zest-status-dot::before {
+      content: ""; position: absolute; inset: -6px; border-radius: 50%;
+    }
+    /* New uses the SECONDARY grey: the tertiary one is a 30 % white in the
+       dark theme, and a 2px ring of it disappears into the row */
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-new         { background-color: var(--fill-secondary); border-color: var(--fill-secondary); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-to-read     { background-color: var(--accent-teal); border-color: var(--accent-teal); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-in-progress { background-color: var(--accent-wood); border-color: var(--accent-wood); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-read        { background-color: var(--zest-accent); border-color: var(--zest-accent); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-not-reading { border-color: var(--fill-tertiary); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-custom      { background-color: var(--accent-yellow); border-color: var(--accent-yellow); }
+    .virtualized-table .cell.zest-status .zest-status-dot.zest-status-auto        { background-color: transparent; }
+    .virtualized-table .cell.zest-status .zest-status-dot:hover { outline: 2px solid var(--fill-quinary); outline-offset: 1px; }
+    .virtualized-table .cell.zest-status .zest-status-auto-text { color: var(--fill-secondary); }
 
     /* Rating stars: CSS-only hover preview */
     .virtualized-table .cell.zest-rating .zest-stars { display: inline-flex; flex: 0 0 auto; gap: 0; line-height: 1; letter-spacing: 0; }
@@ -144,8 +154,11 @@ export function registerStyles(win: Window) {
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
 
-    /* Journal rank badges + impact-factor bar */
+    /* Journal rank badges + impact factor (heat wash behind the number, or a bar) */
     .virtualized-table .cell.zest-pubtags .zest-rank-badge { font-variant-numeric: tabular-nums; }
+    .virtualized-table .cell.zest-if .zest-if-heat {
+      position: absolute; inset: 3px 6px; border-radius: 3px; pointer-events: none;
+    }
     .virtualized-table .cell.zest-if .zest-if-track {
       flex: 0 0 auto; width: 34px; height: 6px; margin-inline-end: 6px; border-radius: 1em;
       background-color: var(--fill-quinary); overflow: hidden;
@@ -291,8 +304,9 @@ export function registerStyles(win: Window) {
     .zest-info-heat { display: flex; height: 12px; gap: 1px; border-radius: 3px; overflow: hidden; }
     .zest-info-heat-seg { flex: 1 1 auto; cursor: pointer; background-color: transparent; }
     .zest-info-heat-seg:hover { outline: 1px solid var(--zest-accent-strong); outline-offset: -1px; }
-    .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    .zest-info-abstract > div { margin-top: 4px; color: var(--fill-secondary); white-space: pre-wrap; }
+    .zest-info-status.zest-status-auto-text { color: var(--fill-secondary); }
+    .zest-info-authors .zest-author-self { font-weight: 600; }
+    .zest-info-authors .zest-author-mark { color: var(--fill-secondary); }
 
     /* ---------- annotation locator cards ---------- */
     .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }

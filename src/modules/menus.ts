@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getLocaleID, getString } from "../utils/locale";
-import { READ_STATUSES, setReadStatus } from "../reading/status";
+import { READ_STATUSES } from "../reading/status";
+import { setStatusForAll } from "../reading/statusMenu";
 import { setRating } from "../columns/rating";
 import { readingStore } from "../reading/store";
 import {
@@ -17,13 +18,6 @@ import { toggleSidebar } from "../tabs/sidebar";
 import { importBetterAuthors } from "../columns/authors";
 import { rankSourceThrottled, refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
-import {
-  typesInView,
-  toggleType,
-  clearTypeFilter,
-  activeTypes,
-  canTypeFilter,
-} from "../views/typeFilter";
 
 /**
  * Menus via the official `Zotero.MenuManager` (Zotero 8+; this plugin
@@ -50,25 +44,6 @@ export function openZestPreferences() {
 function regularItems(context: any): Zotero.Item[] {
   return ((context?.items || []) as any[]).filter(
     (i) => i instanceof Zotero.Item && i.isRegularItem(),
-  );
-}
-
-async function setStatusForAll(items: Zotero.Item[], status: string | null) {
-  const editable = items.filter((i) => i.isEditable());
-  if (!editable.length) return;
-  if (editable.length <= 5) {
-    for (const it of editable) await setReadStatus(it, status);
-    return;
-  }
-  await runBatch(
-    getString("menu-status", "label"),
-    editable,
-    async (item) => setReadStatus(item, status),
-    {
-      confirmMessage: getString("batch-confirm-count", {
-        args: { count: editable.length },
-      }),
-    },
   );
 }
 
@@ -148,6 +123,10 @@ async function updateCitationsFor(items: Zotero.Item[], onlyStale: boolean) {
       else if (outcome.status === "unchanged") tally.unchanged++;
       else if (outcome.status === "no-id") tally.missing++;
       else tally.failed++;
+      // every further item would get the same refusal: stop the batch
+      // (the runner reports how many were left untouched)
+      if (outcome.status === "throttled")
+        throw new Error("citation source throttled");
     },
     {
       confirmMessage: getString("batch-confirm-count", {
@@ -181,32 +160,6 @@ async function clearReadingData(items: Zotero.Item[]) {
       String(e),
     );
   }
-}
-
-/**
- * The type submenu is rebuilt on every popup: MenuManager keeps our array by
- * reference, so we return live-computed children through a getter-ish factory
- * that Zotero calls when the menu is shown.
- */
-function typeFilterMenus(): any[] {
-  const win = Zotero.getMainWindow() as unknown as Window;
-  const items: any[] = [];
-  if (!win) return items;
-  for (const { type, label, count } of typesInView(win).slice(0, 20)) {
-    items.push({
-      menuType: "menuitem",
-      label: count ? `${label} (${count})` : label,
-      isChecked: () => activeTypes(win).includes(type),
-      onCommand: () => void toggleType(win, type),
-    });
-  }
-  items.push({ menuType: "separator" });
-  items.push({
-    menuType: "menuitem",
-    l10nID: getLocaleID("typefilter-clear"),
-    onCommand: () => void clearTypeFilter(win),
-  });
-  return items;
 }
 
 export function registerMenus() {
@@ -349,12 +302,6 @@ export function registerMenus() {
               const win = Zotero.getMainWindow();
               if (win) toggleTagTree(win as unknown as Window);
             },
-          },
-          {
-            menuType: "submenu",
-            l10nID: getLocaleID("menu-typefilter"),
-            getVisibility: () => canTypeFilter(),
-            menus: typeFilterMenus(),
           },
           {
             menuType: "menuitem",

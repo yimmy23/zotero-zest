@@ -28,10 +28,10 @@ export interface TagScope {
 }
 
 /**
- * The library the pane is looking at. Zotero 10 REMOVED the singular
- * `getSelectedLibraryID()` (it throws a descriptive error) in favour of the
- * plural form, because a selection can now span libraries; we take the first
- * one and fall back to the user library.
+ * The library the pane is looking at. Zotero 10 replaced the singular
+ * `getSelectedLibraryID()` (it throws) with the plural form, because a
+ * selection can span libraries; we take the first one and fall back to the
+ * user library.
  */
 export function selectedLibraryID(win: Window): number {
   const zp = (win as any).ZoteroPane;
@@ -40,12 +40,6 @@ export function selectedLibraryID(win: Window): number {
     if (Array.isArray(many) && many.length) return Number(many[0]);
   } catch {
     // not available on this build
-  }
-  try {
-    const one = zp?.getSelectedLibraryID?.();
-    if (typeof one === "number") return one;
-  } catch {
-    // Zotero 10 throws here on purpose
   }
   return Zotero.Libraries.userLibraryID;
 }
@@ -111,7 +105,7 @@ export async function collectTagScope(
     // yield every 200 items: walking attachments/notes/annotations of a large
     // collection would otherwise freeze the UI thread for seconds
     if (i % 200 === 199) await Zotero.Promise.delay(0);
-    for (const tag of tagsOfItem(item, withChildren)) {
+    for (const tag of cachedTags(item, withChildren)) {
       if (matcher.test(tag) === null) continue;
       inView.add(tag);
       counts.set(tag, (counts.get(tag) || 0) + 1);
@@ -126,7 +120,14 @@ export async function collectTagScope(
 
   const inLibrary = new Set<string>();
   try {
-    const all = (await Zotero.Tags.getAll(libraryID)) as Array<{
+    // Zotero's own "Show Automatic" switch (tag selector menu): type 1 tags
+    // are the ones translators attach, and they stay out of the tree too
+    const showAutomatic =
+      Zotero.Prefs.get("extensions.zotero.tagSelector.showAutomatic") !== false;
+    const all = (await Zotero.Tags.getAll(
+      libraryID,
+      showAutomatic ? undefined : [0],
+    )) as Array<{
       tag: string;
       type?: number;
     }>;
@@ -174,11 +175,21 @@ export async function collectTagScope(
  */
 const tagCache = new Map<number, string[]>();
 
+/** one slot per item AND per mode: the own-tags list and the with-children
+ *  list are different answers, and the mode is a live preference */
+const slot = (itemID: number, withChildren: boolean) =>
+  itemID * 2 + (withChildren ? 1 : 0);
+
 export function clearTagCache() {
   tagCache.clear();
 }
 
-/** drop the cached tag lists of these items (all of them when ids is empty) */
+/**
+ * Drop the cached tag lists of these items (all of them when ids is empty).
+ * A tag added to an attachment, note or annotation is reported with the
+ * CHILD's id, but it changes the PARENT's aggregated list — so the top-level
+ * item is invalidated as well.
+ */
 export function invalidateTagCache(ids?: Array<string | number>) {
   if (!ids?.length) {
     tagCache.clear();
@@ -187,42 +198,27 @@ export function invalidateTagCache(ids?: Array<string | number>) {
   for (const raw of ids) {
     // item-tag ids arrive as "itemID-tagID"
     const itemID = Number(String(raw).split("-")[0]);
-    if (Number.isInteger(itemID)) tagCache.delete(itemID);
+    if (!Number.isInteger(itemID)) continue;
+    tagCache.delete(slot(itemID, false));
+    tagCache.delete(slot(itemID, true));
+    try {
+      const top = (Zotero.Items.get(itemID) as any)?.topLevelItem;
+      if (top && top.id !== itemID) {
+        tagCache.delete(slot(top.id, false));
+        tagCache.delete(slot(top.id, true));
+      }
+    } catch {
+      // deleted child: its parent will be refreshed by the next event
+    }
   }
 }
 
-function cachedTags(item: Zotero.Item, withChildren: boolean): string[] {
-  const hit = tagCache.get(item.id);
+export function cachedTags(item: Zotero.Item, withChildren: boolean): string[] {
+  const key = slot(item.id, withChildren);
+  const hit = tagCache.get(key);
   if (hit) return hit;
   const tags = tagsOfItem(item, withChildren);
   if (tagCache.size > 20000) tagCache.clear();
-  tagCache.set(item.id, tags);
+  tagCache.set(key, tags);
   return tags;
-}
-
-/**
- * Does this item (or one of its children) carry a tag under `prefix`?
- * "under" = exactly the prefix, or the prefix followed by the link symbol, so
- * "#Method" does not swallow "#Methodology".
- */
-export function itemHasPrefix(
-  item: Zotero.Item,
-  prefixes: string[],
-  linkSymbol: string,
-  withChildren: boolean,
-): boolean {
-  if (!prefixes.length) return true;
-  const tags = cachedTags(item, withChildren);
-  if (!tags.length) return false;
-  for (const p of prefixes) {
-    let hit = false;
-    for (const t of tags) {
-      if (t === p || t.startsWith(p + linkSymbol)) {
-        hit = true;
-        break;
-      }
-    }
-    if (!hit) return false; // prefixes are ANDed
-  }
-  return true;
 }

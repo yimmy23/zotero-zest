@@ -1,43 +1,32 @@
 import { getString } from "../utils/locale";
 import {
-  READ_STATUSES,
-  getReadStatus,
-  nextStatus,
-  setReadStatus,
+  STATUS_SLUG,
+  effectiveStatus,
+  statusLabel,
   statusRank,
 } from "../reading/status";
+import { openStatusMenu } from "../reading/statusMenu";
 import { makeCell, rowItem, isPlainClick, type ColumnSpec } from "./registry";
 
 /**
- * "Status" column — Reading-List-compatible `Read_Status` from Extra.
- * Cell = coloured dot + label. Clicking the DOT (not the row) cycles the
- * status; the label text is left alone so a normal row click never edits.
+ * "Status" column — the effective read status (see reading/status.ts).
+ *
+ * Cell = dot + label. A status the user set is a filled dot; one read from
+ * the data (the automatic layer) is a ring in the same colour, with the label
+ * in the secondary text colour, so the two are told apart at a glance.
+ *
+ * Clicking the DOT opens the status picker (reading/statusMenu.ts) for this
+ * row — or for the whole selection when the row is part of it. The label is
+ * left alone so an ordinary row click keeps selecting. (The same picker sits
+ * in the Zest item-pane section, which Zotero also shows in a reader tab's
+ * context pane; there is deliberately no control inside the reader itself.)
+ *
+ * Zotero selects on MOUSEDOWN and re-renders the row synchronously, which
+ * would detach the dot before a `click` could fire (verified on 10.0,
+ * virtualized-table.js), so plain mousedown/dblclick are swallowed and the
+ * action runs on mouseup — the same contract Zotero's own tree twisty uses.
+ * Modified clicks (Shift / Cmd / Ctrl / Alt) stay Zotero's selection gesture.
  */
-
-export const STATUS_SLUG: Record<string, string> = {
-  New: "new",
-  "To Read": "to-read",
-  "In Progress": "in-progress",
-  Read: "read",
-  "Not Reading": "not-reading",
-};
-
-export function statusLabel(status: string): string {
-  switch (status) {
-    case "New":
-      return getString("status-new");
-    case "To Read":
-      return getString("status-to-read");
-    case "In Progress":
-      return getString("status-in-progress");
-    case "Read":
-      return getString("status-read");
-    case "Not Reading":
-      return getString("status-not-reading");
-    default:
-      return status;
-  }
-}
 
 export function statusColumn(): ColumnSpec {
   return {
@@ -45,42 +34,70 @@ export function statusColumn(): ColumnSpec {
     label: getString("column-status"),
     width: 104,
     enabledPref: "extensions.zotero.zest.column.status.enable",
+    // Zotero's own last-read stamp lives on the child attachment: parent rows
+    // must be recomputed when a child changes
+    dependsOnChildren: true,
     dataProvider: (item) => {
       if (!item.isRegularItem()) return "";
-      const s = getReadStatus(item);
-      if (!s) return "";
-      // rank first so custom labels sort after the built-ins
-      return `${statusRank(s)} ${s}`;
+      const eff = effectiveStatus(item);
+      if (!eff.status) return "";
+      // rank first so custom labels sort after the built-ins; a set status
+      // sorts before a derived one of the same rank
+      return `${statusRank(eff.status)}${eff.source === "manual" ? 0 : 1} ${eff.status}`;
     },
     renderCell: (index, data, column, _first, doc) => {
-      const status = data ? data.replace(/^\d+ /, "") : "";
+      const m = data ? /^(\d)(\d) ([\s\S]*)$/.exec(data) : null;
+      const status = m ? m[3] : "";
+      const auto = !!m && m[2] === "1";
       const { cell, textSpan } = makeCell(doc, column, "status");
       const dot = doc.createElement("span");
-      dot.className = `zest-status-dot zest-status-${STATUS_SLUG[status] || (status ? "custom" : "none")}`;
-      dot.title = getString("status-click-tip", {
-        args: { next: statusLabel(nextStatus(status)) },
-      });
-      // the row reacts to mousedown/mouseup/dblclick (select / open item):
-      // keep those from reaching the row so a quick double click on the dot
-      // never opens the PDF
-      for (const t of ["mousedown", "mouseup", "dblclick"]) {
+      dot.className = `zest-status-dot zest-status-${
+        STATUS_SLUG[status] || (status ? "custom" : "none")
+      }${auto ? " zest-status-auto" : ""}`;
+      dot.title =
+        status && auto
+          ? getString("status-auto-tip", {
+              args: { status: statusLabel(status) },
+            })
+          : getString("status-set-tip");
+      for (const t of ["mousedown", "dblclick"]) {
         dot.addEventListener(t, (ev: Event) => {
-          // a modified click is a selection gesture — let Zotero have it
           if (isPlainClick(ev as unknown as MouseEvent)) ev.stopPropagation();
         });
       }
-      dot.addEventListener("click", (ev) => {
-        if (!isPlainClick(ev as unknown as MouseEvent)) return;
+      dot.addEventListener("mouseup", (ev: Event) => {
+        const mouse = ev as MouseEvent;
+        if (!isPlainClick(mouse)) return;
         ev.stopPropagation();
         const item = rowItem(doc, index);
-        if (!item || !item.isEditable()) return;
-        void setReadStatus(item, nextStatus(getReadStatus(item)));
+        const win = doc.defaultView as Window | null;
+        if (!item || !win) return;
+        openStatusMenu({
+          win,
+          items: targetsFor(win, item),
+          anchor: dot,
+          screenX: mouse.screenX,
+          screenY: mouse.screenY,
+        });
       });
       cell.insertBefore(dot, textSpan);
       textSpan.textContent = statusLabel(status);
+      if (auto) textSpan.classList.add("zest-status-auto-text");
       return cell;
     },
   };
 }
 
-export { READ_STATUSES };
+/** the clicked row's item — or the whole selection when the row is in it */
+function targetsFor(win: Window, item: Zotero.Item): Zotero.Item[] {
+  try {
+    const selected: Zotero.Item[] =
+      (win as any).ZoteroPane?.getSelectedItems?.() ?? [];
+    if (selected.length > 1 && selected.some((s) => s.id === item.id)) {
+      return selected.filter((s) => s.isRegularItem());
+    }
+  } catch {
+    // fall through to the single item
+  }
+  return [item];
+}

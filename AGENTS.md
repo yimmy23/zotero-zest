@@ -16,11 +16,14 @@ src/
   authors/pipeline.ts          resolveRoles → normalize → select → format → decorate
   cite/                        citation counts: Extra format, sources (Crossref/OpenAlex/S2)
   rank/                        journal ranks: local dataset → easyScholar → OpenAlex, cache, Map rewrite
-  reading/                     tracker, store (zest.sqlite), heat, read status + automation, import/export
+  reading/                     tracker, store (zest.sqlite), heat, read status (manual layer in
+                               Extra + the automatic layer derived from the record and Zotero's own
+                               last-read stamp), the status picker popup, automation, import/export
   annots/density.ts            annotation summaries for the column and the panel cards
   tags/                        nested tag tree, scope pass, rules, tag context menu
-  views/                       getItems filter pipeline, item-type filter, column views,
-                               collection counts, reveal guard
+  views/                       getItems filter pipeline, column views, collection counts, reveal guard
+  reader/                      the readerCustomThemes repair only — Zest adds nothing to the reader
+                               (maintainer's call, 2026-08-23)
   panes/                       item-pane sections, statistics window, annotation matrix
   tabs/                        vertical tab sidebar + groups/sessions model
   graph/                       d3-force panel
@@ -43,8 +46,15 @@ users download. Design sources live in `assets/`.
 These are not style preferences. Breaking one is a bug even if everything still compiles.
 
 1. **Zest extends Zotero; it never degrades it.** Anything that replaces a native surface (nested tag
-   tree, vertical tabs, collection counts, title decoration) is off by default, reversible, and
-   disables itself when its feature probe fails. Filters compose with Zotero's own search rather than
+   tree, vertical tabs, collection counts) is off by default, reversible, and disables itself when
+   its feature probe fails. Title decoration only adds to the Title cell (heat, bold) and ships on;
+   it is still reversible and probe-gated. **Zest does not duplicate what Zotero 10 already ships**:
+   no abstract row, no reader colour presets, no Creator-column copy, no item-type filter, nothing
+   inside the reader — a native feature is the answer, not a second copy (see the 2026-08-23 audit
+   in session-notes). But "derived from, consolidates or visualises a native feature" is NOT
+   duplication — the maintainer's rule (2026-08-23): Zest's job is exactly that. So the Venue
+   column (one column across item types), the Authors columns (Creator column with rules), the
+   panel's one-line author list and its row of outbound links all stay. Filters compose with Zotero's own search rather than
    overriding it. Native gestures stay native: a modified click (Shift/Cmd/Ctrl/Alt, non-primary
    button) belongs to Zotero's selection handling — see `isPlainClick` in `columns/registry.ts`.
 2. **`Extra` is the user's field.** Write only on an explicit user action, only the line you own, and
@@ -56,7 +66,12 @@ These are not style preferences. Breaking one is a bug even if everything still 
    requests go through `core/http.ts` with `secret: true`, which bypasses Zotero's HTTP logging.
 4. **Nothing hits the network unless the user asked.** Auto-fetch is a preference; a batch stops when a
    source throttles; back-off is never cleared by a "force" flag.
-5. **Full teardown restores Zotero exactly — and nothing else.** Every install has an uninstall that
+5. **Full teardown restores Zotero exactly — and nothing else.** And the other way round: Zotero
+   strips every registration under our plugin ID when a copy finishes shutting down (item-tree
+   columns, item-pane sections, menus, reader listeners, the settings pane — `PluginAPIBase`'s
+   shutdown observer). An in-place upgrade overlaps the outgoing copy's async teardown with the
+   incoming copy's startup, so `hooks.ts` watches `Zotero.Plugins` and re-registers everything when
+   the sweep hits a copy that is still alive. Every install has an uninstall that
    puts back the prototype method, the DOM, the stylesheet, the menus, the native tag selector and the
    native tab bar — verified per window and on plugin shutdown. A prototype hook goes back **only
    while our own wrapper is still the function on the prototype**: another plugin, or the incoming
@@ -117,11 +132,12 @@ scripts/dev-eval.sh 'return Zotero.version' # run arbitrary JS inside the dev in
 scripts/dev-eval.sh -f scripts/phase-c-probe.js   # tags · ranks · views · graph · reader
 scripts/dev-eval.sh -f scripts/phase-d-probe.js   # authors · citations · panels · stats · matrix · tabs
 scripts/dev-eval.sh -f scripts/phase-e-probe.js   # the audit regression suite
+scripts/dev-eval.sh -f scripts/phase-f-probe.js   # read-status derivation + picker, IF heat, removals
 scripts/dev-eval.sh -f scripts/upgrade-probe.js   # DESTRUCTIVE: shuts the plugin down; restart after
 scripts/dev-shot.py out.png [selector] [--dark|--light|--prefs|--stats|--matrix]
 ```
 
-A change is done when all three probes pass, `tsc` and `eslint` are clean, and — for anything visual —
+A change is done when all four probes pass, `tsc` and `eslint` are clean, and — for anything visual —
 a screenshot in both themes shows the result. Prefs defaults only load at plugin startup: after editing
 `addon/prefs.js`, restart the dev instance rather than relying on the hot reload.
 

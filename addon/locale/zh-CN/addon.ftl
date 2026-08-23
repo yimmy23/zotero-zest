@@ -1,6 +1,3 @@
-startup-begin = Zest 正在加载
-startup-finish = Zest 已就绪
-
 # ---- columns ----
 column-reading = 阅读
 column-status = 状态
@@ -17,7 +14,13 @@ status-to-read = 待读
 status-in-progress = 在读
 status-read = 已读
 status-not-reading = 不读
-status-click-tip = 点击设为：{ $next }
+status-set-tip = 点击设置阅读状态
+status-auto-tip = 按阅读记录判定：{ $status }——点击可手动指定
+status-auto-label = { $status }（自动）
+status-menu-header-none = 未设置
+status-menu-header-auto = 当前：{ $status }（按阅读记录判定）
+status-menu-header-manual = 当前：{ $status }
+status-menu-header-many = { $count } 个条目
 
 rating-tip = 点击星星评级；再次点击当前星级可降一级
 
@@ -168,8 +171,6 @@ column-venue = 期刊 / 来源
 if-cell-tip = { $field } = { $value }（来源：{ $source }）
 rank-menu-refresh =
     .label = 刷新所选条目的期刊数据
-rank-refresh-done = 已更新 { $count } 本期刊
-rank-no-key = 未填写 easyScholar 密钥——只使用本地数据集与 OpenAlex
 
 # ---- view groups ----
 views-menu = Zest 视图
@@ -182,21 +183,6 @@ views-delete-confirm = 删除视图「{ $name }」？当前的列布局不会改
 views-restore = 恢复切换前的列布局
 views-untitled = 新视图
 views-previous = 上一次的布局
-
-# ---- type filter / collection counts ----
-menu-typefilter =
-    .label = 按条目类型筛选
-typefilter-clear =
-    .label = 显示全部类型
-typefilter-active = 仅显示：{ $types }
-typefilter-unavailable =
-    .label = 当前 Zotero 版本不支持
-
-# ---- reader colour schemes ----
-reader-scheme-menu = Zest 配色方案
-reader-scheme-classic = 经典（黄 · 红 · 绿）
-reader-scheme-warm = 暖色（橙 · 红 · 洋红）
-reader-scheme-cool = 冷色（蓝 · 绿 · 紫）
 
 # ---- settings pane (rendered from JS) ----
 pref-key-save = 保存
@@ -257,7 +243,6 @@ info-reading-value = { $time } · 已看 { $pages } / { $total } 页
 info-reading-none = 还没有阅读记录
 info-status = 状态
 info-status-none = 未设置
-info-abstract = 摘要
 info-open = 在其它平台打开
 info-heat-tip = 跳到第 { $page } 页
 

@@ -25,8 +25,6 @@ export interface CitationInfo {
   source?: string;
   /** ISO date (YYYY-MM-DD) of the last successful fetch, when recorded */
   date?: string;
-  /** the raw line we parsed, so a rewrite can replace exactly that line */
-  line?: string;
 }
 
 const PATTERNS: Array<{
@@ -92,7 +90,7 @@ export function readCitations(item: Zotero.Item): CitationInfo | undefined {
     if (!m) continue;
     const info = read(m);
     if (!info || !Number.isFinite(info.count)) continue;
-    return { ...info, line: m[0] };
+    return { ...info };
   }
   // "NoCitationData" means the other plugin looked and found nothing
   if (/^(GSCC|ZSCC):?\s*NoCitationData/im.test(extra)) {
@@ -110,28 +108,13 @@ export function formatCitationLine(info: {
 }
 
 /**
- * Lines that are ONLY a citation record. Anchored at both ends, because the
- * loose patterns used for reading would also swallow a user's own sentence
- * such as "3 citations still missing from the intro" — deleting a note the
- * user wrote is far worse than leaving a duplicate count.
+ * The shape Zest itself writes — the ONLY line we may replace or delete.
+ * Anchored at both ends, because the loose patterns used for reading would
+ * also swallow a user's own sentence such as "3 citations still missing from
+ * the intro" — deleting a note the user wrote is far worse than leaving a
+ * duplicate count.
  */
-const WHOLE_LINE_PATTERNS: RegExp[] = [
-  /^Citations:\s*\d+\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i,
-  /^\d+\s+citations?\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i,
-  /^Citations\s*\([^)]*\):\s*\d+\s*$/i,
-  /^GSCC:?\s*(?:\d+|NoCitationData)(?:\s+\S+)*\s*$/i,
-  /^ZSCC:?\s*(?:\d+|NoCitationData)\s*$/i,
-  /^openalex\.cit_count:\s*\d+\s*$/i,
-];
-
-/** the shape Zest itself writes — the ONLY line we may replace or delete */
 const OUR_LINE = /^Citations:\s*\d+\s*(?:\([^)]*\))?\s*(?:\[[\d-]+\])?\s*$/i;
-
-export function isCitationOnlyLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed) return false;
-  return WHOLE_LINE_PATTERNS.some((re) => re.test(trimmed));
-}
 
 export function isOurCitationLine(line: string): boolean {
   return OUR_LINE.test(line.trim());

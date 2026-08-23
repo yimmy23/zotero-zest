@@ -364,9 +364,20 @@ export async function migrateLegacyUI() {
   })
     .createLine({ text: `0/${records.length}`, type: "default", progress: 0 })
     .show();
-  await applyLegacy(records, mode, report, (d, t) =>
-    pw2.changeLine({ text: `${d}/${t}`, progress: (d / t) * 100 }),
-  );
+  try {
+    await applyLegacy(records, mode, report, (d, t) =>
+      pw2.changeLine({ text: `${d}/${t}`, progress: (d / t) * 100 }),
+    );
+  } catch (e) {
+    ztoolkit.log("[migrate] failed", e);
+    pw2.changeLine({
+      text: getString("import-parse-failed", { args: { error: String(e) } }),
+      type: "fail",
+      progress: 100,
+    });
+    pw2.startCloseTimer(6000);
+    return;
+  }
   pw2.changeLine({
     text: getString("migrate-done", {
       args: { merged: report.merged, hours },

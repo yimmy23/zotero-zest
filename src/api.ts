@@ -6,7 +6,7 @@ import {
   formatDuration,
   type ItemReading,
 } from "./reading/store";
-import { getReadStatus } from "./reading/status";
+import { effectiveStatus } from "./reading/status";
 import { getRating } from "./columns/rating";
 import { citationOf } from "./cite/index";
 import { getJournalRecord, displayValues } from "./rank/index";
@@ -133,9 +133,24 @@ export const api = {
   firstRead: (item: ItemLike): string =>
     safe(() => isoDay(reading(item)?.firstRead ?? 0), ""),
 
-  /** YYYY-MM-DD of the most recent reading session */
+  /**
+   * YYYY-MM-DD of the most recent reading session. Zotero 10 keeps its own
+   * synced last-read stamp on the attachments (`getItemLastRead`, set when a
+   * file is opened or a page turned on any device); the later of the two wins,
+   * so a paper read on another machine is not reported as untouched here.
+   */
   lastRead: (item: ItemLike): string =>
-    safe(() => isoDay(reading(item)?.lastRead ?? 0), ""),
+    safe(() => {
+      const it = resolve(item);
+      const own = reading(it)?.lastRead ?? 0;
+      let native: number;
+      try {
+        native = Number((it as any)?.getItemLastRead?.() ?? 0) || 0;
+      } catch {
+        native = 0;
+      }
+      return isoDay(Math.max(own, native));
+    }, ""),
 
   /** { "2026-08-21": 930, … } — seconds per calendar day */
   readingByDay: (item: ItemLike): Record<string, number> =>
@@ -153,12 +168,24 @@ export const api = {
 
   /* ---- status and rating ---- */
 
-  /** "New" | "To Read" | "In Progress" | "Read" | "Not Reading" | "" */
+  /**
+   * The status the Status column shows: "New" | "To Read" | "In Progress" |
+   * "Read" | "Not Reading" | "" — the one the user set, or, when none is set,
+   * the one read from the reading record (see readStatusSource).
+   */
   readStatus: (item: ItemLike): string =>
     safe(() => {
       const it = resolve(item);
-      return it ? getReadStatus(it) : "";
+      return it ? effectiveStatus(it).status : "";
     }, ""),
+
+  /** "manual" (set by the user, in Extra) | "auto" (read from the reading
+   *  record / Zotero's last-read stamp) | "none" */
+  readStatusSource: (item: ItemLike): string =>
+    safe(() => {
+      const it = resolve(item);
+      return it ? effectiveStatus(it).source : "none";
+    }, "none"),
 
   /** 0–5 */
   rating: (item: ItemLike): number =>

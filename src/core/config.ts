@@ -1,4 +1,4 @@
-import { config } from "../../package.json";
+import { config, version } from "../../package.json";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { getString } from "../utils/locale";
 
@@ -426,7 +426,7 @@ export function exportBundle(): ConfigBundle {
     kind: "zest-config",
     v: CONFIG_VERSION,
     exported: new Date().toISOString(),
-    app: { zotero: Zotero.version, zest: config.addonRef },
+    app: { zotero: Zotero.version, zest: version },
     prefs,
     config: JSON.parse(JSON.stringify(zestConfig.get())),
   };

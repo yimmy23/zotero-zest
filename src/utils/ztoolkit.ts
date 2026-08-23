@@ -29,11 +29,6 @@ class MyToolkit extends BasicTool {
   unregisterAll() {
     unregister(this);
   }
-
-  getDOMParser(): DOMParser {
-    const ParserCtor = this.getGlobal("DOMParser");
-    return new ParserCtor();
-  }
 }
 
 function createZToolkit() {

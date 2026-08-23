@@ -23,6 +23,9 @@ export interface JournalRecord {
   updated: number;
   /** sources that were asked and had nothing (so we do not ask again soon) */
   misses?: RankSource[];
+  /** a source could not be reached when this was built: show it, but ask
+   *  again soon rather than after the full TTL */
+  partial?: boolean;
 }
 
 export function valueOf(

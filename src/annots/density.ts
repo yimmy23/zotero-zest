@@ -177,17 +177,6 @@ export function pageIndexOf(annotation: Zotero.Item): number {
   }
 }
 
-export function invalidate(itemIDs: number[]) {
-  let any = false;
-  for (const id of itemIDs) if (summaries.delete(id)) any = true;
-  if (any) onReady?.(itemIDs);
-}
-
-export function invalidateAll() {
-  summaries.clear();
-  annotOwner.clear();
-}
-
 /**
  * Watch annotation changes. Zotero reports them as `item` events whose ids are
  * ANNOTATION items; we map annotation → parent attachment → parent regular

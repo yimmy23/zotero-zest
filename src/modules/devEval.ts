@@ -48,15 +48,16 @@ import * as counts from "../views/collectionCounts";
 import * as tabsModel from "../tabs/model";
 import * as remark from "../columns/remark";
 import * as viewGroups from "../views/viewGroups";
-import * as typeFilter from "../views/typeFilter";
 import * as collectionCounts from "../views/collectionCounts";
 import * as readerThemes from "../reader/themes";
-import * as colorSchemes from "../reader/colorSchemes";
 import * as columns from "../columns";
 import * as registry from "../columns/registry";
 import * as migrate from "../reading/migrate";
 import * as exportImport from "../reading/exportImport";
 import * as extra from "../utils/extra";
+import * as status from "../reading/status";
+import * as statusMenu from "../reading/statusMenu";
+import * as pubTags from "../columns/pubTags";
 
 const TOKEN = "zest-dev-5c1e9a27";
 
@@ -81,6 +82,26 @@ export function installStartupConsoleProbe() {
     };
     Services.console.registerListener(listener as any);
     (Zotero as any).__zestConsoleProbe = listener;
+  } catch {
+    // ignore
+  }
+}
+
+/** dev-only: remove the console probe and the eval endpoint (plugin shutdown) */
+export function uninstallDevEval() {
+  if (__env__ !== "development") return;
+  try {
+    const probe = (Zotero as any).__zestConsoleProbe;
+    if (probe) {
+      Services.console.unregisterListener(probe);
+      delete (Zotero as any).__zestConsoleProbe;
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    const endpoints = (Zotero as any).Server?.Endpoints;
+    if (endpoints) delete endpoints["/zest-dev/eval"];
   } catch {
     // ignore
   }
@@ -127,6 +148,9 @@ export function registerDevEval() {
             migrate,
             exportImport,
             extra,
+            status,
+            statusMenu,
+            pubTags,
             startupConsole,
             cache,
             zestConfig,
@@ -163,10 +187,8 @@ export function registerDevEval() {
             tabsModel,
             remark,
             viewGroups,
-            typeFilter,
             collectionCounts,
             readerThemes,
-            colorSchemes,
           });
           if (typeof result !== "string") {
             try {

@@ -3,38 +3,48 @@ import { getString, getLocaleID } from "../utils/locale";
 import { getPref } from "../utils/prefs";
 import { guard } from "../utils/guard";
 import { readingStore, formatDuration, pagesSeen } from "../reading/store";
-import { heatAlphas } from "../reading/heat";
+import { heatAlphas, heatLevel, hexToRgb } from "../reading/heat";
 import { heatColor, heatOpacity } from "../columns/reading";
-import { hexToRgb } from "../reading/heat";
 import { HEAT_LEVELS } from "../ui/palette";
-import {
-  getReadStatus,
-  setReadStatus,
-  nextStatus,
-  READ_STATUSES,
-} from "../reading/status";
+import { effectiveStatus, statusLabel } from "../reading/status";
+import { openStatusMenu } from "../reading/statusMenu";
 import { getRating, setRating } from "../columns/rating";
 import { remarkOf, setRemark } from "../columns/remark";
 import { getJournalRecord, requestJournalRecord, displayValues } from "../rank";
 import { displayFields, colorForRank, defaultRankColor } from "../rank/rank";
 import { citationOf, updateCitations } from "../cite";
 import { venueOf } from "../rank/normalize";
+import {
+  bestAttachment,
+  itemIsEditable,
+  openAttachmentAt,
+} from "../utils/items";
 import { formatAuthors } from "../authors/pipeline";
-import { etAlText } from "../columns/authors";
-import { bestAttachment, itemIsEditable } from "../utils/items";
+import { panelAuthorOptions } from "../columns/authors";
 import { iconButton } from "../ui/icons";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
- * and where am I with it".
+ * and where am I with it": every author on one line, venue with its rank
+ * badges, citation count, reading time with the clickable per-page heat strip,
+ * read status, rating, the remark, and one row of places to open the paper.
  *
  * Everything here is a view over data that already exists: reading time from
  * zest.sqlite, rating/status/remark from Extra, ranks and citations from the
  * caches the columns use. Nothing is fetched while rendering; the journal
  * lookup is only queued (and only if the user opted into remote lookups).
  *
- * The per-page heat strip is clickable: clicking a segment opens the reader at
- * that page, which is what the original plugin's "energy bar" promised.
+ * The abstract is deliberately NOT here: Zotero 10's own Abstract section sits
+ * two sections up, editable. The author line and the outbound links stay by
+ * the maintainer's call (2026-08-23): Zotero's Info box shows creators one row
+ * at a time with a "N more" fold, and its "View Online" / Locate entries are
+ * spread over several rows and menus — one scannable line and one row of
+ * buttons is the point of this panel.
+ *
+ * Zotero shows the section in a reader tab's context pane as well (same
+ * <item-details> element, item = the attachment's parent), so the status
+ * picker here is reachable beside the PDF without Zest adding anything to the
+ * reader itself.
  */
 
 let sectionID: string | false = false;
@@ -73,6 +83,16 @@ export function registerInfoSection() {
         // window gone
       }
     },
+    // Zotero skips hidden panes in its render loop, so a section that hid
+    // itself inside onRender (attachment selected, multi-select) never renders
+    // again; visibility has to be decided here, where every item change lands
+    onItemChange: (props: any) => {
+      try {
+        props.setEnabled?.(wantsSection(props?.item));
+      } catch (e) {
+        ztoolkit.log("[info] item change failed", e);
+      }
+    },
     onRender: (props: any) => {
       try {
         render(props);
@@ -105,6 +125,14 @@ export function refreshInfoSections() {
   }
 }
 
+function wantsSection(item: unknown): boolean {
+  return (
+    !!getPref("info.enable") &&
+    item instanceof Zotero.Item &&
+    item.isRegularItem()
+  );
+}
+
 function row(doc: Document, label: string): HTMLElement {
   const el = doc.createElement("div");
   el.className = "zest-info-row";
@@ -122,12 +150,7 @@ function render(props: any) {
   body.textContent = "";
   body.classList.add("zest-info");
 
-  if (
-    !getPref("info.enable") ||
-    !item ||
-    !(item instanceof Zotero.Item) ||
-    !item.isRegularItem()
-  ) {
+  if (!wantsSection(item) || !item) {
     props.setEnabled?.(false);
     return;
   }
@@ -136,21 +159,30 @@ function render(props: any) {
   // would fail silently — show the values, disable the controls
   const editable = props.editable !== false && itemIsEditable(item);
 
-  /* ---------- authors + venue ---------- */
-  const authors = formatAuthors(item, {
-    policy: { kind: "first", n: 3, etAl: "append" },
-    rules: { order: "auto", given: "full", initialsDot: true },
-    etAlText: etAlText(),
-  });
+  /* ---------- authors: every one, on one line, with the user's rules ---------- */
+  const authors = formatAuthors(item, panelAuthorOptions());
   if (authors.parts.length) {
     const r = row(doc, getString("info-authors"));
     const value = doc.createElement("span");
-    value.className = "zest-info-value";
-    value.textContent = authors.parts.map((p) => p.text).join("");
+    value.className = "zest-info-value zest-info-authors";
+    for (const part of authors.parts) {
+      if (!part.kind) {
+        value.appendChild(doc.createTextNode(part.text));
+        continue;
+      }
+      const span = doc.createElement("span");
+      span.className = `zest-author-${part.kind}`;
+      span.textContent = part.text;
+      value.appendChild(span);
+    }
+    value.title = getString("authors-cell-tip", {
+      args: { count: authors.total },
+    });
     r.appendChild(value);
     body.appendChild(r);
   }
 
+  /* ---------- venue + ranks ---------- */
   const venue = venueOf(item);
   if (venue) {
     const r = row(doc, getString("info-venue"));
@@ -224,19 +256,32 @@ function render(props: any) {
 
   /* ---------- status / rating / remark ---------- */
   const stateRow = row(doc, getString("info-status"));
-  const status = getReadStatus(item);
+  const eff = effectiveStatus(item);
   const statusBtn = doc.createElement("button");
-  statusBtn.className = "zest-info-btn";
-  statusBtn.textContent = status
-    ? getString(statusStringID(status))
-    : getString("info-status-none");
+  statusBtn.className = `zest-info-btn zest-info-status${
+    eff.source === "auto" ? " zest-status-auto-text" : ""
+  }`;
+  statusBtn.textContent =
+    eff.source === "none"
+      ? getString("info-status-none")
+      : eff.source === "auto"
+        ? getString("status-auto-label", {
+            args: { status: statusLabel(eff.status) },
+          })
+        : statusLabel(eff.status);
+  statusBtn.title = getString("status-set-tip");
   statusBtn.disabled = !editable;
   statusBtn.addEventListener(
     "click",
     guard("info status", () => {
-      void setReadStatus(item, nextStatus(status)).then(() =>
-        refreshInfoSections(),
-      );
+      const win = doc.defaultView as Window | null;
+      if (!win) return;
+      openStatusMenu({
+        win,
+        items: [item],
+        anchor: statusBtn,
+        onDone: () => refreshInfoSections(),
+      });
     }),
   );
   stateRow.appendChild(statusBtn);
@@ -284,27 +329,6 @@ function render(props: any) {
   remarkRow.appendChild(input);
   body.appendChild(remarkRow);
 
-  /* ---------- abstract ---------- */
-  if (getPref("info.abstract")) {
-    let abstract: string;
-    try {
-      abstract = String(item.getField("abstractNote") || "");
-    } catch {
-      abstract = "";
-    }
-    if (abstract) {
-      const details = doc.createElement("details");
-      details.className = "zest-info-abstract";
-      const summary = doc.createElement("summary");
-      summary.textContent = getString("info-abstract");
-      details.appendChild(summary);
-      const text = doc.createElement("div");
-      text.textContent = abstract;
-      details.appendChild(text);
-      body.appendChild(details);
-    }
-  }
-
   /* ---------- open in ---------- */
   const links = openLinks(item);
   if (links.length) {
@@ -329,17 +353,6 @@ function render(props: any) {
   }
 }
 
-function statusStringID(status: string): any {
-  const map: Record<string, string> = {
-    New: "status-new",
-    "To Read": "status-to-read",
-    "In Progress": "status-in-progress",
-    Read: "status-read",
-    "Not Reading": "status-not-reading",
-  };
-  return map[status] || "status-new";
-}
-
 /** clickable per-page heat: each segment opens the reader at that page */
 function buildHeatStrip(
   doc: Document,
@@ -357,7 +370,7 @@ function buildHeatStrip(
   alphas.forEach((t, i) => {
     const seg = doc.createElement("span");
     seg.className = "zest-info-heat-seg";
-    const level = t <= 0.005 ? 0 : Math.min(4, Math.max(1, Math.ceil(t * 4)));
+    const level = heatLevel(t);
     const alpha = level ? HEAT_LEVELS[level - 1] * opacity : 0;
     seg.style.backgroundColor = alpha
       ? `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`
@@ -381,13 +394,7 @@ async function openAtPage(item: Zotero.Item, pageIndex: number, attKey = "") {
     // attachment happens to sort first
     const attachment = attachmentFor(item, attKey);
     if (!attachment) return;
-    const location = { pageIndex };
-    const handlers = (Zotero as any).FileHandlers;
-    if (handlers?.open) {
-      await handlers.open(attachment, { location });
-      return;
-    }
-    await Zotero.Reader.open(attachment.id, location as any);
+    await openAttachmentAt(attachment, { pageIndex });
   } catch (e) {
     ztoolkit.log("[info] open at page failed", e);
   }
@@ -406,41 +413,80 @@ function attachmentFor(
   return bestAttachment(item);
 }
 
+/**
+ * One row of places to open the paper. Identifier-based where there is one
+ * (DOI, PMID, arXiv), title search otherwise — the same ladder the sibling
+ * Refs plugin uses. Zotero's own "View Online" and Locate menu cover DOI and
+ * Google Scholar too; the row exists so that every destination is one click
+ * from the same place.
+ */
 function openLinks(item: Zotero.Item): Array<{ label: string; url: string }> {
   const out: Array<{ label: string; url: string }> = [];
   let doi = "";
   let title = "";
   let pmid = "";
+  let arxiv = "";
   try {
-    doi = String(item.getField("DOI") || "").replace(
-      /^https?:\/\/(dx\.)?doi\.org\//i,
-      "",
-    );
-    title = String(item.getField("title") || "");
+    doi = String(item.getField("DOI") || "")
+      .trim()
+      .replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
+    title = String(item.getField("title") || "").trim();
+    pmid = String(item.getField("PMID") || "").trim();
     const extra = String(item.getField("extra") || "");
-    pmid = extra.match(/^PMID:\s*(\d+)/im)?.[1] || "";
+    if (!/^\d+$/.test(pmid)) pmid = extra.match(/^PMID:\s*(\d+)/im)?.[1] || "";
+    arxiv =
+      String(item.getField("archiveID") || "").match(/^arXiv:\s*(\S+)/i)?.[1] ||
+      extra.match(/^arXiv:\s*(\S+)/im)?.[1] ||
+      "";
   } catch {
     // unloaded
   }
-  if (doi) {
-    out.push({ label: "DOI", url: `https://doi.org/${doi}` });
-    out.push({
-      label: "Semantic Scholar",
-      url: `https://www.semanticscholar.org/search?q=${encodeURIComponent(doi)}`,
-    });
-  }
-  if (pmid)
+  const q = encodeURIComponent(title);
+  const hasCJK = /[\u3400-\u9fff]/.test(title);
+  if (doi) out.push({ label: "DOI", url: `https://doi.org/${doi}` });
+  if (pmid) {
     out.push({
       label: "PubMed",
       url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
     });
+  } else if (title && !hasCJK) {
+    out.push({
+      label: "PubMed",
+      url: `https://pubmed.ncbi.nlm.nih.gov/?term=${q}`,
+    });
+  }
+  if (arxiv)
+    out.push({ label: "arXiv", url: `https://arxiv.org/abs/${arxiv}` });
   if (title) {
     out.push({
       label: "Google Scholar",
-      url: `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`,
+      url: `https://scholar.google.com/scholar?q=${q}`,
+    });
+  }
+  if (doi) {
+    out.push({
+      label: "Semantic Scholar",
+      url: `https://www.semanticscholar.org/search?q=${encodeURIComponent(doi)}`,
+    });
+    out.push({
+      label: "OpenAlex",
+      url: `https://openalex.org/works/doi:${encodeURIComponent(doi)}`,
+    });
+  } else if (title) {
+    out.push({
+      label: "Semantic Scholar",
+      url: `https://www.semanticscholar.org/search?q=${q}`,
+    });
+    out.push({
+      label: "OpenAlex",
+      url: `https://openalex.org/works?search=${q}`,
+    });
+  }
+  if (title) {
+    out.push({
+      label: "Connected Papers",
+      url: `https://www.connectedpapers.com/search?q=${q}`,
     });
   }
   return out;
 }
-
-export { READ_STATUSES };

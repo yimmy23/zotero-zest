@@ -111,27 +111,44 @@
 
   <groupbox>
     <label><html:h2 data-l10n-id="pref-group-appearance"></html:h2></label>
-    <description class="zest-pref-hint" data-l10n-id="pref-accent-hint"></description>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-accent-hint"
+    ></description>
     <hbox align="center">
       <html:label data-l10n-id="pref-accent-color"></html:label>
       <html:input type="color" preference="ui.accent"></html:input>
-      <html:div id="zest-pref-accent-presets" class="zest-pref-swatches"></html:div>
+      <html:div
+        id="zest-pref-accent-presets"
+        class="zest-pref-swatches"
+      ></html:div>
     </hbox>
     <hbox align="center">
       <button
         id="zest-pref-accent-apply"
         data-l10n-id="pref-accent-apply"
-        oncommand="Zotero.__addonInstance__.hooks.onPrefsEvent('accent-apply', { window })"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('accent-apply', {
+            window,
+          })
+        "
         native="true"
       />
       <button
         id="zest-pref-accent-reset"
         data-l10n-id="pref-accent-reset"
-        oncommand="Zotero.__addonInstance__.hooks.onPrefsEvent('accent-reset', { window })"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('accent-reset', {
+            window,
+          })
+        "
         native="true"
       />
     </hbox>
-    <description class="zest-pref-hint" data-l10n-id="pref-accent-apply-hint"></description>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-accent-apply-hint"
+    ></description>
   </groupbox>
 
   <groupbox>
@@ -161,7 +178,7 @@
       ></html:label>
       <html:input
         type="number"
-        min="0"
+        min="0.1"
         max="1"
         step="0.05"
         preference="heat.opacity"
@@ -185,6 +202,11 @@
         preference="tracker.idleSeconds"
       ></html:input>
     </hbox>
+    <checkbox
+      preference="status.derive"
+      data-l10n-id="pref-status-derive"
+      native="true"
+    />
     <checkbox
       preference="statusAuto.enable"
       data-l10n-id="pref-statusauto-enable"
@@ -289,11 +311,6 @@
       </menulist>
     </hbox>
     <checkbox
-      preference="nestedTags.showAllTags"
-      data-l10n-id="pref-nested-showall"
-      native="true"
-    />
-    <checkbox
       preference="nestedTags.matchChildTags"
       data-l10n-id="pref-nested-childtags"
       native="true"
@@ -371,7 +388,22 @@
     ></description>
     <hbox align="center">
       <html:label data-l10n-id="pref-rank-defaultcolor"></html:label>
-      <html:input type="color" preference="rank.defaultColor"></html:input>
+      <html:input
+        type="color"
+        preference="rank.defaultColor"
+        class="zest-pref-autocolor"
+      ></html:input>
+      <button
+        data-l10n-id="pref-color-auto"
+        data-zest-pref="rank.defaultColor"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('color-auto', {
+            window,
+            pref: 'rank.defaultColor',
+          })
+        "
+        native="true"
+      />
       <html:label
         data-l10n-id="pref-rank-textcolor"
         style="margin-inline-start: 12px"
@@ -459,15 +491,35 @@
         preference="if.max"
       ></html:input>
     </hbox>
-    <checkbox
-      preference="if.progress"
-      data-l10n-id="pref-if-progress"
-      native="true"
-    />
+    <hbox align="center">
+      <html:label data-l10n-id="pref-if-style"></html:label>
+      <menulist preference="if.style" native="true">
+        <menupopup>
+          <menuitem value="heat" data-l10n-id="pref-if-style-heat" />
+          <menuitem value="bar" data-l10n-id="pref-if-style-bar" />
+          <menuitem value="none" data-l10n-id="pref-if-style-none" />
+        </menupopup>
+      </menulist>
+    </hbox>
     <checkbox preference="if.info" data-l10n-id="pref-if-info" native="true" />
     <hbox align="center">
       <html:label data-l10n-id="pref-if-color"></html:label>
-      <html:input type="color" preference="if.color"></html:input>
+      <html:input
+        type="color"
+        preference="if.color"
+        class="zest-pref-autocolor"
+      ></html:input>
+      <button
+        data-l10n-id="pref-color-auto"
+        data-zest-pref="if.color"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('color-auto', {
+            window,
+            pref: 'if.color',
+          })
+        "
+        native="true"
+      />
     </hbox>
   </groupbox>
 
@@ -510,7 +562,22 @@
         data-l10n-id="pref-annots-color"
         style="margin-inline-start: 12px"
       ></html:label>
-      <html:input type="color" preference="annots.color"></html:input>
+      <html:input
+        type="color"
+        preference="annots.color"
+        class="zest-pref-autocolor"
+      ></html:input>
+      <button
+        data-l10n-id="pref-color-auto"
+        data-zest-pref="annots.color"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('color-auto', {
+            window,
+            pref: 'annots.color',
+          })
+        "
+        native="true"
+      />
     </hbox>
     <description
       class="zest-pref-hint"
@@ -552,8 +619,8 @@
       <html:label data-l10n-id="pref-graph-height"></html:label>
       <html:input
         type="number"
-        min="100"
-        max="2000"
+        min="160"
+        max="900"
         preference="graph.height"
       ></html:input>
       <html:label
@@ -562,8 +629,8 @@
       ></html:label>
       <html:input
         type="number"
-        min="10"
-        max="2000"
+        min="30"
+        max="1200"
         preference="graph.maxNodes"
       ></html:input>
     </hbox>
@@ -586,19 +653,6 @@
         </menupopup>
       </menulist>
     </hbox>
-  </groupbox>
-
-  <groupbox>
-    <label><html:h2 data-l10n-id="pref-group-reader"></html:h2></label>
-    <checkbox
-      preference="reader.schemes"
-      data-l10n-id="pref-reader-schemes"
-      native="true"
-    />
-    <description
-      class="zest-pref-hint"
-      data-l10n-id="pref-reader-hint"
-    ></description>
   </groupbox>
 
   <groupbox>
@@ -647,10 +701,6 @@
       <html:label data-l10n-id="pref-authors-preset"></html:label>
       <menulist preference="authors.preset" native="true">
         <menupopup>
-          <menuitem
-            value="creator-like"
-            data-l10n-id="pref-authors-preset-creator"
-          />
           <menuitem value="all" data-l10n-id="pref-authors-preset-all" />
           <menuitem value="first" data-l10n-id="pref-authors-preset-first" />
           <menuitem value="last" data-l10n-id="pref-authors-preset-last" />
@@ -713,6 +763,32 @@
       native="true"
     />
     <hbox align="center">
+      <html:label data-l10n-id="pref-authors-separator"></html:label>
+      <html:input
+        type="text"
+        style="width: 5em"
+        preference="authors.separator"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-authors-etal"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 6em"
+        preference="authors.etAl"
+      ></html:input>
+      <html:label
+        data-l10n-id="pref-authors-omitted"
+        style="margin-inline-start: 12px"
+      ></html:label>
+      <html:input
+        type="text"
+        style="width: 4em"
+        preference="authors.omitted"
+      ></html:input>
+    </hbox>
+    <hbox align="center">
       <html:label data-l10n-id="pref-authors-self"></html:label>
       <html:input
         type="text"
@@ -763,7 +839,10 @@
         "
       />
     </hbox>
-    <description id="zest-pref-s2keystatus" class="zest-pref-hint"></description>
+    <description
+      id="zest-pref-s2keystatus"
+      class="zest-pref-hint"
+    ></description>
     <description
       class="zest-pref-hint"
       data-l10n-id="pref-s2key-hint"
@@ -789,11 +868,6 @@
     <checkbox
       preference="info.enable"
       data-l10n-id="pref-info-enable"
-      native="true"
-    />
-    <checkbox
-      preference="info.abstract"
-      data-l10n-id="pref-info-abstract"
       native="true"
     />
     <checkbox

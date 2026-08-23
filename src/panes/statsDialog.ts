@@ -6,8 +6,9 @@ import {
   formatDuration,
   splitKey,
   pagesSeen,
+  dayOf,
 } from "../reading/store";
-import { hexToRgb } from "../reading/heat";
+import { hexToRgb, heatLevel } from "../reading/heat";
 import { heatColor } from "../columns/reading";
 import { HEAT_LEVELS } from "../ui/palette";
 import { icon, ICON_CSS } from "../ui/icons";
@@ -123,9 +124,7 @@ export function collectStats(): Stats {
   };
 }
 
-function isoDay(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const isoDay = (d: Date) => dayOf(d.getTime());
 
 function dayDiff(a: string, b: string): number {
   const [ay, am, ad] = a.split("-").map(Number);
@@ -310,9 +309,7 @@ function buildCalendar(doc: Document, stats: Stats): HTMLElement {
       } else {
         const day = isoDay(date);
         const seconds = stats.byDay.get(day) ?? 0;
-        const t = seconds / scale;
-        const level =
-          seconds <= 0 ? 0 : Math.min(4, Math.max(1, Math.ceil(t * 4)));
+        const level = seconds <= 0 ? 0 : heatLevel(seconds / scale);
         if (level) {
           cell.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${HEAT_LEVELS[level - 1]})`;
         }

@@ -7,11 +7,7 @@ export { initLocale, getString, getLocaleID };
  * Initialize locale data
  */
 function initLocale() {
-  const l10n = new (
-    typeof Localization === "undefined"
-      ? ztoolkit.getGlobal("Localization")
-      : Localization
-  )([`${config.addonRef}-addon.ftl`], true);
+  const l10n = new Localization([`${config.addonRef}-addon.ftl`], true);
   addon.data.locale = {
     current: l10n,
   };

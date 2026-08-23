@@ -7,6 +7,7 @@ import {
 } from "./modules/preferenceScript";
 import {
   registerDevEval,
+  uninstallDevEval,
   installStartupConsoleProbe,
   devMark,
 } from "./modules/devEval";
@@ -27,6 +28,7 @@ import {
   showGraphPane,
   isGraphVisible,
   refreshGraphPanes,
+  applyGraphHeight,
   uninstallGraphPanes,
 } from "./graph/pane";
 import {
@@ -48,6 +50,7 @@ import {
   refreshAllTagTrees,
 } from "./tags/nestedTree";
 import { clearItemFilters, clearWindowFilters } from "./views/itemFilter";
+import { clearTagCache } from "./tags/scope";
 import {
   installRevealGuard,
   uninstallRevealGuard,
@@ -68,8 +71,6 @@ import {
   syncCollectionCounts,
   sweepBadgesIn as sweepCollectionBadgesIn,
 } from "./views/collectionCounts";
-import { resetTypeFilter } from "./views/typeFilter";
-import { installColorSchemes } from "./reader/colorSchemes";
 import { repairEmptyThemeSetting } from "./reader/themes";
 import {
   restoreSidebar,
@@ -77,6 +78,7 @@ import {
   hideSidebar,
   isSidebarOpen,
   syncNativeBarVisibility,
+  applySidebarWidth,
   uninstallSidebars,
 } from "./tabs/sidebar";
 import {
@@ -86,6 +88,7 @@ import {
 import {
   registerInfoSection,
   unregisterInfoSection,
+  refreshInfoSections,
 } from "./panes/infoSection";
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
@@ -102,8 +105,83 @@ import {
   uninstallTitleDecor,
   refreshAllRows,
 } from "./columns";
+import { forgetRegistrations } from "./columns/registry";
 
 let prefObservers: symbol[] = [];
+let pluginObserver: { shutdown: (p: { id: string }) => void } | undefined;
+
+/**
+ * Preference keys that changed meaning between releases, migrated once.
+ *  - `if.progress` (bool) became `if.style` (heat | bar | none): a user who had
+ *    switched the bar OFF keeps a bare number; everyone else gets the new heat.
+ */
+function migratePrefs() {
+  const P = config.prefsPrefix;
+  try {
+    const old = `${P}.if.progress`;
+    if (Services.prefs.prefHasUserValue(old)) {
+      const on = Zotero.Prefs.get(old, true);
+      if (on === false && !Services.prefs.prefHasUserValue(`${P}.if.style`)) {
+        Zotero.Prefs.set(`${P}.if.style`, "none", true);
+      }
+      Zotero.Prefs.clear(old, true);
+    }
+  } catch (e) {
+    ztoolkit.log("[startup] pref migration failed", e);
+  }
+}
+
+/**
+ * Zotero strips EVERY registration made under our plugin ID — item-tree
+ * columns, item-pane sections, menus, reader listeners, the settings pane —
+ * when a copy of the plugin finishes shutting down (PluginAPIBase & co. listen
+ * on Zotero.Plugins). On an in-place upgrade the outgoing copy's async
+ * teardown can finish AFTER this copy has already registered, which takes this
+ * copy's registrations with it while every preference still says "on". Zotero
+ * notifies observers in registration order, so ours runs after the sweep:
+ * while this copy is alive, put everything back.
+ */
+function watchPluginSweep() {
+  if (
+    pluginObserver ||
+    typeof (Zotero as any).Plugins?.addObserver !== "function"
+  )
+    return;
+  pluginObserver = {
+    shutdown: ({ id }) => {
+      if (id !== config.addonID || !addon.data.alive) return;
+      // let the sweep finish (observers may still be running) before re-adding
+      Zotero.Promise.delay(50).then(() => {
+        if (!addon.data.alive) return;
+        try {
+          ztoolkit.log(
+            "[startup] re-registering after another copy's shutdown",
+          );
+          forgetRegistrations();
+          unregisterColumns();
+          registerAllColumns();
+          unregisterInfoSection();
+          unregisterAnnotSection();
+          registerInfoSection();
+          registerAnnotSection();
+          unregisterMenus();
+          registerMenus();
+          void Zotero.PreferencePanes.register({
+            pluginID: config.addonID,
+            src: rootURI + "content/preferences.xhtml",
+            label: config.addonName,
+            image: `chrome://${config.addonRef}/content/icons/favicon.png`,
+          }).then((id) => {
+            if (typeof id === "string") setPrefPaneID(id);
+          });
+        } catch (e) {
+          ztoolkit.log("[startup] re-registration failed", e);
+        }
+      });
+    },
+  };
+  (Zotero as any).Plugins.addObserver(pluginObserver);
+}
 
 async function onStartup() {
   installStartupConsoleProbe();
@@ -114,6 +192,8 @@ async function onStartup() {
   ]);
 
   registerDevEval();
+  migratePrefs();
+  watchPluginSweep();
 
   // every startup step individually guarded: one failing registration must
   // not take the whole plugin down
@@ -165,10 +245,11 @@ async function onStartup() {
   });
   // storage: open DB + load the in-memory index (async; columns refresh
   // themselves when the store reports the load)
-  step("db", async () => {
+  const storeReady = (async () => {
     await zestDB.init();
     await readingStore.load();
-  });
+  })();
+  step("db", () => storeReady);
   // Register columns only once the main item tree is mounted: each
   // registerColumn() makes Zotero refresh every ItemTree instance, and an
   // instance without a rendered `tree` throws inside Zotero's notify handler
@@ -176,6 +257,7 @@ async function onStartup() {
   step("columns", async () => {
     await configReady;
     await whenItemTreeReady();
+    if (!addon.data.alive) return;
     registerAllColumns();
   });
   step("itemPane", () => {
@@ -186,11 +268,11 @@ async function onStartup() {
   // scripts and Tools ▸ Run JavaScript call. Published after the reading store
   // has loaded, so a caller never reads a half-filled record; it disappears
   // with `Zotero.Zest` on shutdown.
-  step("api", () => {
-    addon.api = api;
+  step("api", async () => {
+    await storeReady.catch(() => undefined);
+    if (addon.data.alive) addon.api = api;
   });
   step("reader", () => {
-    installColorSchemes();
     // an empty `readerCustomThemes` array fails the whole settings upload with
     // a 400; older Zest builds could write one when the last preset was
     // removed, so clear it before the first sync of the session
@@ -269,23 +351,48 @@ async function onStartup() {
         true,
       ),
       ...[
-        "nestedTags.linkSymbol",
-        "nestedTags.sort",
-        "nestedTags.showAllTags",
-        "nestedTags.matchChildTags",
+        `${P}.nestedTags.linkSymbol`,
+        `${P}.nestedTags.sort`,
+        // the tree parses the same match rule as the #Tags column
+        `${P}.textTags.match`,
+        // the tree follows Zotero's own "Display All Tags" switch
+        "extensions.zotero.tagSelector.displayAllTags",
       ].map((p) =>
-        Zotero.Prefs.registerObserver(
-          `${P}.${p}`,
-          () => refreshAllTagTrees(),
-          true,
-        ),
+        Zotero.Prefs.registerObserver(p, () => refreshAllTagTrees(), true),
       ),
-      ...["graph.mode", "graph.height", "graph.maxNodes"].map((p) =>
+      // the tag cache keeps one list per mode, but a mode change must not
+      // leave a filter running on lists computed the other way
+      Zotero.Prefs.registerObserver(
+        `${P}.nestedTags.matchChildTags`,
+        () => {
+          clearTagCache();
+          refreshAllTagTrees();
+        },
+        true,
+      ),
+      ...["graph.mode", "graph.maxNodes"].map((p) =>
         Zotero.Prefs.registerObserver(
           `${P}.${p}`,
           () => refreshGraphPanes(),
           true,
         ),
+      ),
+      // a height change is a resize, not a rebuild
+      Zotero.Prefs.registerObserver(
+        `${P}.graph.height`,
+        () => applyGraphHeight(),
+        true,
+      ),
+      Zotero.Prefs.registerObserver(
+        `${P}.tabs.width`,
+        () => applySidebarWidth(),
+        true,
+      ),
+      // the panel reads these while rendering; a change repaints the open panes
+      Zotero.Prefs.registerObserver(
+        `${P}.info.enable`,
+        () => refreshInfoSections(),
+        true,
       ),
       Zotero.Prefs.registerObserver(
         `${P}.graph.visible`,
@@ -369,6 +476,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   installViewShortcuts(w);
   // everything below reads ZoteroPane's trees
   if (!(await whenPaneReady(w))) return;
+  if (!addon.data.alive) return;
   installTagTree(w);
   installTagOptionsMenu(w);
   installRevealGuard(w);
@@ -392,10 +500,20 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   clearWindowFilters(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
-  addon.data.dialog?.window?.close();
 }
 
 async function onShutdown() {
+  // first thing: nothing that is still awaiting a startup wait may install
+  // anything from here on
+  addon.data.alive = false;
+  if (pluginObserver) {
+    try {
+      (Zotero as any).Plugins?.removeObserver?.(pluginObserver);
+    } catch {
+      // ignore
+    }
+    pluginObserver = undefined;
+  }
   readingTracker.stop();
   unregisterAnnotSection();
   unregisterInfoSection();
@@ -407,7 +525,6 @@ async function onShutdown() {
   uninstallAllViewShortcuts();
   uninstallAllCollectionCounts();
   uninstallAllRevealGuards();
-  resetTypeFilter();
   clearItemFilters();
   uninstallGraphPanes();
   uninstallAllToolbarMenus();
@@ -415,6 +532,7 @@ async function onShutdown() {
   uninstallExportPatch();
   unregisterMenus();
   unregisterColumns();
+  uninstallDevEval();
   for (const s of prefObservers) {
     try {
       Zotero.Prefs.unregisterObserver(s);
@@ -436,8 +554,6 @@ async function onShutdown() {
   await cache.shutdown();
   await zestConfig.shutdown();
   ztoolkit.unregisterAll();
-  addon.data.dialog?.window?.close();
-  addon.data.alive = false;
   // Hand the name back only if we still hold it. On an upgrade the new copy
   // has already claimed `Zotero.Zest`, and deleting it here would leave the
   // RUNNING plugin without its handle: columns and the tag pane keep working
@@ -478,7 +594,7 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
       registerPrefsScripts(data.window);
       break;
     default:
-      await onPrefsCommand(type);
+      await onPrefsCommand(type, data);
       return;
   }
 }

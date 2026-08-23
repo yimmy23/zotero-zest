@@ -183,13 +183,16 @@ export function fromCSV(text: string): ExportedItem[] {
     const key = (r[iK] || "").trim();
     const sec = Number(r[iSec]);
     const ak = iAtt >= 0 ? (r[iAtt] || "").trim() : "";
-    const att = (it.attachments![ak] ??= { pages: 0, pages_seconds: {} });
+    // only rows that carry page data create an attachment entry: the day and
+    // first/last-read rows have an empty attachment column, and making an ""
+    // attachment for them put a phantom bucket on every imported item
+    const att = () => (it.attachments![ak] ??= { pages: 0, pages_seconds: {} });
     if (kind === "page") {
-      if (/^(-1|\d+)$/.test(key) && sec > 0) att.pages_seconds[key] = sec;
+      if (/^(-1|\d+)$/.test(key) && sec > 0) att().pages_seconds[key] = sec;
     } else if (kind === "day") {
       if (/^\d{4}-\d{2}-\d{2}$/.test(key) && sec > 0) it.days[key] = sec;
     } else if (kind === "meta") {
-      if (key === "pages") att.pages = sec | 0;
+      if (key === "pages") att().pages = sec | 0;
       else if (key === "firstRead") it.firstRead = sec | 0;
       else if (key === "lastRead") it.lastRead = sec | 0;
     }
@@ -370,9 +373,26 @@ export async function importReadingDataUI() {
   })
     .createLine({ text: `0/${items.length}`, type: "default", progress: 0 })
     .show();
-  const res = await importItems(items, mode, (done, total) =>
-    pw.changeLine({ text: `${done}/${total}`, progress: (done / total) * 100 }),
-  );
+  let res: { items: number; seconds: number };
+  try {
+    res = await importItems(items, mode, (done, total) =>
+      pw.changeLine({
+        text: `${done}/${total}`,
+        progress: (done / total) * 100,
+      }),
+    );
+  } catch (e) {
+    // the database refused (locked, read-only): say so instead of leaving a
+    // progress window hanging at n/N
+    ztoolkit.log("[import] failed", e);
+    pw.changeLine({
+      text: getString("import-parse-failed", { args: { error: String(e) } }),
+      type: "fail",
+      progress: 100,
+    });
+    pw.startCloseTimer(6000);
+    return;
+  }
   pw.changeLine({
     text: getString("import-done", {
       args: { count: res.items, hours: (res.seconds / 3600).toFixed(1) },

@@ -6,6 +6,13 @@
  */
 
 var chromeHandle;
+/**
+ * This copy's own addon object. Every hook below goes through it rather than
+ * through `Zotero.__addonInstance__`: during an in-place upgrade two copies of
+ * the plugin overlap, the global may already belong to the incoming copy, and
+ * the outgoing copy's shutdown must tear down ITSELF, not the newcomer.
+ */
+var addonInstance;
 
 function install(data, reason) {}
 
@@ -31,26 +38,27 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
     `${rootURI}/content/scripts/__addonRef__.js`,
     ctx,
   );
-  await Zotero.__addonInstance__.hooks.onStartup();
+  addonInstance = ctx.addon || Zotero.__addonInstance__;
+  await addonInstance.hooks.onStartup();
 }
 
 async function onMainWindowLoad({ window }, reason) {
-  await Zotero.__addonInstance__?.hooks.onMainWindowLoad(window);
+  await addonInstance?.hooks.onMainWindowLoad(window);
 }
 
 async function onMainWindowUnload({ window }, reason) {
-  await Zotero.__addonInstance__?.hooks.onMainWindowUnload(window);
+  await addonInstance?.hooks.onMainWindowUnload(window);
 }
 
 async function shutdown({ id, version, resourceURI, rootURI }, reason) {
   if (reason === APP_SHUTDOWN) {
     // Zotero awaits plugin shutdown before closing its own DB: flush and
     // close the plugin database here, skip the UI teardown.
-    await Zotero.__addonInstance__?.hooks.onAppShutdown?.();
+    await addonInstance?.hooks.onAppShutdown?.();
     return;
   }
 
-  await Zotero.__addonInstance__?.hooks.onShutdown();
+  await addonInstance?.hooks.onShutdown();
 
   if (chromeHandle) {
     chromeHandle.destruct();

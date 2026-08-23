@@ -11,6 +11,7 @@ declare namespace _ZoteroTypes {
       "tracker.sampleSeconds": number;
       "tracker.idleSeconds": number;
       "tracker.flushSeconds": number;
+      "status.derive": boolean;
       "statusAuto.enable": boolean;
       "statusAuto.readThreshold": number;
       "statusAuto.minMinutes": number;
@@ -49,7 +50,6 @@ declare namespace _ZoteroTypes {
       "nestedTags.tab": string;
       "nestedTags.linkSymbol": string;
       "nestedTags.sort": string;
-      "nestedTags.showAllTags": boolean;
       "nestedTags.matchChildTags": boolean;
       "column.pubtags.enable": boolean;
       "column.if.enable": boolean;
@@ -68,12 +68,11 @@ declare namespace _ZoteroTypes {
       "secret.easyscholar": string;
       "if.field": string;
       "if.max": number;
-      "if.progress": boolean;
+      "if.style": string;
       "if.info": boolean;
       "if.color": string;
       "collectionCounts.enable": boolean;
       "collectionCounts.mode": number;
-      "reader.schemes": boolean;
       "column.authors.enable": boolean;
       "column.firstAuthor.enable": boolean;
       "column.lastAuthor.enable": boolean;
@@ -85,6 +84,9 @@ declare namespace _ZoteroTypes {
       "authors.markLast": boolean;
       "authors.lastMark": string;
       "authors.selfNames": string;
+      "authors.separator": string;
+      "authors.etAl": string;
+      "authors.omitted": string;
       "column.citations.enable": boolean;
       "cite.useCrossref": boolean;
       "cite.useOpenAlex": boolean;
@@ -93,8 +95,6 @@ declare namespace _ZoteroTypes {
       "secret.semanticscholar": string;
       "column.remark.enable": boolean;
       "info.enable": boolean;
-      "info.tldr": boolean;
-      "info.abstract": boolean;
       "tabs.sidebar": boolean;
       "tabs.width": number;
       "tabs.hideNative": boolean;

@@ -57,15 +57,29 @@ const cjk = await mk("journalArticle", [
 const film = await mk("film", [
   { firstName: "Akira", lastName: "Kurosawa", creatorType: "director" },
 ]);
-check("authors.all", fmt(latin, { kind: "all" }) === "Ada Lovelace, Alan Turing, Grace Hopper");
-check("authors.cjkSeparator", fmt(cjk, { kind: "all" }) === "王小明、李雷", fmt(cjk, { kind: "all" }));
-check("authors.roleFromItemType", fmt(film, { kind: "all" }) === "Akira Kurosawa");
+check(
+  "authors.all",
+  fmt(latin, { kind: "all" }) === "Ada Lovelace, Alan Turing, Grace Hopper",
+);
+check(
+  "authors.cjkSeparator",
+  fmt(cjk, { kind: "all" }) === "王小明、李雷",
+  fmt(cjk, { kind: "all" }),
+);
+check(
+  "authors.roleFromItemType",
+  fmt(film, { kind: "all" }) === "Akira Kurosawa",
+);
 const marked = dev.authors.formatAuthors(latin, {
   policy: { kind: "all" },
   rules: { order: "auto", given: "full", initialsDot: true },
   marks: { last: "†" },
 });
-check("authors.markNotInSortKey", !marked.sortKey.includes("†"), marked.sortKey);
+check(
+  "authors.markNotInSortKey",
+  !marked.sortKey.includes("†"),
+  marked.sortKey,
+);
 
 /* ---------- 2. citation counts ---------- */
 const legacy = {
@@ -86,11 +100,17 @@ check(
   Object.values(parsed).every((v) => typeof v === "number"),
   JSON.stringify(parsed),
 );
-latin.setField("extra", "GSCC: 0000010\nPublisher: X\nCitations: 1 (Crossref) [2026-01-01]");
+latin.setField(
+  "extra",
+  "GSCC: 0000010\nPublisher: X\nCitations: 1 (Crossref) [2026-01-01]",
+);
 await latin.saveTx();
 latin.setField(
   "extra",
-  dev.citeExtra.withCitationLine(latin.getField("extra"), "Citations: 7 (Crossref) [2026-08-18]"),
+  dev.citeExtra.withCitationLine(
+    latin.getField("extra"),
+    "Citations: 7 (Crossref) [2026-08-18]",
+  ),
 );
 await latin.saveTx();
 // our own line is replaced IN PLACE; another plugin's record is never deleted
@@ -112,8 +132,14 @@ if (withPdf) {
   const panel = doc.querySelector(".zest-info");
   const rows = [...(panel?.querySelectorAll(".zest-info-row") || [])].length;
   check("infoPanel.rows", rows >= 4, `${rows} rows`);
-  check("infoPanel.heatStrip", doc.querySelectorAll(".zest-info-heat-seg").length > 0);
-  check("infoPanel.icons", doc.querySelectorAll(".zest-info-btn .zest-icon").length > 0);
+  check(
+    "infoPanel.heatStrip",
+    doc.querySelectorAll(".zest-info-heat-seg").length > 0,
+  );
+  check(
+    "infoPanel.icons",
+    doc.querySelectorAll(".zest-info-btn .zest-icon").length > 0,
+  );
 }
 
 /* ---------- 4. remark ---------- */
@@ -136,7 +162,11 @@ if (statsWin) {
   const coloured = [...d.querySelectorAll(".zest-cal-cell")].filter(
     (c) => c.style.backgroundColor,
   ).length;
-  check("stats.calendar", cells > 350, `${cells} cells, ${coloured} with reading`);
+  check(
+    "stats.calendar",
+    cells > 350,
+    `${cells} cells, ${coloured} with reading`,
+  );
   check("stats.cards", d.querySelectorAll(".zest-stats-card").length === 6);
   statsWin.close();
 } else {
@@ -166,7 +196,10 @@ if (matrixWin) {
     search.value = "";
     search.dispatchEvent(new matrixWin.Event("input", { bubbles: true }));
   }
-  check("matrix.flatButtons", d.querySelectorAll(".zest-flat-btn").length === 2);
+  check(
+    "matrix.flatButtons",
+    d.querySelectorAll(".zest-flat-btn").length === 2,
+  );
   matrixWin.close();
 } else {
   out.fail.push("matrix.window");
@@ -189,7 +222,9 @@ if (withPdf) {
   const att = Zotero.Items.get(withPdf.getAttachments()[0]);
   await Zotero.Reader.open(att.id, undefined, { openInBackground: true });
   await delay(1500);
-  probeTabID = (win.Zotero_Tabs._tabs || []).find((t) => t.type !== "library")?.id;
+  probeTabID = (win.Zotero_Tabs._tabs || []).find(
+    (t) => t.type !== "library",
+  )?.id;
 }
 check(
   "tabs.rows",
@@ -215,7 +250,10 @@ if (probeTabID) {
   await delay(400);
 }
 const group = dev.tabsModel.addGroup("probe group");
-check("tabs.groupPersists", dev.tabsModel.groups().some((g) => g.id === group.id));
+check(
+  "tabs.groupPersists",
+  dev.tabsModel.groups().some((g) => g.id === group.id),
+);
 dev.tabsModel.removeGroup(group.id);
 dev.tabsSidebar.hideSidebar(win);
 await delay(400);
@@ -226,7 +264,11 @@ check(
 );
 
 /* ---------- 8. icons everywhere ---------- */
-check("icons.present", doc.querySelectorAll(".zest-icon").length > 0, `${doc.querySelectorAll(".zest-icon").length} icons`);
+check(
+  "icons.present",
+  doc.querySelectorAll(".zest-icon").length > 0,
+  `${doc.querySelectorAll(".zest-icon").length} icons`,
+);
 
 /* ---------- cleanup + errors ---------- */
 for (const item of [latin, cjk, film]) {

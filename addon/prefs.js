@@ -4,7 +4,11 @@ pref("tracker.sampleSeconds", 5);
 pref("tracker.idleSeconds", 120);
 pref("tracker.flushSeconds", 15);
 
-// Read-status automation
+// Read status
+// derive New / In Progress / Read from the reading record (and Zotero's own
+// last-read stamp) when Extra has no status; a set status always wins
+pref("status.derive", true);
+// automation that WRITES the status into Extra (Reading List compatible)
 pref("statusAuto.enable", true);
 pref("statusAuto.readThreshold", 90);
 pref("statusAuto.minMinutes", 5);
@@ -14,7 +18,9 @@ pref("layout.seeded", false);
 pref("column.reading.enable", true);
 pref("column.status.enable", true);
 pref("column.rating.enable", true);
-pref("column.tags.enable", true);
+// off by default: Zotero already paints the same swatches in the Title cell;
+// this column is for sorting by tag and for hiding them from the title
+pref("column.tags.enable", false);
 pref("column.textTags.enable", true);
 // Annotations column: off by default (walking every attachment costs on first sort)
 pref("column.annots.enable", false);
@@ -63,7 +69,6 @@ pref("nestedTags.show", false);
 pref("nestedTags.tab", "tree");
 pref("nestedTags.linkSymbol", "/");
 pref("nestedTags.sort", "az");
-pref("nestedTags.showAllTags", false);
 pref("nestedTags.matchChildTags", true);
 
 // Journal rank / impact factor
@@ -87,8 +92,10 @@ pref("rank.autoFetch", false);
 pref("secret.easyscholar", "");
 // IF column
 pref("if.field", "sciif");
+// top of the scale: the darkest heat step / a full bar
 pref("if.max", 15);
-pref("if.progress", true);
+// heat (wash behind the number) | bar | none
+pref("if.style", "heat");
 pref("if.info", true);
 pref("if.color", "");
 
@@ -96,14 +103,11 @@ pref("if.color", "");
 pref("collectionCounts.enable", false);
 pref("collectionCounts.mode", 0);
 
-// Reader
-pref("reader.schemes", true);
-
 // Author columns (all off by default; Zotero's own Creator column stays)
 pref("column.authors.enable", false);
 pref("column.firstAuthor.enable", false);
 pref("column.lastAuthor.enable", false);
-pref("authors.preset", "creator-like");
+pref("authors.preset", "first3");
 pref("authors.count", 3);
 pref("authors.order", "auto");
 pref("authors.given", "full");
@@ -111,6 +115,12 @@ pref("authors.initialsDot", true);
 pref("authors.markLast", false);
 pref("authors.lastMark", "†");
 pref("authors.selfNames", "");
+// "" = per script pair (、 between two CJK names, ", " otherwise)
+pref("authors.separator", "");
+// "" = Zotero's own localized "et al."
+pref("authors.etAl", "");
+// marker where names were left out ("" = …)
+pref("authors.omitted", "");
 
 // Citation counts (fetched on request only, never automatically)
 pref("column.citations.enable", false);
@@ -123,8 +133,6 @@ pref("secret.semanticscholar", "");
 // Remark column and the literature info panel
 pref("column.remark.enable", false);
 pref("info.enable", true);
-pref("info.tldr", false);
-pref("info.abstract", true);
 
 // Vertical tab manager (off by default — it changes a window people know)
 pref("tabs.sidebar", false);

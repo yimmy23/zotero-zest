@@ -23,7 +23,10 @@ try {
   // a programmatic selection does not always propagate to the item view in a
   // headless run — switch the item view explicitly (Zotero 10 API)
   const libraryRow = cv.getRow?.(0);
-  if (libraryRow && typeof zp.itemsView?.changeCollectionTreeRow === "function") {
+  if (
+    libraryRow &&
+    typeof zp.itemsView?.changeCollectionTreeRow === "function"
+  ) {
     await zp.itemsView.changeCollectionTreeRow(libraryRow);
   }
   await delay(1000);
@@ -199,23 +202,6 @@ if (canViews) {
   );
 }
 
-// ---------- 6. type filter ----------
-const types = dev.typeFilter.typesInView(win);
-if (types.length) {
-  const rows0 = win.ZoteroPane.itemsView.rowCount;
-  await dev.typeFilter.toggleType(win, types[0].type);
-  await delay(1200);
-  const rows1 = win.ZoteroPane.itemsView.rowCount;
-  await dev.typeFilter.clearTypeFilter(win);
-  await delay(1200);
-  const rows2 = win.ZoteroPane.itemsView.rowCount;
-  check(
-    "typefilter",
-    rows1 <= rows0 && rows2 === rows0,
-    `${rows0} → ${rows1} → ${rows2}`,
-  );
-}
-
 // ---------- 7. collection counts ----------
 Zotero.Prefs.set("extensions.zotero.zest.collectionCounts.enable", true, true);
 await delay(1800);
@@ -240,13 +226,13 @@ check("graph.render", nodes > 0, `${nodes} nodes`);
 dev.graphPane.hideGraphPane(win);
 check("graph.teardown", !doc.getElementById("zest-graph-pane"));
 
-// ---------- 9. reader colour schemes ----------
+// ---------- 9. reader: Zest registers nothing there ----------
 const listeners = (Zotero.Reader._registeredListeners || []).filter((l) =>
   String(l.pluginID || "").includes("zest"),
 );
 check(
-  "reader.menuHooks",
-  listeners.length >= 2,
+  "reader.noHooks",
+  listeners.length === 0,
   listeners.map((l) => l.type).join(", "),
 );
 

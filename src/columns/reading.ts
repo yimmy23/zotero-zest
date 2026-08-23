@@ -3,6 +3,7 @@ import { getString } from "../utils/locale";
 import { readingStore, formatDuration, pagesSeen } from "../reading/store";
 import { cachedHeat } from "../reading/heat";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
+import { isTrackedItem } from "../utils/items";
 import { HEAT_COLOR_DEFAULT, HEAT_OPACITY_DEFAULT } from "../ui/palette";
 
 /**
@@ -26,7 +27,7 @@ export function readingColumn(): ColumnSpec {
     width: 90,
     enabledPref: "extensions.zotero.zest.column.reading.enable",
     dataProvider: (item) => {
-      if (!item.isRegularItem()) return "";
+      if (!isTrackedItem(item)) return "";
       const rec = readingStore.getForItem(item);
       return rec ? numKey(rec.total) : "";
     },

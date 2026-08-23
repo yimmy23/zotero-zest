@@ -1,6 +1,5 @@
 import { activeItemFilters, refreshItemView } from "./itemFilter";
 import { clearSelection as clearTagSelection } from "../tags/nestedTree";
-import { clearTypeFilter } from "./typeFilter";
 
 /**
  * "Show Item in Library" must win over a Zest filter.
@@ -69,11 +68,6 @@ export async function clearZestFilters(win: Window) {
     clearTagSelection(win);
   } catch (e) {
     ztoolkit.log("[reveal] clearing the tag selection failed", e);
-  }
-  try {
-    await clearTypeFilter(win);
-  } catch (e) {
-    ztoolkit.log("[reveal] clearing the type filter failed", e);
   }
   await refreshItemView(win);
 }

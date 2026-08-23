@@ -428,3 +428,24 @@ export function refreshGraphPanes() {
     void rebuild(win);
   }
 }
+
+/** the height preference changed (Settings, or the splitter wrote it back):
+ *  resize the open panes in place — a rebuild would re-run the layout */
+export function applyGraphHeight() {
+  const height = Math.min(
+    MAX_HEIGHT,
+    Math.max(MIN_HEIGHT, getNumPref("graph.height", 400)),
+  );
+  for (const state of panes.values()) {
+    try {
+      const box = state.box as unknown as HTMLElement | undefined;
+      if (!box) continue;
+      if (Math.round(box.getBoundingClientRect().height) !== height) {
+        box.style.height = `${height}px`;
+      }
+      state.view?.resize();
+    } catch {
+      // window closing
+    }
+  }
+}

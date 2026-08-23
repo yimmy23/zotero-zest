@@ -62,14 +62,25 @@ export function canFilter(): boolean {
  * Restore a wrapper left behind by a PREVIOUS instance of this plugin (a hot
  * reload or an upgrade shuts the old copy down after the new one has already
  * loaded, and the old copy's module state is gone). The original function is
- * parked on the wrapper itself so any instance can undo it.
+ * parked on the wrapper itself so any instance can undo it — but only a
+ * wrapper that is no longer alive is unwound: a live one (this copy's, or a
+ * newer copy's) is left exactly where it is.
  */
+const INSTANCE = Symbol("zest-filter-instance");
+const ALIVE_KEY = "__zestFilterAlive";
+function aliveSet(): Set<symbol> {
+  const z = Zotero as any;
+  if (!z[ALIVE_KEY]) z[ALIVE_KEY] = new Set<symbol>();
+  return z[ALIVE_KEY];
+}
+
 function unwrapStale(p: any) {
-  let fn = p?.getItems;
   let guard = 0;
-  while (fn && (fn as any).__zestOriginal && guard++ < 5) {
-    fn = (fn as any).__zestOriginal;
-    p.getItems = fn;
+  while (guard++ < 5) {
+    const fn = p?.getItems;
+    if (!fn || !(fn as any).__zestOriginal) return;
+    if (aliveSet().has((fn as any).__zestInstance)) return; // live wrapper
+    p.getItems = (fn as any).__zestOriginal;
   }
 }
 
@@ -87,13 +98,18 @@ function install(): boolean {
   unwrapStale(p);
   original = p.getItems;
   target = p;
+  aliveSet().add(INSTANCE);
+  // the wrapper captures the function it wraps: the module-level `original`
+  // is cleared on uninstall, but a wrapper another plugin installed on top of
+  // ours keeps calling ours — it must keep forwarding to what it wrapped
+  const inner = original!;
   // NOTE: a plain function, not an arrow and not guardAsync — the wrapper is
   // installed as a prototype method, so it must forward `this` to the original
   // (an arrow wrapper silently loses it and Zotero's getItems throws).
   p.getItems = async function (this: any, ...args: any[]) {
     // Zotero's own failure must propagate untouched — only our own filtering
     // is wrapped below.
-    const items: any = await original!.apply(this, args);
+    const items: any = await inner.apply(this, args);
     try {
       // `unfiltered` asks for the raw set (Zotero 10 uses it for counts and
       // for the tag selector's scope) — never touch it
@@ -144,6 +160,7 @@ function install(): boolean {
   };
   (p.getItems as any).__zestWrapped = true;
   (p.getItems as any).__zestOriginal = original;
+  (p.getItems as any).__zestInstance = INSTANCE;
   wrapper = p.getItems;
   return true;
 }
@@ -170,6 +187,7 @@ function uninstall() {
   original = undefined;
   target = undefined;
   wrapper = undefined;
+  aliveSet().delete(INSTANCE);
 }
 
 /**
@@ -198,10 +216,6 @@ export function setItemFilter(
   return true;
 }
 
-export function hasItemFilter(win: Window, name: string): boolean {
-  return !!filters.get(win)?.has(name);
-}
-
 export function activeItemFilters(win?: Window): string[] {
   if (win) return [...(filters.get(win)?.keys() ?? [])];
   const out: string[] = [];
@@ -217,7 +231,8 @@ export function clearWindowFilters(win: Window) {
 export function clearItemFilters() {
   filters.clear();
   uninstall();
-  // belt and braces on shutdown: make sure no wrapper of ours survives
+  // belt and braces on shutdown: no DEAD wrapper of ours survives (a newer
+  // copy's live wrapper is left alone)
   const p = proto();
   if (p) unwrapStale(p);
 }
@@ -229,12 +244,7 @@ export async function refreshItemView(win?: Window) {
     try {
       const iv = (w as any).ZoteroPane?.itemsView;
       if (!iv) continue;
-      if (typeof iv.refreshAndMaintainSelection === "function") {
-        await iv.refreshAndMaintainSelection();
-      } else if (typeof iv.refresh === "function") {
-        await iv.refresh();
-        iv.tree?.invalidate?.();
-      }
+      await iv.refreshAndMaintainSelection();
     } catch (e) {
       ztoolkit.log("[filter] refresh failed", e);
     }

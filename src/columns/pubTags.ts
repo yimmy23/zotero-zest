@@ -2,6 +2,8 @@ import { getPref, getNumPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { hexToRgb } from "../reading/heat";
 import { readableTextColor } from "../ui/color";
+import { HEAT_LEVELS } from "../ui/palette";
+import { accentColor } from "../ui/styles";
 import {
   requestJournalRecord,
   getJournalRecord,
@@ -20,10 +22,14 @@ import { venueOf } from "../rank/normalize";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 
 /**
- * Three journal columns backed by the same cached record:
+ * Three journal columns, two of them backed by the same cached record:
  *   pubtags  rank badges ("1区", "Q1", "A") coloured by grade
- *   if       impact factor, as a number and an optional bar
- *   venue    the journal/venue name, from whichever field the item type uses
+ *   if       impact factor, as a number over a heat wash (or a bar)
+ *   venue    ONE venue column across item types — publication title for
+ *            articles, proceedings / conference for papers, book title for
+ *            chapters, publisher / university for books and theses. Zotero's
+ *            own Publication column shows publicationTitle only, so a mixed
+ *            library needs three native columns for what this shows in one.
  *
  * dataProvider is O(1) against the in-memory cache; a miss queues a background
  * lookup (see rank/index.ts) and repaints the row when the answer arrives, so
@@ -146,6 +152,18 @@ export function publicationTagsColumn(): ColumnSpec {
   };
 }
 
+/** the wash never goes fully opaque: the row (selection, hover) shows through */
+const IF_HEAT_OPACITY = 0.7;
+
+/** 0 = below the ladder, 1..4 = max/15, max/5, max/2, max */
+export function ifLevel(n: number, max: number): number {
+  if (n >= max) return 4;
+  if (n >= max / 2) return 3;
+  if (n >= max / 5) return 2;
+  if (n >= max / 15) return 1;
+  return 0;
+}
+
 /** flip a numeric sort key so "descending" works inside one string key */
 function invert(key: string): string {
   let out = "";
@@ -178,18 +196,36 @@ export function impactFactorColumn(): ColumnSpec {
       const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
       if (n === undefined) return emptyJournalCell(cell, item);
       const max = Math.max(1, getNumPref("if.max", 15));
-      if (getPref("if.progress")) {
+      const style = String(getPref("if.style") || "heat");
+      const color = String(getPref("if.color") || "");
+      if (style === "heat") {
+        // one hue, light → dark: the same four GitHub-style steps as the
+        // reading heat, on a log-ish ladder (max/15, max/5, max/2, max) so the
+        // heavy tail of impact factors does not saturate at the top like a
+        // linear bar does. The number stays in the text colour; only the wash
+        // behind it carries the magnitude.
+        const level = ifLevel(n, max);
+        if (level) {
+          const wash = doc.createElement("span");
+          wash.className = "zest-if-heat";
+          const rgb = hexToRgb(color || accentColor());
+          if (rgb) {
+            const alpha = HEAT_LEVELS[level - 1] * IF_HEAT_OPACITY;
+            wash.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`;
+          }
+          cell.insertBefore(wash, textSpan);
+        }
+      } else if (style === "bar") {
         const track = doc.createElement("span");
         track.className = "zest-if-track";
         const bar = doc.createElement("span");
         bar.className = "zest-if-bar";
         bar.style.width = `${Math.min(100, (n / max) * 100).toFixed(1)}%`;
-        const color = String(getPref("if.color") || "");
         if (color) bar.style.backgroundColor = color;
         track.appendChild(bar);
         cell.insertBefore(track, textSpan);
       }
-      if (getPref("if.info")) {
+      if (getPref("if.info") || style === "none") {
         textSpan.textContent = n >= 100 ? n.toFixed(0) : n.toFixed(1);
       }
       const src = valueOf(rec, field) || valueOf(rec, "oa2yr");

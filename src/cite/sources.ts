@@ -1,6 +1,5 @@
-import { http, politeParam, politeEmail } from "../core/http";
+import { http, politeParam } from "../core/http";
 import { getSecret } from "../core/secrets";
-import { normalizeISSN } from "../rank/normalize";
 
 /**
  * Citation-count sources, cheapest and most reliable first:
@@ -31,7 +30,14 @@ function cleanDOI(item: Zotero.Item): string {
   }
 }
 
+/** PMID is a real field since Zotero 10 (schema 40); older items carry it in Extra */
 function pmidOf(item: Zotero.Item): string {
+  try {
+    const field = String(item.getField("PMID") || "").trim();
+    if (/^\d+$/.test(field)) return field;
+  } catch {
+    // item type without the field
+  }
   try {
     const extra = String(item.getField("extra") || "");
     const m = extra.match(/^PMID:\s*(\d+)/im);
@@ -43,30 +49,39 @@ function pmidOf(item: Zotero.Item): string {
 
 export async function fetchCrossref(
   item: Zotero.Item,
+  force = false,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
   // NB: the /works/{doi} route rejects `select` with a 400 — only the search
   // route supports it, so ask for the whole record
   const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}${politeParam("?")}`;
-  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const res = await http.request<any>("GET", url, {
+    responseType: "json",
+    noCache: force,
+  });
   const n = res?.message?.["is-referenced-by-count"];
   return typeof n === "number" ? { count: n, source: "Crossref" } : null;
 }
 
 export async function fetchOpenAlexCitations(
   item: Zotero.Item,
+  force = false,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
   const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=cited_by_count${politeParam("&")}`;
-  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const res = await http.request<any>("GET", url, {
+    responseType: "json",
+    noCache: force,
+  });
   const n = res?.cited_by_count;
   return typeof n === "number" ? { count: n, source: "OpenAlex" } : null;
 }
 
 export async function fetchSemanticScholar(
   item: Zotero.Item,
+  force = false,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   const pmid = pmidOf(item);
@@ -81,7 +96,7 @@ export async function fetchSemanticScholar(
     // out of the shared URL cache when it is personalised
     secret: !!key,
     displayURL: key ? `${url} (with key)` : undefined,
-    retries: key ? 2 : 0,
+    noCache: force,
   });
   const n = res?.citationCount;
   return typeof n === "number"
@@ -92,16 +107,4 @@ export async function fetchSemanticScholar(
 /** identifiers a source can work with — used to skip hopeless lookups */
 export function hasIdentifier(item: Zotero.Item): boolean {
   return !!(cleanDOI(item) || pmidOf(item));
-}
-
-export function politeContact(): string {
-  return politeEmail();
-}
-
-export function issnOf(item: Zotero.Item): string {
-  try {
-    return normalizeISSN(String(item.getField("ISSN") || ""));
-  } catch {
-    return "";
-  }
 }

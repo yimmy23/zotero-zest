@@ -61,6 +61,9 @@ export function upsertExtraText(
   value: string | null,
 ): string | null {
   const re = lineRe(keys);
+  // rewrite one line, never the others' endings: an Extra pasted from Windows
+  // keeps its CRLF
+  const eol = extra.includes("\r\n") ? "\r\n" : "\n";
   const lines = extra ? extra.split(/\r?\n/) : [];
   const out: string[] = [];
   let done = false;
@@ -98,7 +101,7 @@ export function upsertExtraText(
     changed = true;
   }
   if (!changed) return null;
-  return out.join("\n");
+  return out.join(eol);
 }
 
 /** Upsert one Extra line and save the item (skips the write when unchanged). */

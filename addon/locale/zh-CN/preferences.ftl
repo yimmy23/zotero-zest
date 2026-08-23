@@ -1,14 +1,12 @@
-pref-title = Zest 设置
-
 pref-group-columns = 条目列表列
 pref-column-reading =
     .label = 阅读——阅读时长 + 每页热力条
 pref-column-status =
-    .label = 状态——阅读状态（与 Zotero Reading List 兼容）
+    .label = 状态——阅读状态：实心点是你设置的，空心圈是按阅读记录判定的（点圆点可修改）
 pref-column-rating =
     .label = 评级——1～5（存于 Extra；单击即评级，再点当前分值可降一级）
 pref-column-tags =
-    .label = 标签——彩色 / emoji 标签独立成列
+    .label = 标签——彩色 / emoji 标签独立成列、可排序（Zotero 本身已在标题列显示色点；此列用于排序和把色点从标题里移走）
 pref-tags-hide-in-title =
     .label = 隐藏标题列里的标签色点
 pref-column-texttags =
@@ -38,8 +36,10 @@ pref-group-tracker = 阅读记录
 pref-tracker-enable =
     .label = PDF/EPUB 打开且处于前台时按页记录阅读时长
 pref-tracker-idle = 无键鼠输入超过多少秒后停止计时
+pref-status-derive =
+    .label = 未设置状态时自动判定：按阅读记录与 Zotero 自己的最近阅读标记得出 未读 / 在读 / 已读（不写入任何字段；手动设置的状态永远优先）
 pref-statusauto-enable =
-    .label = 自动更新阅读状态（开始阅读→在读；看过足够页数→已读）
+    .label = 同时写入 Extra（开始阅读→在读；看过足够页数→已读）——随同步走，Zotero Reading List 也能看到
 pref-statusauto-markempty =
     .label = …对还没有状态的条目也生效（会往其 Extra 字段写入 Read_Status）
 pref-statusauto-threshold = 看过页数达到 % 时标为已读
@@ -72,19 +72,17 @@ pref-nested-sort-freq-desc =
     .label = 使用频次（高到低）
 pref-nested-sort-freq-asc =
     .label = 使用频次（低到高）
-pref-nested-showall =
-    .label = 显示全部标签，包括 Zotero 默认隐藏的标签
 pref-nested-childtags =
     .label = 同时匹配附件、笔记与批注上的标签
-pref-nested-hint = 该标签树与上方「#标签」列使用相同的匹配规则。
+pref-nested-hint = 该标签树与上方「#标签」列使用相同的匹配规则；是否显示本文库全部标签，跟随 Zotero 标签选择器菜单里自带的「显示此文库中的所有标签」开关。
 
 pref-group-rank = 期刊分级
 pref-column-pubtags =
     .label = 分级标签——期刊分区 / 分级徽章独立成列
 pref-column-if =
-    .label = IF——影响因子进度条独立成列
+    .label = IF——影响因子独立成列
 pref-column-venue =
-    .label = 期刊——发表期刊名独立成列
+    .label = 期刊 / 来源——一列显示期刊名 / 会议名 / 书名 / 出版者，按条目类型取（Zotero 自带的「出版物」列只有期刊名）
 pref-rank-fields = 字段
 pref-rank-fields-hint = 逗号分隔，如 sciUp, sciif, sci；未配置 easyScholar 密钥时回退为 OpenAlex 的两年平均被引率
 pref-rank-sortby = 排序依据
@@ -93,7 +91,7 @@ pref-rank-map = 字段映射
 pref-rank-map-hint = 每行一条规则，或用逗号分隔，如 sciif=IF、/^Q([1-4])$/=Q$1；右侧留空则隐藏该值
 pref-rank-colors = 分级颜色
 pref-rank-colors-hint = 5 个逗号分隔的十六进制颜色，从最高分级到最低，默认 #EE0000, #2F998C, #D2A500, #DA6D00, #007BF6
-pref-rank-defaultcolor = 默认颜色（未匹配到分级时使用）
+pref-rank-defaultcolor = 默认颜色（未匹配到分级时使用；自动 = 内置青色）
 pref-rank-textcolor = 文字颜色（auto 或 CSS 颜色）
 pref-rank-opacity = 不透明度
 pref-rank-ttl = 缓存天数
@@ -110,12 +108,17 @@ pref-key-hint = 密钥保存在系统登录管理器中，不随偏好设置同�
 pref-rank-clear =
     .label = 清空分级缓存
 pref-if-field = IF 字段
-pref-if-max = 进度条上限
-pref-if-progress =
-    .label = 以进度条显示 IF
+pref-if-max = 刻度上限（热力最深一档 / 进度条满格）
+pref-if-style = 显示方式
+pref-if-style-heat =
+    .label = 热力——数字底下一层色块，IF 越高越深（分档：上限的 1/15、1/5、1/2、上限）
+pref-if-style-bar =
+    .label = 进度条——按刻度上限线性显示
+pref-if-style-none =
+    .label = 只显示数字
 pref-if-info =
     .label = 以文字显示 IF 数值
-pref-if-color = 进度条颜色
+pref-if-color = 颜色（自动 = 主色）
 
 pref-group-datasets = 本地期刊数据集
 pref-dataset-import =
@@ -132,7 +135,9 @@ pref-annots-style-stack =
     .label = 堆叠
 pref-annots-style-circle =
     .label = 圆形
-pref-annots-color = 颜色
+pref-annots-color = 颜色（自动 = 主色；堆叠样式保留各高亮自己的颜色）
+pref-color-auto =
+    .label = 恢复自动
 pref-annots-hint = 默认关闭——开启后首次排序会扫描每一个附件，较耗时。
 
 pref-group-views = 视图组
@@ -164,11 +169,6 @@ pref-collections-mode-1 =
 pref-collections-mode-2 =
     .label = 两者都显示
 
-pref-group-reader = 阅读器
-pref-reader-schemes =
-    .label = 启用 Zest 阅读器配色方案
-pref-reader-hint = 配色方案挂在阅读器的标注颜色菜单里。阅读器背景主题请用 Zotero 自带的「外观」菜单。
-
 pref-group-config = 配置
 pref-config-export =
     .label = 导出配置…
@@ -185,8 +185,6 @@ pref-column-first-author =
 pref-column-last-author =
     .label = 末位作者
 pref-authors-preset = 显示方式
-pref-authors-preset-creator =
-    .label = 与 Zotero 原生 Creator 列一致
 pref-authors-preset-all =
     .label = 全部作者
 pref-authors-preset-first =
@@ -194,7 +192,7 @@ pref-authors-preset-first =
 pref-authors-preset-last =
     .label = 仅末位作者
 pref-authors-preset-firstlast =
-    .label = 首位 … 末位
+    .label = 前 N 位 … 末位
 pref-authors-preset-first3 =
     .label = 前 N 位后加 et al.
 pref-authors-preset-advisor =
@@ -216,8 +214,11 @@ pref-authors-given-none =
     .label = 不显示
 pref-authors-marklast =
     .label = 标记末位作者（通常是通讯作者）
+pref-authors-separator = 分隔符
+pref-authors-etal = 「等」文案
+pref-authors-omitted = 省略标记
 pref-authors-self = 高亮我的名字
-pref-authors-hint = 标记与正文分开渲染，不会影响排序；作者之间的分隔符按相邻两名的文字系统决定（王小明、李雷，但 王小明, John Smith）。
+pref-authors-hint = 标记与正文分开渲染，不会影响排序。分隔符留空 = 按相邻两名的文字系统自动决定（王小明、李雷，但 王小明, John Smith）；「等」文案留空 = 用 Zotero 自身语言；省略标记用在「前 N 位 … 末位」预设的中间。
 
 pref-group-citations = 被引数
 pref-column-citations =
@@ -235,9 +236,7 @@ pref-cite-hint = 只有你主动触发时才会联网获取（条目右键 → Z
 
 pref-group-panel = 条目面板
 pref-info-enable =
-    .label = 显示 Zest 面板（作者、期刊、分区、被引、阅读、评级）
-pref-info-abstract =
-    .label = 面板中包含可折叠的摘要
+    .label = 显示 Zest 面板（全部作者一行、期刊与分区、被引、阅读、状态、评级、简记、外部链接）
 pref-column-remark =
     .label = 简记列——一行备注，保存在 Extra 字段
 pref-panel-hint = 面板里的阅读热力条可以点击：点哪一段就在阅读器里打开对应页码。

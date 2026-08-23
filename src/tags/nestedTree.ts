@@ -6,7 +6,7 @@ import { setTimeout, clearTimeout } from "../utils/timers";
 import { parseTagRule } from "./match";
 import {
   collectTagScope,
-  itemHasPrefix,
+  cachedTags,
   matchChildTags,
   selectedLibraryID,
   invalidateTagCache,
@@ -133,11 +133,11 @@ export function syncTagPanes() {
   }
 }
 
-export function setTagPaneMode(win: Window, mode: TagPaneMode) {
+export function setTagPaneMode(_win: Window, mode: TagPaneMode) {
   setPref("nestedTags.tab", mode);
-  // the tree is about to leave the screen; a filter whose cause is invisible
-  // is worse than no filter
-  if (mode === "native") clearSelection(win);
+  // the tree is about to leave the screen IN EVERY WINDOW (the pref is
+  // global); a filter whose cause is invisible is worse than no filter
+  if (mode === "native") for (const w of states.keys()) clearSelection(w);
   syncTagPanes();
 }
 
@@ -562,7 +562,12 @@ function render(state: TreeState) {
   const doc = state.win.document;
   const body = state.body;
   body.textContent = "";
-  const showAll = !!getPref("nestedTags.showAllTags");
+  // Zotero's own "Display All Tags in This Library" switch (tag selector ≡
+  // menu) decides this for the tree too — one setting, not two
+  const showAll = !!Zotero.Prefs.get(
+    "extensions.zotero.tagSelector.displayAllTags",
+    true,
+  );
 
   const query = state.query;
   const matches = (node: TagNode): boolean => {
@@ -830,6 +835,12 @@ function applyTagFilter(state: TreeState) {
   }
   const withChildren = matchChildTags();
   const link = linkSymbol();
+  // per selected branch: the exact names as a set, the "under this tag"
+  // prefixes as strings — built once, not per item per tag
+  const tests = groups.map((names) => ({
+    exact: names,
+    prefixes: [...names].map((n) => n + link),
+  }));
   const ok = setItemFilter(state.win, "tags", (items) => {
     // the tag cache is NOT cleared here: this predicate runs on every refresh
     // of the item list, and rebuilding every item's tag list each time made
@@ -837,10 +848,14 @@ function applyTagFilter(state: TreeState) {
     // the entries that actually changed.
     return items.filter((item) => {
       try {
-        for (const names of groups) {
-          if (!itemHasAny(item, names, withChildren, link)) return false;
-        }
-        return true;
+        const tags = cachedTags(item, withChildren);
+        if (!tags.length) return false;
+        // AND between branches, OR within a branch
+        return tests.every(({ exact, prefixes }) =>
+          tags.some(
+            (t) => exact.has(t) || prefixes.some((p) => t.startsWith(p)),
+          ),
+        );
       } catch {
         return true; // never hide an item because of our own error
       }
@@ -853,19 +868,6 @@ function applyTagFilter(state: TreeState) {
   void refreshItemView(state.win);
 }
 
-/** OR within one selected branch: any tag of the branch is enough */
-function itemHasAny(
-  item: Zotero.Item,
-  names: Set<string>,
-  withChildren: boolean,
-  link: string,
-): boolean {
-  for (const n of names) {
-    if (itemHasPrefix(item, [n], link, withChildren)) return true;
-  }
-  return false;
-}
-
 /* ------------------------------------------------------------------ */
 /* toolbar actions                                                     */
 /* ------------------------------------------------------------------ */
@@ -876,8 +878,8 @@ function cycleSort(win: Window) {
   const cur = String(getPref("nestedTags.sort") || "az");
   const i = SORTS.indexOf(cur as (typeof SORTS)[number]);
   const next = SORTS[(i + 1) % SORTS.length];
+  // the nestedTags.sort pref observer (hooks.ts) refreshes every tree
   setPref("nestedTags.sort", next);
-  void refreshTagTree(win);
   try {
     const btn = states
       .get(win)

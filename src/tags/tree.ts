@@ -37,7 +37,7 @@ export interface TagNode {
   color?: string;
 }
 
-export type TagSortMode = "name" | "count" | "color" | "length";
+export type TagSortMode = "name" | "count";
 
 export const LINK_SYMBOLS = ["/", "\\", ".", "-", "_", ":", ">"] as const;
 export type LinkSymbol = (typeof LINK_SYMBOLS)[number];
@@ -173,22 +173,6 @@ export function sortNodes(
         (a, b) => dir * (b.total - a.total || collator.compare(a.name, b.name)),
       );
       break;
-    case "color":
-      // coloured tags first in Zotero's own position order, then by name
-      sorted.sort((a, b) => {
-        const pa = a.position ?? 99;
-        const pb = b.position ?? 99;
-        return dir * (pa - pb || collator.compare(a.name, b.name));
-      });
-      break;
-    case "length":
-      sorted.sort(
-        (a, b) =>
-          dir *
-          (a.segment.length - b.segment.length ||
-            collator.compare(a.name, b.name)),
-      );
-      break;
     default:
       sorted.sort((a, b) => dir * collator.compare(a.name, b.name));
   }
@@ -210,10 +194,4 @@ export function walk(nodes: TagNode[], fn: (n: TagNode) => void) {
     fn(n);
     walk(n.children, fn);
   }
-}
-
-export function countNodes(nodes: TagNode[]): number {
-  let n = 0;
-  walk(nodes, () => n++);
-  return n;
 }

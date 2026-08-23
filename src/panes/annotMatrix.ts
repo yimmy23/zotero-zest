@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { guard } from "../utils/guard";
+import { openAttachmentAt } from "../utils/items";
 import { collectAnnotations, type CardAnnotation } from "./annotSection";
 import { iconLabelButton, ICON_CSS } from "../ui/icons";
 import { accentColor } from "../ui/styles";
@@ -339,13 +340,7 @@ export function render(win: Window) {
 
 async function openAnnotationFromMatrix(row: MatrixRow) {
   try {
-    const location = { annotationID: row.key };
-    const handlers = (Zotero as any).FileHandlers;
-    if (handlers?.open) {
-      await handlers.open(row.attachment, { location });
-      return;
-    }
-    await Zotero.Reader.open(row.attachment.id, location as any);
+    await openAttachmentAt(row.attachment, { annotationID: row.key });
   } catch (e) {
     ztoolkit.log("[matrix] open failed", e);
   }

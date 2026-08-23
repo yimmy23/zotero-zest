@@ -1,6 +1,3 @@
-startup-begin = Zest is loading
-startup-finish = Zest is ready
-
 # ---- columns ----
 column-reading = Reading
 column-status = Status
@@ -17,7 +14,13 @@ status-to-read = To Read
 status-in-progress = In Progress
 status-read = Read
 status-not-reading = Not Reading
-status-click-tip = Click to set: { $next }
+status-set-tip = Click to set the read status
+status-auto-tip = Read from your reading: { $status } — click to set it yourself
+status-auto-label = { $status } (auto)
+status-menu-header-none = No status
+status-menu-header-auto = Now: { $status } (read from your reading)
+status-menu-header-manual = Now: { $status }
+status-menu-header-many = { $count } items
 
 rating-tip = Click a star to rate; click the current star again to lower
 
@@ -168,8 +171,6 @@ column-venue = Venue
 if-cell-tip = { $field } = { $value } (source: { $source })
 rank-menu-refresh =
     .label = Refresh journal data for the selected items
-rank-refresh-done = Updated { $count } journals
-rank-no-key = No easyScholar key set — using local datasets and OpenAlex only
 
 # ---- view groups ----
 views-menu = Zest views
@@ -182,21 +183,6 @@ views-delete-confirm = Delete the view “{ $name }”? The columns themselves a
 views-restore = Restore the layout from before the last switch
 views-untitled = New view
 views-previous = Previous layout
-
-# ---- type filter / collection counts ----
-menu-typefilter =
-    .label = Filter by item type
-typefilter-clear =
-    .label = Show all types
-typefilter-active = Showing only: { $types }
-typefilter-unavailable =
-    .label = Not available on this Zotero version
-
-# ---- reader colour schemes ----
-reader-scheme-menu = Zest colour scheme
-reader-scheme-classic = Classic (yellow · red · green)
-reader-scheme-warm = Warm (orange · red · magenta)
-reader-scheme-cool = Cool (blue · green · purple)
 
 # ---- settings pane (rendered from JS) ----
 pref-key-save = Save
@@ -257,7 +243,6 @@ info-reading-value = { $time } · { $pages } of { $total } pages seen
 info-reading-none = not read yet
 info-status = Status
 info-status-none = No status
-info-abstract = Abstract
 info-open = Open in
 info-heat-tip = Open at page { $page }
 

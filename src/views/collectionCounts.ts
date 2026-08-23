@@ -141,13 +141,6 @@ export function sweepBadgesIn(win: Window) {
   }
 }
 
-/** every window — only for hot-reload leftovers, where ownership is unknown */
-export function sweepBadges() {
-  for (const win of Zotero.getMainWindows() as unknown as Window[]) {
-    sweepBadgesIn(win);
-  }
-}
-
 /**
  * Repaint every collection row (badges are baked into the row DOM).
  *
@@ -275,20 +268,22 @@ function startWatch() {
       notify: (event: string, type: string) => {
         // `modify` on an item cannot change which collection it is in
         // (that is a collection-item event), so ignore it — otherwise every
-        // rating click and every synced field repaints the whole tree
+        // rating click and every synced field repaints the whole tree.
+        // Restoring from the trash is not an item event at all in Zotero 10:
+        // it arrives as ('refresh', 'trash') — that one counts.
         if (
           type === "item" &&
           event !== "add" &&
           event !== "delete" &&
-          event !== "trash" &&
-          event !== "restore"
+          event !== "trash"
         ) {
           return;
         }
+        if (type === "trash" && event !== "refresh") return;
         invalidateCounts();
       },
     },
-    ["collection", "collection-item", "item"],
+    ["collection", "collection-item", "item", "trash"],
     "zest-counts",
     102,
   );

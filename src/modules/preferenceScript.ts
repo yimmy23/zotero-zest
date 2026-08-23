@@ -16,8 +16,10 @@ import { clearRankCache } from "../rank";
 import { getSecret, setSecret, secretIsInPrefs } from "../core/secrets";
 import { views, removeView, renameView } from "../views/viewGroups";
 import { setPref } from "../utils/prefs";
+import { setTimeout } from "../utils/timers";
 import { accentColor, syncAccent, ACCENT_FALLBACK } from "../ui/styles";
 import { HEAT_COLOR_DEFAULT, BADGE_COLOR_DEFAULT } from "../ui/palette";
+import { DEFAULT_RANK_COLOR } from "../rank/rank";
 import { refreshAllRows } from "../columns";
 
 /**
@@ -56,6 +58,11 @@ export async function registerPrefsScripts(_window: Window) {
   }
   await refreshKeyField();
   buildAccentPresets();
+  // Zotero binds the controls to their prefs after this load handler, and an
+  // empty colour pref lands as #000000 — show the effective colour once that
+  // has happened
+  syncAutoColorPickers();
+  setTimeout(() => syncAutoColorPickers(), 500);
   refreshDatasetList();
   refreshViewList();
   const unsub = zestConfig.onChange(() => {
@@ -99,12 +106,59 @@ function buildAccentPresets() {
       // the picker beside the swatches is bound to the pref, but XUL only
       // syncs it on its own input events
       const picker = d.querySelector(
-        'html\\:input[preference="ui.accent"], input[preference="ui.accent"]',
+        'input[preference$="ui.accent"]',
       ) as HTMLInputElement | null;
       if (picker) picker.value = color;
     });
     host.appendChild(b);
   }
+}
+
+/**
+ * Three colour preferences mean "automatic" when empty (`rank.defaultColor`,
+ * `if.color`, `annots.color` — the badge default, the accent, per-annotation
+ * colours). An <input type=color> cannot show "empty": it renders black, and
+ * once touched it cannot be emptied again. So the pickers are shown with the
+ * colour that is in effect, and an "Auto" button beside each one clears the
+ * preference (the picker writes only on its own input events, so setting its
+ * value here does not write anything).
+ */
+const AUTO_COLOR_PREFS = [
+  "rank.defaultColor",
+  "if.color",
+  "annots.color",
+] as const;
+type AutoColorPref = (typeof AUTO_COLOR_PREFS)[number];
+
+function effectiveColor(pref: AutoColorPref): string {
+  const raw = String(Zotero.Prefs.get(`${prefsPrefix()}.${pref}`, true) || "");
+  if (/^#[0-9a-fA-F]{6}$/.test(raw)) return raw;
+  return pref === "rank.defaultColor" ? DEFAULT_RANK_COLOR : accentColor();
+}
+
+function prefsPrefix(): string {
+  return addon.data.config.prefsPrefix;
+}
+
+function syncAutoColorPickers(only?: AutoColorPref) {
+  const d = doc();
+  if (!d) return;
+  for (const pref of AUTO_COLOR_PREFS) {
+    if (only && pref !== only) continue;
+    // the build prefixes `preference="if.color"` with the pref branch, so
+    // match on the suffix (works for both spellings)
+    const picker = d.querySelector(
+      `input[preference$="${pref}"]`,
+    ) as HTMLInputElement | null;
+    if (picker) picker.value = effectiveColor(pref).toLowerCase();
+  }
+}
+
+function resetAutoColor(pref: string) {
+  if (!(AUTO_COLOR_PREFS as readonly string[]).includes(pref)) return;
+  Zotero.Prefs.clear(`${prefsPrefix()}.${pref}`, true);
+  syncAutoColorPickers(pref as AutoColorPref);
+  refreshAllRows();
 }
 
 function doc(): Document | undefined {
@@ -392,8 +446,14 @@ async function saveKey(name: KeyField = "easyscholar") {
   );
 }
 
-export async function onPrefsCommand(type: string) {
+export async function onPrefsCommand(
+  type: string,
+  data: { [key: string]: any } = {},
+) {
   switch (type) {
+    case "color-auto":
+      resetAutoColor(String(data.pref || ""));
+      break;
     case "migrate":
       await migrateLegacyUI();
       break;

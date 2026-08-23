@@ -1,7 +1,8 @@
 import { getPref } from "../utils/prefs";
 import { readingStore } from "../reading/store";
 import { cachedHeat } from "../reading/heat";
-import { getReadStatus } from "../reading/status";
+import { effectiveStatus } from "../reading/status";
+import { isTrackedItem } from "../utils/items";
 import { heatColor, heatOpacity } from "./reading";
 import { setTimeout, clearTimeout } from "../utils/timers";
 
@@ -19,19 +20,25 @@ import { setTimeout, clearTimeout } from "../utils/timers";
  */
 
 const MARK = "__zestOrigRenderCell";
-const patched = new Map<Window, { proto: any; own: boolean; wrapped: any }>();
+const patched = new Map<
+  Window,
+  { proto: any; inherited: boolean; wrapped: any }
+>();
 const waiters = new Map<Window, number>();
 
-/** unread = explicit New / To Read; items with no status only if opted in
- *  (otherwise a fresh install would bold the whole library) */
-function isUnread(status: string): boolean {
-  if (status === "New" || status === "To Read") return true;
-  return status === "" && !!getPref("titleDecor.unreadIncludesEmpty");
+/** unread = effective status New / To Read (set or derived); items with no
+ *  status at all only if opted in, otherwise a fresh install would bold every
+ *  item that has nothing to read */
+function isUnread(item: Zotero.Item): boolean {
+  if (!item.isRegularItem()) return false;
+  const eff = effectiveStatus(item);
+  if (eff.source === "none") return !!getPref("titleDecor.unreadIncludesEmpty");
+  return eff.status === "New" || eff.status === "To Read";
 }
 
 function decorate(tree: any, index: number, cell: any) {
   const item = tree?.getRow?.(index)?.ref;
-  if (!(item instanceof Zotero.Item) || !item.isRegularItem()) {
+  if (!(item instanceof Zotero.Item) || !isTrackedItem(item)) {
     if (cell?.classList) cell.classList.remove("zest-unread");
     return;
   }
@@ -47,7 +54,7 @@ function decorate(tree: any, index: number, cell: any) {
     }
   }
   if (getPref("titleDecor.unreadBold")) {
-    cell.classList.toggle("zest-unread", isUnread(getReadStatus(item)));
+    cell.classList.toggle("zest-unread", isUnread(item));
   } else {
     cell.classList.remove("zest-unread");
   }
@@ -71,6 +78,10 @@ function tryPatch(win: Window): boolean {
   }
   const orig = proto._renderCell;
   if (orig.length < 3) return false; // unexpected signature → stay off
+  // the view's prototype (CollectionViewItemTree) inherits _renderCell from
+  // ItemTree; remember that so teardown can delete our own property instead of
+  // leaving a shadow copy behind
+  const inherited = !Object.prototype.hasOwnProperty.call(proto, "_renderCell");
   const wrapped = function (
     this: any,
     index: number,
@@ -101,7 +112,7 @@ function tryPatch(win: Window): boolean {
     writable: true,
   });
   proto._renderCell = wrapped;
-  patched.set(win, { proto, own: true, wrapped });
+  patched.set(win, { proto, inherited, wrapped });
   return true;
 }
 
@@ -132,7 +143,8 @@ export function uninstallTitleDecor(win?: Window) {
       // switch our own wrapper off instead, so it keeps forwarding and
       // stops decorating.
       if (orig && p.proto._renderCell === p.wrapped) {
-        p.proto._renderCell = orig;
+        if (p.inherited) delete p.proto._renderCell;
+        else p.proto._renderCell = orig;
         delete p.proto[MARK];
       } else if (p.wrapped) {
         p.wrapped.__zestOff = true;

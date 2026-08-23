@@ -3,6 +3,7 @@ import { getPref, getNumPref } from "../utils/prefs";
 import { setInterval, clearInterval } from "../utils/timers";
 import { readingStore, keyOfItem } from "./store";
 import {
+  forgetAutoStatus,
   onReadingProgress,
   onReadingStarted,
   seedAutoStatus,
@@ -92,11 +93,32 @@ class ReadingTracker {
     }
   }
 
-  private onNotify(event: string, type: string, _ids: any[], _extra: any) {
+  private onNotify(event: string, type: string, ids: any[], _extra: any) {
     if (type === "tab" && (event === "select" || event === "close")) {
       void readingStore.flush();
     } else if (type === "file" && event === "close") {
       void readingStore.flush();
+      // the reading session of that file is over: the next open is a new
+      // session again (first-sample hooks, auto-Read seeding)
+      for (const id of ids) this.endSession(Number(id));
+    }
+  }
+
+  /** forget per-session state for the item behind a closed attachment */
+  private endSession(attachmentID: number) {
+    try {
+      const att = Zotero.Items.get(attachmentID) as Zotero.Item | false;
+      if (!att) return;
+      const target = att.parentID
+        ? (Zotero.Items.get(att.parentID) as Zotero.Item | false)
+        : att;
+      if (!target) return;
+      const key = keyOfItem(target);
+      this.startedKeys.delete(key);
+      this.lastProgressCheck.delete(key);
+      forgetAutoStatus(target);
+    } catch {
+      // item already gone
     }
   }
 

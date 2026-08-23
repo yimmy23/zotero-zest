@@ -18,11 +18,7 @@ interface RequestOptions {
   ttl?: number;
   timeout?: number;
   retries?: number;
-  /** include credentials (cookies) */
-  credentials?: boolean;
   noCache?: boolean;
-  /** max bytes of the request body Zotero.HTTP may write to debug logs (0 = none) */
-  logBodyLength?: number;
   /**
    * Safe stand-in for the URL in OUR log lines. Set it whenever the real URL
    * carries a credential; requests that set it are never cached, because the
@@ -50,13 +46,18 @@ const MAX_CACHE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT = 15000;
 /** never sleep longer than this on a Retry-After, however big it says */
 const MAX_RETRY_WAIT = 60000;
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
 const HOST_LIMITS: Record<string, number> = {
   "api.crossref.org": 3,
   "api.semanticscholar.org": 2,
   "api.openalex.org": 4,
-  "export.arxiv.org": 2,
-  "eutils.ncbi.nlm.nih.gov": 3,
-  "kns.cnki.net": 1,
   default: 4,
 };
 
@@ -157,9 +158,24 @@ class Http {
     this.cacheBytes += bytes;
   }
 
-  clearCache() {
-    this.cache.clear();
-    this.cacheBytes = 0;
+  /**
+   * Hosts that told us to back off (429 / 5xx with retries exhausted, or a
+   * Retry-After we refused to honour) and when the back-off ends; plus the
+   * moment of the last transport failure (offline, timeout). Batch callers
+   * read these to stop instead of burning the rest of a batch on refusals.
+   */
+  private throttledUntil = new Map<string, number>();
+  private lastTransportFailure = 0;
+
+  /** ms until `url`'s host may be asked again; 0 when it is fine */
+  throttledFor(url: string): number {
+    const until = this.throttledUntil.get(hostOf(url)) || 0;
+    return Math.max(0, until - Date.now());
+  }
+
+  /** true when a request failed at the transport level in the last minute */
+  recentlyUnreachable(): boolean {
+    return Date.now() - this.lastTransportFailure < 60_000;
   }
 
   async request<T = any>(
@@ -216,30 +232,40 @@ class Http {
           responseType: options.responseType ?? "json",
           timeout: options.timeout ?? DEFAULT_TIMEOUT,
           successCodes: false,
-          ...(options.logBodyLength !== undefined
-            ? { logBodyLength: options.logBodyLength }
-            : {}),
-          ...(options.credentials ? { credentials: "include" as any } : {}),
         });
         const status = xhr.status;
         if (status >= 200 && status < 300) {
-          return xhr.response ?? xhr.responseText;
+          // `responseText` throws (InvalidStateError) once responseType is
+          // "json"; an empty or non-JSON 2xx body simply has no value
+          return (options.responseType ?? "json") === "json"
+            ? (xhr.response ?? null)
+            : (xhr.response ?? xhr.responseText ?? null);
         }
-        if ((status === 429 || status >= 500) && attempt < maxRetries) {
+        if (status === 0) {
+          // Zotero resolves the xhr with status 0 on a transport failure
+          this.lastTransportFailure = Date.now();
+        }
+        if (status === 429 || status >= 500) {
           const retryAfter = Number(xhr.getResponseHeader?.("Retry-After"));
           const asked =
             retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
-          if (asked > MAX_RETRY_WAIT) {
-            // a server asking us to wait an hour must not park the queue
+          if (attempt < maxRetries && asked <= MAX_RETRY_WAIT) {
+            retryWait = asked;
             ztoolkit.log(
-              `[http] ${status} asked for ${asked}ms — giving up instead`,
+              `[http] ${status} ${options.displayURL ?? redactURL(url)}, retry in ${retryWait}ms`,
+            );
+          } else {
+            // retries exhausted, or a server asking us to wait an hour: back
+            // off from this host and tell callers so a batch can stop
+            this.throttledUntil.set(
+              hostOf(url),
+              Date.now() + Math.min(Math.max(asked, 30_000), MAX_RETRY_WAIT),
+            );
+            ztoolkit.log(
+              `[http] ${status} ${options.displayURL ?? redactURL(url)} — backing off`,
             );
             return null;
           }
-          retryWait = asked;
-          ztoolkit.log(
-            `[http] ${status} ${options.displayURL ?? redactURL(url)}, retry in ${retryWait}ms`,
-          );
         } else {
           ztoolkit.log(
             `[http] ${method} ${options.displayURL ?? redactURL(url)} -> ${status}`,
@@ -247,6 +273,7 @@ class Http {
           return null;
         }
       } catch (e) {
+        this.lastTransportFailure = Date.now();
         if (attempt < maxRetries) {
           retryWait = 1000 * 2 ** attempt;
         } else {
@@ -261,37 +288,6 @@ class Http {
       }
       await Zotero.Promise.delay(retryWait);
     }
-  }
-
-  getJSON<T = any>(url: string, options: RequestOptions = {}) {
-    return this.request<T>("GET", url, { ...options, responseType: "json" });
-  }
-
-  getText(url: string, options: RequestOptions = {}) {
-    return this.request<string>("GET", url, {
-      ...options,
-      responseType: "text",
-    });
-  }
-
-  postJSON<T = any>(url: string, body: any, options: RequestOptions = {}) {
-    return this.request<T>("POST", url, {
-      ...options,
-      responseType: options.responseType ?? "json",
-      headers: { "Content-Type": "application/json", ...options.headers },
-      body: JSON.stringify(body),
-    });
-  }
-
-  postForm<T = any>(url: string, body: string, options: RequestOptions = {}) {
-    return this.request<T>("POST", url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        ...options.headers,
-      },
-      body,
-    });
   }
 }
 

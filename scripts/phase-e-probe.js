@@ -110,43 +110,33 @@ const probeItem = await mk({ title: "phase-e authors" }, [
   { firstName: "Grace", lastName: "Hopper", creatorType: "author" },
 ]);
 trash.push(probeItem);
-const A = String.fromCharCode(1);
-const B = String.fromCharCode(2);
-const joinerRaw = Zotero.getString("general.andJoiner", [A, B]);
-const pairJoiner = joinerRaw.includes(A)
-  ? joinerRaw.replace(A, "{a}").replace(B, "{b}")
-  : "{a} and {b}";
-const creatorLike = (item) =>
+// the default preset (first N + et al.) lists every author up to N and only
+// then abbreviates — the "creator-like" copy of Zotero's own column is gone
+const firstN = (item, n) =>
   dev.authors
     .formatAuthors(item, {
-      policy: { kind: "creator-like" },
+      policy: { kind: "first", n, etAl: "append" },
       rules: { order: "auto", given: "none", initialsDot: true },
       etAlText: Zotero.getString("general.etAl"),
-      pairJoiner,
     })
     .parts.map((p) => p.text)
     .join("");
-const isolates = new RegExp(
-  "[" + String.fromCharCode(0x2066) + "-" + String.fromCharCode(0x2069) + "]",
-  "g",
-);
-const zoteroCreator = (item) =>
-  String(item.getField("firstCreator") || "").replace(isolates, "");
 check(
-  "authors.creatorLikeMatchesZotero.three",
-  creatorLike(probeItem) === zoteroCreator(probeItem),
-  `${creatorLike(probeItem)} vs ${zoteroCreator(probeItem)}`,
+  "authors.firstN.three",
+  /Lovelace.*Turing.*Hopper/.test(firstN(probeItem, 3)) &&
+    !firstN(probeItem, 3).includes(Zotero.getString("general.etAl")),
+  firstN(probeItem, 3),
+);
+check(
+  "authors.firstN.etAl",
+  firstN(probeItem, 2).includes(Zotero.getString("general.etAl")),
+  firstN(probeItem, 2),
 );
 const pair = await mk({ title: "phase-e pair" }, [
   { firstName: "Ada", lastName: "Lovelace", creatorType: "author" },
   { firstName: "Alan", lastName: "Turing", creatorType: "author" },
 ]);
 trash.push(pair);
-check(
-  "authors.creatorLikeMatchesZotero.two",
-  creatorLike(pair) === zoteroCreator(pair),
-  `${creatorLike(pair)} vs ${zoteroCreator(pair)}`,
-);
 // the memo must notice an edited item
 const before = dev.authors
   .formatAuthors(probeItem, {
@@ -223,7 +213,10 @@ check(
 setPref("textTags.match", "#"); // display path drops the rule's prefix
 setPref("nestedTags.show", true);
 setPref("nestedTags.tab", "tree");
-setPref("nestedTags.showAllTags", true);
+// the tree follows Zotero's own "Display All Tags in This Library" switch
+const NATIVE_SHOW_ALL = "extensions.zotero.tagSelector.displayAllTags";
+const nativeShowAllBefore = Zotero.Prefs.get(NATIVE_SHOW_ALL, true);
+Zotero.Prefs.set(NATIVE_SHOW_ALL, true, true);
 await delay(2500);
 const paneBody = doc.querySelector(".zest-tagtree-body");
 const paneStrip = doc.querySelector(".zest-tagtree-tabs");
@@ -537,6 +530,9 @@ check(
 }
 
 /* ---------- cleanup ---------- */
+if (nativeShowAllBefore === undefined || nativeShowAllBefore === null)
+  Zotero.Prefs.clear(NATIVE_SHOW_ALL, true);
+else Zotero.Prefs.set(NATIVE_SHOW_ALL, nativeShowAllBefore, true);
 for (const [name, value] of saved) {
   if (value === undefined) Zotero.Prefs.clear(prefKey(name), true);
   else Zotero.Prefs.set(prefKey(name), value, true);

@@ -36,6 +36,9 @@ export interface ColumnSpec {
   columnPickerSubMenu?: boolean;
   /** pref key (boolean) gating registration */
   enabledPref?: string;
+  /** parent rows recompute when a child item changes (Zotero honours this
+   *  undocumented option for plugin columns: itemTree._getColumns reads it) */
+  dependsOnChildren?: boolean;
   dataProvider: (item: Zotero.Item, dataKey: string) => string;
   renderCell?: (
     index: number,
@@ -116,6 +119,7 @@ export function registerColumn(spec: ColumnSpec): boolean {
   if (spec.fixedWidth) opts.fixedWidth = true;
   if (spec.staticWidth) opts.staticWidth = true;
   if (spec.minWidth !== undefined) opts.minWidth = spec.minWidth;
+  if (spec.dependsOnChildren) opts.dependsOnChildren = true;
   if (spec.renderCell) {
     const render = spec.renderCell;
     // A renderCell that returns anything but an Element makes Zotero fall back
@@ -175,6 +179,19 @@ export function unregisterColumn(key: string) {
 
 export function unregisterAllColumns() {
   for (const key of [...registered.keys()]) unregisterColumn(key);
+  // leave nothing of ours on the Zotero global once the last column is gone
+  // (a newer instance re-claims on its own registration)
+  if (ownsColumns()) delete (Zotero as any)[OWNER_KEY];
+}
+
+/**
+ * Zotero strips EVERY registration under our plugin ID when a copy of the
+ * plugin shuts down (PluginAPIBase's shutdown observer) — including the ones a
+ * newer, overlapping copy just made. Forget what we think is registered so the
+ * next `registerColumn` call re-registers instead of returning early.
+ */
+export function forgetRegistrations() {
+  registered.clear();
 }
 
 export function registeredDataKey(key: string): string | undefined {
@@ -200,44 +217,51 @@ let fullRefreshTimer: number | undefined;
  * Notifier broadcast is needed — a global 'refresh' would re-render the
  * item pane and re-select the item on every reading tick.
  */
-export function refreshItems(ids: number[]) {
+let pendingResort = false;
+
+export function refreshItems(ids: number[], options?: { resort?: boolean }) {
   for (const id of ids) if (id) pendingIDs.add(id);
+  if (options?.resort) pendingResort = true;
   if (!pendingIDs.size) return;
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {
     const batch = [...pendingIDs];
+    const resort = pendingResort;
     pendingIDs.clear();
-    let done = false;
+    pendingResort = false;
     for (const win of Zotero.getMainWindows()) {
       try {
         const view = (win as any).ZoteroPane?.itemsView;
         if (!view?.tree) continue;
-        if (typeof view.invalidateRowCache === "function") {
-          view.invalidateRowCache(batch);
-        } else if (view._rowCache) {
-          for (const id of batch) delete view._rowCache[id];
+        view.invalidateRowCache(batch);
+        // a column filled in the background (ranks, annotation counts) was
+        // sorted while its values were still empty: re-sort once they land,
+        // but only when the tree is sorted by one of our columns
+        if (resort && isOurSortField(view)) {
+          void Promise.resolve(view.sort()).catch(() => undefined);
+          continue;
         }
         for (const id of batch) {
-          const row =
-            typeof view.getRowIndexByID === "function"
-              ? view.getRowIndexByID(id)
-              : view._rowMap?.[id];
+          const row = view.getRowIndexByID(id);
           if (typeof row === "number") view.tree.invalidateRow(row);
         }
-        done = true;
       } catch (e) {
         ztoolkit.log("[columns] local refresh failed", e);
       }
     }
-    if (!done) {
-      // no usable tree API (unexpected build) → fall back to Zotero's own event
-      try {
-        void Zotero.Notifier.trigger("refresh", "item", batch);
-      } catch (e) {
-        ztoolkit.log("[columns] refresh trigger failed", e);
-      }
-    }
   }, 300);
+}
+
+function isOurSortField(view: any): boolean {
+  try {
+    const field = String(view.getSortField?.() || "");
+    if (!field) return false;
+    for (const dataKey of registered.values())
+      if (dataKey === field) return true;
+  } catch {
+    // ignore
+  }
+  return false;
 }
 
 /** Recompute + repaint every visible row of every main window's item tree (debounced). */
@@ -248,11 +272,7 @@ export function refreshAllRows() {
       try {
         const view = (win as any).ZoteroPane?.itemsView;
         if (!view) continue;
-        if (typeof view.invalidateRowCache === "function") {
-          view.invalidateRowCache(true);
-        } else if (view._rowCache) {
-          view._rowCache = {};
-        }
+        view.invalidateRowCache(true);
         view.tree?.invalidate?.();
       } catch (e) {
         ztoolkit.log("[columns] refreshAllRows failed", e);

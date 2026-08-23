@@ -3,6 +3,8 @@ import { getString } from "../utils/locale";
 import { guard } from "../utils/guard";
 import { runBatch } from "../ui/batch";
 import { setTagRule, removeTagRule, ruleFor } from "./rules";
+import { parseTagRule } from "./match";
+import { getPref } from "../utils/prefs";
 import type { TagNode } from "./tree";
 
 /**
@@ -151,13 +153,25 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
   const target = next.trim();
   if (!target || target === ctx.node.name) return;
 
-  // every real tag under this branch keeps its suffix
+  // The tree shows DISPLAY names (the #Tags rule strips its prefix: real
+  // "#Method/Cohort" is shown as Method ▸ Cohort), while `names` are the real
+  // tags. Map each real tag to what the tree shows, rewrite that part, and put
+  // the rest of the real tag back — so every tag under the branch keeps its
+  // prefix and its suffix.
   const from = ctx.node.name;
+  const matcher = parseTagRule(getPref("textTags.match") as string);
   const pairs: Array<[string, string]> = [];
   for (const tag of names) {
-    if (tag === from) pairs.push([tag, target]);
-    else if (tag.startsWith(from))
-      pairs.push([tag, target + tag.slice(from.length)]);
+    const shown = matcher.test(tag) ?? tag;
+    let rewritten: string | null = null;
+    if (shown === from) rewritten = target;
+    else if (shown.startsWith(from + ctx.linkSymbol))
+      rewritten = target + shown.slice(from.length);
+    if (rewritten === null) continue;
+    const real = tag.endsWith(shown)
+      ? tag.slice(0, tag.length - shown.length) + rewritten
+      : tag.replace(shown, rewritten);
+    if (real !== tag) pairs.push([tag, real]);
   }
   if (!pairs.length) return;
 

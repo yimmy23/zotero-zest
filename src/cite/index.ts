@@ -1,6 +1,6 @@
 import { cache } from "../core/storage";
+import { http } from "../core/http";
 import { getPref, getNumPref } from "../utils/prefs";
-import { setExtraLine } from "../utils/extra";
 import {
   readCitations,
   formatCitationLine,
@@ -37,7 +37,8 @@ const FAILURE_TTL = 6 * 3600 * 1000;
 export interface UpdateOutcome {
   item: Zotero.Item;
   info?: CitationInfo;
-  status: "updated" | "unchanged" | "no-id" | "not-found" | "failed";
+  status:
+    "updated" | "unchanged" | "no-id" | "not-found" | "failed" | "throttled";
 }
 
 export function citationOf(item: Zotero.Item): CitationInfo | undefined {
@@ -54,10 +55,13 @@ export function isStale(item: Zotero.Item): boolean {
   return !Number.isFinite(age) || age > days * 24 * 3600 * 1000;
 }
 
-function sourceChain(): Array<
-  (item: Zotero.Item) => Promise<CiteResult | null>
-> {
-  const chain: Array<(item: Zotero.Item) => Promise<CiteResult | null>> = [];
+type CiteSource = (
+  item: Zotero.Item,
+  force?: boolean,
+) => Promise<CiteResult | null>;
+
+function sourceChain(): CiteSource[] {
+  const chain: CiteSource[] = [];
   if (getPref("cite.useCrossref") !== false) chain.push(fetchCrossref);
   if (getPref("cite.useOpenAlex") !== false) chain.push(fetchOpenAlexCitations);
   if (getPref("cite.useSemanticScholar")) chain.push(fetchSemanticScholar);
@@ -83,7 +87,7 @@ export async function updateCitations(
   let result: CiteResult | null = null;
   for (const fetchOne of sourceChain()) {
     try {
-      result = await fetchOne(item);
+      result = await fetchOne(item, force);
     } catch (e) {
       ztoolkit.log("[cite] source failed", e);
       result = null;
@@ -91,6 +95,11 @@ export async function updateCitations(
     if (result) break;
   }
   if (!result) {
+    // "nobody knows this item" and "nobody could be asked" are different
+    // answers: a throttled or unreachable source must not be remembered as a
+    // miss for six hours, and a batch should stop on it instead of spending
+    // the rest of the selection on refusals
+    if (sourcesThrottled()) return { item, status: "throttled" };
     cache.set(NS, failKey(item), { t: Date.now() });
     return { item, status: "not-found" };
   }
@@ -136,15 +145,12 @@ export function citableItems(
   });
 }
 
-/** keep the Extra writer in one place for the info panel's inline edits */
-export async function setCitationCount(
-  item: Zotero.Item,
-  count: number,
-  source = "manual",
-) {
-  await setExtraLine(
-    item,
-    ["Citations"],
-    `${count} (${source}) [${todayISO()}]`,
+/** true when a citation source has just told us to back off, or the network is down */
+export function sourcesThrottled(): boolean {
+  return (
+    http.recentlyUnreachable() ||
+    http.throttledFor("https://api.crossref.org/") > 0 ||
+    http.throttledFor("https://api.openalex.org/") > 0 ||
+    http.throttledFor("https://api.semanticscholar.org/") > 0
   );
 }

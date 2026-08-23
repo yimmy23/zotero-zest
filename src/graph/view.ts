@@ -28,11 +28,6 @@ export interface GraphHandlers {
   onOpen?: (node: ZNode) => void;
   /** right click on a node (screen coords for a context menu) */
   onContext?: (node: ZNode, screenX: number, screenY: number) => void;
-  /** hover enter (with the circle's screen rect) / leave (null) */
-  onHover?: (
-    node: ZNode | null,
-    rect?: { x: number; y: number; width: number; height: number },
-  ) => void;
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -93,24 +88,6 @@ function nodeRadius(n: ZNode): number {
   return n.kind === "center" ? clamped + 4 : clamped;
 }
 
-/**
- * Every live view, so plugin shutdown / window unload can tear down the
- * ResizeObserver + matchMedia listeners that would otherwise keep closed
- * windows' DOM alive.
- */
-const liveViews = new Set<GraphView>();
-
-export function destroyAllGraphViews(): void {
-  for (const view of [...liveViews]) {
-    try {
-      view.destroy();
-    } catch {
-      // already-dead window — nothing to release
-    }
-  }
-  liveViews.clear();
-}
-
 export class GraphView {
   private container: HTMLElement;
   private handlers: GraphHandlers;
@@ -147,7 +124,6 @@ export class GraphView {
   private labeledIds = new Set<string>();
 
   constructor(container: HTMLElement, handlers: GraphHandlers) {
-    liveViews.add(this);
     this.container = container;
     this.handlers = handlers;
     this.doc = container.ownerDocument as Document;
@@ -304,7 +280,6 @@ export class GraphView {
     this.labelEls.clear();
     this.edgeEls = [];
     this.data = null;
-    liveViews.delete(this);
   }
 
   // ------------------------------------------------------------------ scene
@@ -761,36 +736,12 @@ export class GraphView {
       circle.setAttribute("stroke", kindColor(this.theme, node.kind));
       circle.setAttribute("stroke-width", "3");
       circle.setAttribute("stroke-opacity", "0.45");
-      const r = circle.getBoundingClientRect();
-      try {
-        this.handlers.onHover?.(node, {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-        });
-      } catch (e) {
-        try {
-          ztoolkit.log("[graph] onHover handler failed", e);
-        } catch {
-          // ignore
-        }
-      }
     });
 
     circle.addEventListener("pointerleave", () => {
       circle.setAttribute("stroke", this.theme.background);
       circle.setAttribute("stroke-width", "1");
       circle.removeAttribute("stroke-opacity");
-      try {
-        this.handlers.onHover?.(null);
-      } catch (e) {
-        try {
-          ztoolkit.log("[graph] onHover handler failed", e);
-        } catch {
-          // ignore
-        }
-      }
     });
   }
 }

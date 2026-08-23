@@ -31,8 +31,6 @@ export interface NormalizedCreator {
 
 export type SelectPolicy =
   | { kind: "all" }
-  /** Zotero's own Creator column rule: 1 name, "A and B", or "A et al." */
-  | { kind: "creator-like" }
   /** n given → the first n then "et al."; n absent → only the first author */
   | { kind: "first"; n?: number; etAl?: "append" | "omit" }
   | { kind: "first+last"; n: number }
@@ -207,13 +205,6 @@ export function select(
         etAl: withN.etAl !== "omit",
       };
     }
-    case "creator-like":
-      // itemss.js getFirstCreatorFromData: one name; two joined with the
-      // localized "and"; three or more → first name + "et al."
-      if (n === 1) return { shown: [list[0]], omitted: false, etAl: false };
-      if (n === 2)
-        return { shown: list.slice(0, 2), omitted: false, etAl: false };
-      return { shown: [list[0]], omitted: false, etAl: true };
     case "last":
       return { shown: [list[n - 1]], omitted: n > 1, etAl: false };
     case "advisor":
@@ -300,6 +291,10 @@ function isSelf(c: NormalizedCreator, self: string[] | undefined): boolean {
       family,
       given && `${family} ${given}`,
       given && `${given} ${family}`,
+      // CJK names are drawn without the space ("王小明"), and that is what the
+      // user types into the setting
+      given && `${family}${given}`,
+      given && `${given}${family}`,
       initial && `${family} ${initial}`,
       initial && `${initial} ${family}`,
     ].filter(Boolean) as string[],
@@ -317,14 +312,11 @@ export interface FormatOptions {
   roles?: RoleOptions;
   /** localized "et al." (falls back to the Latin abbreviation) */
   etAlText?: string;
-  /**
-   * Joiner for exactly two names, used by the creator-like preset so it reads
-   * "Smith and Jones" the way Zotero's own Creator column does. `{a}`/`{b}`
-   * placeholders, matching Zotero's `general.andJoiner` string.
-   */
-  pairJoiner?: string;
   /** what to put where names were dropped */
   omittedText?: string;
+  /** separator between two names; unset = decided per script pair
+   *  ("、" between two CJK names, ", " otherwise) */
+  separator?: string;
 }
 
 /**
@@ -365,25 +357,6 @@ export function formatAuthors(
   const lastIndex = all.length - 1;
   const omittedText = options.omittedText ?? "…";
 
-  // "A and B" is one string in Zotero's locale file, so the pair case is
-  // rendered whole rather than as name + separator + name
-  if (
-    options.policy.kind === "creator-like" &&
-    shown.length === 2 &&
-    options.pairJoiner
-  ) {
-    const a = formatName(shown[0], options.rules);
-    const b = formatName(shown[1], options.rules);
-    const text = options.pairJoiner.replace("{a}", a).replace("{b}", b);
-    return {
-      parts: [{ text }],
-      sortKey: [shown[0], shown[1]]
-        .map((c) => foldName(`${c.family} ${c.given}`))
-        .join(" "),
-      total: all.length,
-    };
-  }
-
   shown.forEach((c, i) => {
     if (i > 0) {
       const prev = shown[i - 1];
@@ -392,10 +365,9 @@ export function formatAuthors(
         omitted &&
         options.policy.kind === "first+last" &&
         i === shown.length - 1;
+      const sep = options.separator ?? separatorFor(prev.script, c.script);
       parts.push({
-        text: gapHere
-          ? `${separatorFor(prev.script, c.script)}${omittedText}${separatorFor(prev.script, c.script)}`
-          : separatorFor(prev.script, c.script),
+        text: gapHere ? `${sep}${omittedText}${sep}` : sep,
       });
     }
     const text = formatName(c, options.rules);
@@ -425,9 +397,7 @@ export function formatAuthors(
     // Zotero writes "Lovelace et al." with a plain space; the comma form is
     // for the presets that list several names before the abbreviation
     const gap =
-      options.policy.kind === "creator-like"
-        ? " "
-        : separatorFor(last?.script ?? "latin", "latin");
+      options.separator ?? separatorFor(last?.script ?? "latin", "latin");
     parts.push({ text: `${gap}${options.etAlText ?? "et al."}` });
   } else if (omitted && wantsOmittedMarker(options.policy)) {
     parts.push({ text: ` ${omittedText}` });
