@@ -335,9 +335,15 @@ function statusText(data: ZGraphData): string {
   const items = data.nodes.filter(
     (n) => n.kind === "item" || n.kind === "center",
   ).length;
-  return getString(data.truncated ? "graph-status-truncated" : "graph-status", {
-    args: { items, nodes: data.nodes.length, edges: data.edges.length },
-  });
+  const base = getString(
+    data.truncated ? "graph-status-truncated" : "graph-status",
+    {
+      args: { items, nodes: data.nodes.length, edges: data.edges.length },
+    },
+  );
+  return data.isolated
+    ? `${base} · ${getString("graph-status-isolated", { args: { count: data.isolated } })}`
+    : base;
 }
 
 /** the rows the item tree currently shows (regular items only) */

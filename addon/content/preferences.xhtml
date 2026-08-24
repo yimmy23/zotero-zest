@@ -461,6 +461,12 @@
           Zotero.__addonInstance__.hooks.onPrefsEvent('key-save', { window })
         "
       />
+      <button
+        data-l10n-id="pref-key-test"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('key-test', { window })
+        "
+      />
     </hbox>
     <description id="zest-pref-keystatus" class="zest-pref-hint"></description>
     <description
@@ -838,6 +844,12 @@
           Zotero.__addonInstance__.hooks.onPrefsEvent('s2key-save', { window })
         "
       />
+      <button
+        data-l10n-id="pref-key-test"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('s2key-test', { window })
+        "
+      />
     </hbox>
     <description
       id="zest-pref-s2keystatus"
@@ -868,6 +880,11 @@
     <checkbox
       preference="info.enable"
       data-l10n-id="pref-info-enable"
+      native="true"
+    />
+    <checkbox
+      preference="info.abstract"
+      data-l10n-id="pref-info-abstract"
       native="true"
     />
     <checkbox

@@ -100,8 +100,14 @@ export function uninstallDevEval() {
     // ignore
   }
   try {
+    // same per-copy rule as the export patch: an in-place reload shuts the
+    // old copy down AFTER the new one registered — only remove the endpoint
+    // if it is still ours, never the successor's
     const endpoints = (Zotero as any).Server?.Endpoints;
-    if (endpoints) delete endpoints["/zest-dev/eval"];
+    if (endpoints && endpoints["/zest-dev/eval"] === ownHandler) {
+      delete endpoints["/zest-dev/eval"];
+    }
+    ownHandler = null;
   } catch {
     // ignore
   }
@@ -111,6 +117,9 @@ export function devMark(name: string) {
   if (__env__ !== "development") return;
   startupConsole.push(`${new Date().toISOString()} MARK ${name}`);
 }
+
+/** the handler THIS copy registered — an upgrade's new copy installs its own */
+let ownHandler: unknown = null;
 
 export function registerDevEval() {
   if (__env__ !== "development") return;
@@ -214,6 +223,7 @@ export function registerDevEval() {
         }
       },
     };
+    ownHandler = handler;
     endpoints["/zest-dev/eval"] = handler;
     ztoolkit.log("[devEval] endpoint registered");
   } catch (e) {

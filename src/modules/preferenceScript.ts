@@ -13,6 +13,8 @@ import {
   removeDataset,
 } from "../rank/sources/localDataset";
 import { clearRankCache } from "../rank";
+import { fetchEasyScholar } from "../rank/sources/easyscholar";
+import { http } from "../core/http";
 import { getSecret, setSecret, secretIsInPrefs } from "../core/secrets";
 import { views, removeView, renameView } from "../views/viewGroups";
 import { setPref } from "../utils/prefs";
@@ -178,31 +180,41 @@ const KEY_FIELDS = {
 type KeyField = keyof typeof KEY_FIELDS;
 
 /**
- * The key fields never hold the stored key, so an idle field is simply empty
- * plain text — no reveal button that could only ever "unhide" a placeholder,
- * and nothing secret sitting in the DOM. Whether a key is stored is said in
- * words underneath. Typing switches it to a real password field, where the
- * reveal button does something useful: show what you just entered.
+ * The key fields never hold the stored key. A stored key shows as a row of
+ * bullets (a plain-text sentinel, so nothing secret is in the DOM and no
+ * "reveal" button can expose anything); clicking in clears the row and turns
+ * the box into a password field for the new entry; leaving it untouched puts
+ * the bullets back. Only a field the user actually typed in (or emptied on
+ * purpose) is saved. Whether a key is stored is also said in words underneath.
  */
+const MASK = "••••••••";
+
 function idleKeyField(input: HTMLInputElement) {
   input.type = "text";
-  input.value = "";
+  input.value = input.dataset.hasKey === "1" ? MASK : "";
   input.dataset.zestDirty = "";
+  input.dataset.zestEditing = "";
 }
 
 /** true while the field holds a real (or deliberately cleared) user entry */
 function keyFieldEdited(input: HTMLInputElement): boolean {
-  return input.type === "password";
+  return input.dataset.zestEditing === "1" && input.dataset.zestDirty === "1";
 }
 
 function bindKeyField(input: HTMLInputElement) {
   if (input.dataset.zestBound) return;
   input.dataset.zestBound = "1";
-  input.addEventListener("focus", () => {
-    if (keyFieldEdited(input)) return;
+  const beginEdit = () => {
+    if (input.dataset.zestEditing === "1") return;
     input.type = "password";
+    input.value = "";
+    input.dataset.zestEditing = "1";
     input.dataset.zestDirty = "";
-  });
+  };
+  // focus for keyboard and click alike; the click handler covers the case
+  // where the field already had focus when the bullets were put back
+  input.addEventListener("focus", beginEdit);
+  input.addEventListener("click", beginEdit);
   input.addEventListener("input", () => {
     input.dataset.zestDirty = "1";
   });
@@ -235,6 +247,62 @@ async function refreshKeyField(name?: KeyField) {
           ? getString("pref-key-stored")
           : "";
     }
+  }
+}
+
+/**
+ * "Is this key valid?" — one real request per service, result in the status
+ * line (no modal: a dialog from inside the settings pane is disruptive, and
+ * the line is where the key state is described anyway).
+ */
+async function testKey(name: KeyField) {
+  const d = doc();
+  const status = d?.getElementById(KEY_FIELDS[name].status);
+  if (!status) return;
+  const key = await getSecret(name);
+  if (!key) {
+    status.textContent = getString("pref-key-none");
+    return;
+  }
+  status.textContent = getString("pref-key-testing");
+  try {
+    if (name === "easyscholar") {
+      // a journal every dataset knows; `force` skips the record cache only,
+      // the back-off is still honoured
+      const r = await fetchEasyScholar("Nature", true);
+      if (r.values.length) {
+        status.textContent = getString("pref-key-valid", {
+          args: { detail: `Nature · ${r.values.length}` },
+        });
+      } else if (r.error === "key") {
+        status.textContent = getString("pref-key-invalid");
+      } else if (r.error === "rate") {
+        status.textContent = getString("pref-key-rate");
+      } else {
+        status.textContent = getString("pref-key-network");
+      }
+      return;
+    }
+    // Semantic Scholar: the key goes in a header; 403 = rejected, 429 = the
+    // shared limit (which a valid key is meant to lift), 0 = unreachable
+    const code = await http.probe(
+      "https://api.semanticscholar.org/graph/v1/paper/DOI:10.1038/s41586-020-2649-2?fields=citationCount",
+      { "x-api-key": key },
+    );
+    if (code >= 200 && code < 300) {
+      status.textContent = getString("pref-key-valid", {
+        args: { detail: `HTTP ${code}` },
+      });
+    } else if (code === 401 || code === 403) {
+      status.textContent = getString("pref-key-invalid");
+    } else if (code === 429) {
+      status.textContent = getString("pref-key-rate");
+    } else {
+      status.textContent = getString("pref-key-network");
+    }
+  } catch (e) {
+    ztoolkit.log("[prefs] key test failed", e);
+    status.textContent = getString("pref-key-network");
   }
 }
 
@@ -430,7 +498,8 @@ async function saveKey(name: KeyField = "easyscholar") {
     KEY_FIELDS[name].input,
   ) as HTMLInputElement | null;
   if (!input) return;
-  // untouched field: it is still showing the mask, so there is nothing to save
+  // untouched field (still showing the bullets, or clicked in and left):
+  // nothing to save
   if (!keyFieldEdited(input)) return;
   const value = input.value.trim();
   const where = await setSecret(name, value);
@@ -480,6 +549,12 @@ export async function onPrefsCommand(
       break;
     case "s2key-save":
       await saveKey("semanticscholar");
+      break;
+    case "key-test":
+      await testKey("easyscholar");
+      break;
+    case "s2key-test":
+      await testKey("semanticscholar");
       break;
     case "accent-apply":
       // the heat map and the badges keep their own colours; this copies the

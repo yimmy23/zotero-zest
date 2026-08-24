@@ -178,6 +178,34 @@ class Http {
     return Date.now() - this.lastTransportFailure < 60_000;
   }
 
+  /**
+   * One request, answered with the HTTP status only (0 = could not connect).
+   * For "is this key valid?" checks in Settings: nothing is cached, nothing is
+   * logged, the headers may carry a key.
+   */
+  probe(
+    url: string,
+    headers: Record<string, string> = {},
+    timeout = 10000,
+  ): Promise<number> {
+    return new Promise((resolve) => {
+      try {
+        const win = Zotero.getMainWindow() as any;
+        const xhr = new win.XMLHttpRequest();
+        xhr.open("GET", url, true);
+        xhr.timeout = timeout;
+        for (const [k, v] of Object.entries(headers))
+          xhr.setRequestHeader(k, v);
+        xhr.onload = () => resolve(xhr.status);
+        xhr.onerror = () => resolve(0);
+        xhr.ontimeout = () => resolve(0);
+        xhr.send();
+      } catch {
+        resolve(0);
+      }
+    });
+  }
+
   async request<T = any>(
     method: "GET" | "POST",
     url: string,

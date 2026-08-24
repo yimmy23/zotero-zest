@@ -32,6 +32,59 @@ export interface GraphHandlers {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+function edgeEndpointIds(edge: ZEdge): [string, string] {
+  const a = typeof edge.source === "string" ? edge.source : edge.source.id;
+  const b = typeof edge.target === "string" ? edge.target : edge.target.id;
+  return [a, b];
+}
+
+/** stroke width from the edge weight (co-occurrence count in author/tag modes) */
+function edgeWidth(edge: ZEdge): string {
+  return String(
+    Math.min(3, 0.9 + 0.5 * Math.log2(1 + Math.max(0, edge.weight))),
+  );
+}
+
+interface ComponentInfo {
+  /** number of connected components */
+  count: number;
+  /** node id → component index; 0 is the largest component */
+  compOf: Map<string, number>;
+}
+
+/** connected components — they drive the pull, the grid, and the palette */
+function componentInfo(nodes: ZNode[], edges: ZEdge[]): ComponentInfo {
+  const parent = new Map<string, string>();
+  const find = (a: string): string => {
+    let root = a;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    while (parent.get(a) !== root) {
+      const next = parent.get(a)!;
+      parent.set(a, root);
+      a = next;
+    }
+    return root;
+  };
+  for (const n of nodes) parent.set(n.id, n.id);
+  for (const e of edges) {
+    const [a, b] = edgeEndpointIds(e);
+    if (!parent.has(a) || !parent.has(b)) continue;
+    parent.set(find(a), find(b));
+  }
+  const bySize = new Map<string, number>();
+  for (const n of nodes) {
+    const r = find(n.id);
+    bySize.set(r, (bySize.get(r) || 0) + 1);
+  }
+  const order = [...bySize.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([root]) => root);
+  const idx = new Map(order.map((root, i) => [root, i] as const));
+  const compOf = new Map<string, number>();
+  for (const n of nodes) compOf.set(n.id, idx.get(find(n.id)) ?? 0);
+  return { count: order.length, compOf };
+}
+
 interface GraphTheme {
   center: string;
   item: string;
@@ -57,6 +110,31 @@ function kindColor(theme: GraphTheme, kind: ZNodeKind): string {
       return theme.collection;
   }
 }
+
+/**
+ * Gephi-style categorical palette for colouring by connected component
+ * (Tableau hues — mid-saturation, readable on light and dark canvases).
+ * Assigned by component size, cycling past twelve.
+ */
+const COMPONENT_PALETTE = [
+  "#4e79a7",
+  "#59a14f",
+  "#e15759",
+  "#f28e2b",
+  "#76b7b2",
+  "#b07aa1",
+  "#edc949",
+  "#ff9da7",
+  "#9c755f",
+  "#86bcb6",
+  "#d37295",
+  "#a0cbe8",
+];
+
+/** at this many components the layout switches to the forceInABox-style grid */
+const GRID_MIN_COMPONENTS = 6;
+/** per-axis pull toward the component's grid cell centre */
+const GRID_PULL = 0.12;
 
 /**
  * Layout budget. The first WARMUP_TICKS run synchronously before the first
@@ -105,7 +183,9 @@ export class GraphView {
   private sim: Simulation<ZNode, ZEdge> | null = null;
   private nodeEls = new Map<string, SVGCircleElement>();
   private labelEls = new Map<string, SVGTextElement>();
-  private edgeEls: Array<{ el: SVGLineElement; edge: ZEdge }> = [];
+  private edgeEls: Array<{ el: SVGPathElement; edge: ZEdge }> = [];
+  /** node id → ids of its direct neighbours (for hover focus) */
+  private adj = new Map<string, Set<string>>();
 
   private width = 300;
   private height = 300;
@@ -122,6 +202,15 @@ export class GraphView {
   private theme: GraphTheme;
   /** ids of nodes that carry a caption (collision radius is larger) */
   private labeledIds = new Set<string>();
+  /** node id → connected-component index (0 = largest), set by setData */
+  private compOf = new Map<string, number>();
+  private compCount = 1;
+  /** caption order: node id → rank (0 = centre, then by node size) */
+  private labelRank = new Map<string, number>();
+  /** caption ranks visible at scale 1; zooming in raises the budget */
+  private labelBase = LABEL_MIN;
+  /** hovered node while a neighbourhood focus is dimming the rest */
+  private focusedId: string | null = null;
 
   constructor(container: HTMLElement, handlers: GraphHandlers) {
     this.container = container;
@@ -184,35 +273,59 @@ export class GraphView {
       c.fy = 0;
     }
 
+    // connected components drive the palette, the pull, and the grid
+    const comps = componentInfo(data.nodes, data.edges);
+    this.compOf = comps.compOf;
+    this.compCount = comps.count;
+
+    this.adj.clear();
+    const addAdj = (a: string, b: string) => {
+      if (!this.adj.has(a)) this.adj.set(a, new Set());
+      this.adj.get(a)!.add(b);
+    };
     for (const edge of data.edges) {
-      const line = this.createSVG<SVGLineElement>("line");
-      line.setAttribute("stroke-linecap", "round");
-      this.edgeLayer.appendChild(line);
-      this.edgeEls.push({ el: line, edge });
+      // a gentle arc instead of a straight line (see updatePositions)
+      const el = this.createSVG<SVGPathElement>("path");
+      el.setAttribute("fill", "none");
+      el.setAttribute("stroke-linecap", "round");
+      el.style.pointerEvents = "none";
+      el.style.transition = "opacity 0.15s";
+      this.edgeLayer.appendChild(el);
+      this.edgeEls.push({ el, edge });
+      const [a, b] = edgeEndpointIds(edge);
+      addAdj(a, b);
+      addAdj(b, a);
     }
 
     for (const node of data.nodes) {
       const c = this.createSVG<SVGCircleElement>("circle");
       c.setAttribute("r", String(nodeRadius(node)));
       c.style.cursor = "pointer";
+      c.style.transition = "opacity 0.15s";
       this.attachNodeEvents(c, node);
       this.nodeLayer.appendChild(c);
       this.nodeEls.set(node.id, c);
     }
 
-    // labels: center + the largest nodes, as many as the width can hold
-    // without piling up (a 300px pane gets ~6, a wide one 12)
-    const labelBudget = Math.max(
+    // Every node gets a caption; the zoom level decides how many show
+    // (Obsidian-style: zooming in fades more in — see
+    // updateLabelVisibility). At scale 1 the pane width sets the budget
+    // (a 300px pane ~6, a wide one 12), and the collision force reserves
+    // caption room only for that base set, so the layout is unchanged.
+    this.labelBase = Math.max(
       LABEL_MIN,
       Math.min(LABEL_MAX, Math.round(this.width / PX_PER_LABEL)),
     );
-    const others = data.nodes
+    const ranked = data.nodes
       .filter((n) => n.kind !== "center")
-      .sort((a, b) => nodeRadius(b) - nodeRadius(a))
-      .slice(0, labelBudget);
-    const labeled = [...centerNodes, ...others];
-    this.labeledIds = new Set(labeled.map((n) => n.id));
-    for (const node of labeled) {
+      .sort((a, b) => nodeRadius(b) - nodeRadius(a));
+    this.labelRank.clear();
+    for (const c of centerNodes) this.labelRank.set(c.id, 0);
+    ranked.forEach((n, i) => this.labelRank.set(n.id, i + 1));
+    this.labeledIds = new Set(
+      [...centerNodes, ...ranked.slice(0, this.labelBase)].map((n) => n.id),
+    );
+    for (const node of data.nodes) {
       const t = this.createSVG<SVGTextElement>("text");
       t.textContent = node.label;
       t.setAttribute("text-anchor", "middle");
@@ -222,14 +335,38 @@ export class GraphView {
       t.setAttribute("stroke-width", "2.5");
       t.setAttribute("stroke-linejoin", "round");
       t.style.pointerEvents = "none";
+      t.style.transition = "opacity 0.15s";
       this.labelLayer.appendChild(t);
       this.labelEls.set(node.id, t);
     }
+    this.updateLabelVisibility();
 
     this.applyTheme();
 
     // The sandbox has no ambient timers, so the simulation is created
     // stopped and stepped manually from a requestAnimationFrame loop.
+    // A scope usually falls apart into many components (each paper and its
+    // co-author/tag satellites). Unbounded many-body repulsion pushes whole
+    // components apart until the canvas clamp flattens them into lines along
+    // the border (issue #2's second half) — so repulsion is short-range only.
+    // A handful of components gets a centering pull that grows with the
+    // count; MANY components get a forceInABox-style grid instead — each
+    // component is pulled into its own cell (largest, and the centre node's,
+    // in the middle), which reads tidier than a herded cloud.
+    const centerComp = centerNodes.length
+      ? this.compOf.get(centerNodes[0].id)
+      : undefined;
+    const grid =
+      this.compCount >= GRID_MIN_COMPONENTS
+        ? this.buildComponentGrid(this.compCount, centerComp)
+        : null;
+    const pull =
+      this.compCount > 1 ? Math.min(0.1, 0.04 + this.compCount * 0.004) : 0.03;
+    const reach = grid
+      ? Math.max(60, Math.min(grid.cellW, grid.cellH) * 0.9)
+      : Math.max(160, Math.min(this.width, this.height) / 2.5);
+    const cellOf = (n: ZNode) =>
+      grid ? grid.centers[this.compOf.get(n.id) ?? 0] : { x: 0, y: 0 };
     this.sim = forceSimulation<ZNode>(data.nodes)
       .force(
         "link",
@@ -238,8 +375,9 @@ export class GraphView {
           .distance(70)
           .strength(0.3),
       )
-      .force("charge", forceManyBody<ZNode>().strength(-120))
-      .force("center", forceCenter<ZNode>(0, 0))
+      .force("charge", forceManyBody<ZNode>().strength(-120).distanceMax(reach))
+      // the grid replaces global centering (it would drag cells off-centre)
+      .force("center", grid ? null : forceCenter<ZNode>(0, 0))
       .force(
         "collide",
         // labeled nodes reserve room for their caption below the circle
@@ -247,9 +385,16 @@ export class GraphView {
           this.labeledIds.has(n.id) ? nodeRadius(n) + 13 : nodeRadius(n) + 5,
         ).strength(0.9),
       )
-      // weak pull keeps disconnected components on screen
-      .force("x", forceX<ZNode>(0).strength(0.02))
-      .force("y", forceY<ZNode>(0).strength(0.02))
+      // few components: keep them in the middle ground; many: herd each
+      // toward its cell centre
+      .force(
+        "x",
+        forceX<ZNode>((n) => cellOf(n).x).strength(grid ? GRID_PULL : pull),
+      )
+      .force(
+        "y",
+        forceY<ZNode>((n) => cellOf(n).y).strength(grid ? GRID_PULL : pull),
+      )
       .stop();
 
     // off-screen warm-up: converge most of the way before the first paint
@@ -308,7 +453,42 @@ export class GraphView {
     this.nodeEls.clear();
     this.labelEls.clear();
     this.edgeEls = [];
+    this.labelRank.clear();
+    this.focusedId = null;
     this.data = null;
+  }
+
+  /**
+   * forceInABox-lite: split the canvas into a near-square grid with one
+   * cell per component, cells handed out centre-first so the largest
+   * component (and the pinned centre node's, which sits at the origin)
+   * lands in the middle.
+   */
+  private buildComponentGrid(count: number, centerComp?: number) {
+    const w = Math.max(120, this.width - 60);
+    const h = Math.max(120, this.height - 60);
+    const cols = Math.max(1, Math.round(Math.sqrt((count * w) / h)));
+    const rows = Math.ceil(count / cols);
+    const cellW = w / cols;
+    const cellH = h / rows;
+    const cells: Array<{ x: number; y: number }> = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        cells.push({
+          x: -w / 2 + (c + 0.5) * cellW,
+          y: -h / 2 + (r + 0.5) * cellH,
+        });
+      }
+    }
+    cells.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
+    const order: number[] = [];
+    if (centerComp !== undefined) order.push(centerComp);
+    for (let i = 0; i < count; i++) {
+      if (i !== centerComp) order.push(i);
+    }
+    const centers = new Array<{ x: number; y: number }>(count);
+    order.forEach((comp, i) => (centers[comp] = cells[i]));
+    return { centers, cellW, cellH };
   }
 
   private handleResize() {
@@ -338,6 +518,23 @@ export class GraphView {
       "transform",
       `translate(${tx},${ty}) scale(${this.scale})`,
     );
+    this.updateLabelVisibility();
+  }
+
+  /**
+   * Obsidian-style label reveal. At scale 1 only the base budget of the
+   * largest nodes is captioned; zooming in raises the budget (zoom^1.6,
+   * roughly tracking the extra screen room), and each caption fades in
+   * through the fractional tail of the budget. The centre is always on.
+   */
+  private updateLabelVisibility() {
+    if (this.focusedId) return; // a hover focus owns the opacities right now
+    const budget = this.labelBase * Math.pow(this.scale, 1.6);
+    for (const [id, t] of this.labelEls) {
+      const rank = this.labelRank.get(id) ?? Infinity;
+      const o = rank === 0 ? 1 : Math.max(0, Math.min(1, budget - rank + 1));
+      t.style.opacity = String(Math.round(o * 100) / 100);
+    }
   }
 
   /** client (screen) coordinates -> simulation coordinates */
@@ -442,10 +639,18 @@ export class GraphView {
       const s = edge.source as ZNode;
       const t = edge.target as ZNode;
       if (typeof s !== "object" || typeof t !== "object") continue;
-      el.setAttribute("x1", String(s.x ?? 0));
-      el.setAttribute("y1", String(s.y ?? 0));
-      el.setAttribute("x2", String(t.x ?? 0));
-      el.setAttribute("y2", String(t.y ?? 0));
+      const x1 = s.x ?? 0;
+      const y1 = s.y ?? 0;
+      const x2 = t.x ?? 0;
+      const y2 = t.y ?? 0;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      // constant-ratio bow, capped so long edges don't balloon
+      const off = Math.min(18, len * 0.14);
+      const mx = (x1 + x2) / 2 + (dy / len) * off;
+      const my = (y1 + y2) / 2 - (dx / len) * off;
+      el.setAttribute("d", `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`);
     }
     for (const node of this.data?.nodes || []) {
       const c = this.nodeEls.get(node.id);
@@ -548,9 +753,9 @@ export class GraphView {
       t.setAttribute("fill", theme.label);
       t.setAttribute("stroke", theme.background);
     }
-    for (const { el } of this.edgeEls) {
+    for (const { el, edge } of this.edgeEls) {
       el.setAttribute("stroke", theme.edge);
-      el.setAttribute("stroke-width", "1.2");
+      el.setAttribute("stroke-width", edgeWidth(edge));
       // the colour already carries its alpha; dimming it again is what made
       // the lines disappear
       el.setAttribute("stroke-opacity", "1");
@@ -558,11 +763,33 @@ export class GraphView {
     for (const node of this.data?.nodes || []) {
       const c = this.nodeEls.get(node.id);
       if (c) {
-        c.setAttribute("fill", kindColor(theme, node.kind));
-        c.setAttribute("stroke", theme.background);
-        c.setAttribute("stroke-width", "1");
+        const color = this.nodeColor(node);
+        c.setAttribute("fill", color);
+        // a soft halo in the node's own colour instead of a hard rim
+        c.setAttribute("stroke", color);
+        c.setAttribute(
+          "stroke-opacity",
+          node.kind === "center" ? "0.35" : "0.25",
+        );
+        c.setAttribute("stroke-width", node.kind === "center" ? "5" : "3.5");
       }
     }
+  }
+
+  /**
+   * One connected graph keeps the kind colours (item/author/tag…); a graph
+   * that falls apart is coloured by component instead — Gephi's rule of
+   * letting structure own the palette. The centre node keeps its accent.
+   */
+  private nodeColor(node: ZNode): string {
+    if (node.kind === "center") return this.theme.center;
+    if (this.compCount > 1) {
+      const comp = this.compOf.get(node.id);
+      if (comp !== undefined) {
+        return COMPONENT_PALETTE[comp % COMPONENT_PALETTE.length];
+      }
+    }
+    return kindColor(this.theme, node.kind);
   }
 
   // ----------------------------------------------------------- interactions
@@ -732,16 +959,44 @@ export class GraphView {
       // NEVER move the element in the DOM here: re-inserting the node
       // under the pointer fires pointerleave/pointerenter again and the
       // cursor flips grab ↔ pointer in a loop (visible as a flickering
-      // hand). Highlight in place instead.
-      circle.setAttribute("stroke", kindColor(this.theme, node.kind));
-      circle.setAttribute("stroke-width", "3");
-      circle.setAttribute("stroke-opacity", "0.45");
+      // hand). Dim everything outside the neighbourhood instead.
+      this.focusNeighborhood(node);
     });
 
     circle.addEventListener("pointerleave", () => {
-      circle.setAttribute("stroke", this.theme.background);
-      circle.setAttribute("stroke-width", "1");
-      circle.removeAttribute("stroke-opacity");
+      this.clearFocus();
     });
+  }
+
+  /** hover: keep the node and its direct neighbours crisp, fade the rest */
+  private focusNeighborhood(node: ZNode) {
+    this.focusedId = node.id;
+    const keep = new Set([node.id, ...(this.adj.get(node.id) || [])]);
+    for (const [id, c] of this.nodeEls) {
+      c.style.opacity = keep.has(id) ? "1" : "0.15";
+    }
+    // every neighbour's caption shows while focused, whatever the zoom
+    for (const [id, t] of this.labelEls) {
+      t.style.opacity = keep.has(id) ? "1" : "0";
+    }
+    for (const { el, edge } of this.edgeEls) {
+      const [a, b] = edgeEndpointIds(edge);
+      const on = a === node.id || b === node.id;
+      el.style.opacity = on ? "1" : "0.08";
+      el.setAttribute(
+        "stroke-width",
+        on ? String(Number(edgeWidth(edge)) + 0.6) : edgeWidth(edge),
+      );
+    }
+  }
+
+  private clearFocus() {
+    this.focusedId = null;
+    for (const c of this.nodeEls.values()) c.style.opacity = "";
+    for (const { el, edge } of this.edgeEls) {
+      el.style.opacity = "";
+      el.setAttribute("stroke-width", edgeWidth(edge));
+    }
+    this.updateLabelVisibility();
   }
 }

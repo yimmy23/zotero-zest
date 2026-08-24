@@ -133,6 +133,8 @@ pref("secret.semanticscholar", "");
 // Remark column and the literature info panel
 pref("column.remark.enable", false);
 pref("info.enable", true);
+// abstract in the Zest panel, translation (pdf-translate's Extra line) first
+pref("info.abstract", true);
 
 // Vertical tab manager (off by default — it changes a window people know)
 pref("tabs.sidebar", false);

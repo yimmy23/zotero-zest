@@ -85,11 +85,13 @@ ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等�
 
 ## 条目面板里的两栏
 
-**Zest**——**全部作者一行列出**（按作者列的姓名规则，自己的名字高亮、末位标记；Zotero 信息栏一行一个、
-超过五个就折叠）、期刊与分区徽章、被引数（带刷新按钮）、阅读时长 + **可点击的每页热力条**（点哪一段就跳
-到那一页）、状态 / 评级 / 简记直接编辑、以及一排外部链接：DOI、PubMed（有 PMID 直达，没有就按标题搜）、
-arXiv（有编号时）、Google Scholar、Semantic Scholar、OpenAlex、Connected Papers。摘要不在这里——Zotero 10
-自带的摘要栏就在上面。Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
+**Zest**——为了一眼了解这篇文献：**标题**（有译文时译文在上、原文在下）、**全部作者一行列出**（按作者列
+的姓名规则，自己的名字高亮、末位标记；Zotero 信息栏一行一个、超过五个就折叠）、期刊与分区徽章、被引数
+（带刷新按钮）、阅读时长 + **可点击的每页热力条**（点哪一段就跳到那一页）、状态 / 评级 / 简记直接编辑、
+一排外部链接（DOI、PubMed——有 PMID 直达，没有就按标题搜、arXiv、Google Scholar、Semantic Scholar、
+OpenAlex、Connected Papers），以及**摘要**：装了 zotero-pdf-translate 并翻译过的，先显示译文（多段完整
+显示），原文折叠在下面；没翻译的只显示原文（默认折叠）。译文读的是翻译插件写进 Extra 的 `titleTranslation`
+/ `abstractTranslation`，Zest 自己不翻译、不改写这两行。Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
 
 **Annotation Finder**——这条文献的全部标注，按标签树里选中的标签过滤，双击直接跳进阅读器里那条标注。
 
@@ -260,13 +262,16 @@ the settings.
 
 ## Item pane
 
-**Zest** — **every author on one line** (the Authors column's name rules, your own name highlighted,
-the last-author mark; Zotero's Info box folds after five), venue and rank badges, citations with a
+**Zest** — the paper at a glance: the **title** (translation above the original when there is one),
+**every author on one line** (the Authors column's name rules, your own name highlighted, the
+last-author mark; Zotero's Info box folds after five), venue and rank badges, citations with a
 refresh button, reading time and a **clickable** per-page heat strip (click a segment, land on that
-page), status / rating / remark inline, and one row of links out: DOI, PubMed (by PMID, else a title
-search), arXiv when there is an id, Google Scholar, Semantic Scholar, OpenAlex, Connected Papers. No
-abstract here — Zotero 10's own Abstract section is two sections up. Zotero shows the same section in
-a reader tab's context pane.
+page), status / rating / remark inline, one row of links out (DOI, PubMed — by PMID, else a title
+search —, arXiv, Google Scholar, Semantic Scholar, OpenAlex, Connected Papers), and the **abstract**:
+zotero-pdf-translate's translation first (every paragraph) with the original folded underneath, or
+the original alone (folded) when nothing was translated. The translations are read from the
+`titleTranslation` / `abstractTranslation` lines that plugin writes into Extra; Zest neither
+translates nor rewrites them. Zotero shows the same section in a reader tab's context pane.
 
 **Annotation Finder** — every annotation of the item, filtered by whatever you selected in the tag
 tree; double-click jumps into the reader at that annotation.

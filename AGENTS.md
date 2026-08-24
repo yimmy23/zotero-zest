@@ -49,12 +49,13 @@ These are not style preferences. Breaking one is a bug even if everything still 
    tree, vertical tabs, collection counts) is off by default, reversible, and disables itself when
    its feature probe fails. Title decoration only adds to the Title cell (heat, bold) and ships on;
    it is still reversible and probe-gated. **Zest does not duplicate what Zotero 10 already ships**:
-   no abstract row, no reader colour presets, no Creator-column copy, no item-type filter, nothing
+   no reader colour presets, no Creator-column copy, no item-type filter, nothing
    inside the reader — a native feature is the answer, not a second copy (see the 2026-08-23 audit
    in session-notes). But "derived from, consolidates or visualises a native feature" is NOT
    duplication — the maintainer's rule (2026-08-23): Zest's job is exactly that. So the Venue
    column (one column across item types), the Authors columns (Creator column with rules), the
-   panel's one-line author list and its row of outbound links all stay. Filters compose with Zotero's own search rather than
+   panel's title / one-line author list / abstract (with the translation plugin's translations shown
+   whole — read from Extra, never written) and its row of outbound links all stay. Filters compose with Zotero's own search rather than
    overriding it. Native gestures stay native: a modified click (Shift/Cmd/Ctrl/Alt, non-primary
    button) belongs to Zotero's selection handling — see `isPlainClick` in `columns/registry.ts`.
 2. **`Extra` is the user's field.** Write only on an explicit user action, only the line you own, and

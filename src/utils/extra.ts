@@ -152,3 +152,60 @@ export async function setExtraLines(
   await item.saveTx({ skipSelect: true } as any);
   return true;
 }
+
+/* ------------------------------------------------------------------ */
+/* Block-valued Extra keys (read-only)                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Most Extra keys hold one line, but a machine-translated abstract does not:
+ * zotero-pdf-translate writes `abstractTranslation: <paragraph>` and every
+ * further paragraph of the same translation lands on its own line (140 of 282
+ * translated abstracts in a real library). A line-oriented read would show the
+ * first paragraph and silently drop the rest, so this reader treats a key as
+ * owning every following line until the next `Key: value` line.
+ *
+ * A "next key" is deliberately narrow: an ASCII-initial token with a
+ * half-width colon (`titleTranslation:`, `JCR分区:`, `Citation key:`).
+ * Chinese prose uses the full-width `：` (`方法：`, `结果：`), so paragraph
+ * openers are not mistaken for keys. Measured on a 620-item library: 0
+ * mis-splits. Zest only READS these values — the translation plugin owns them.
+ */
+const BLOCK_KEY_LINE =
+  /^[ \t]*([A-Za-z_][A-Za-z0-9._\u4e00-\u9fff-]{0,39}(?: [A-Za-z0-9._\u4e00-\u9fff-]{1,20})?)[ \t]*:(.*)$/;
+
+export function getExtraBlockText(
+  extra: string,
+  keys: string[],
+): { key: string; value: string } | null {
+  if (!extra) return null;
+  const wanted = keys.map((k) => k.toLowerCase());
+  const lines = extra.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(BLOCK_KEY_LINE);
+    if (!m || !wanted.includes(m[1].trim().toLowerCase())) continue;
+    const buf = [m[2].trim()];
+    for (
+      let j = i + 1;
+      j < lines.length && !BLOCK_KEY_LINE.test(lines[j]);
+      j++
+    ) {
+      buf.push(lines[j]);
+    }
+    while (buf.length && !buf[buf.length - 1].trim()) buf.pop();
+    return { key: m[1].trim(), value: buf.join("\n").trim() };
+  }
+  return null;
+}
+
+/** `getExtraBlockText` for an item; null when the field cannot be read. */
+export function getExtraBlock(
+  item: Zotero.Item,
+  keys: string[],
+): { key: string; value: string } | null {
+  try {
+    return getExtraBlockText((item.getField("extra") as string) || "", keys);
+  } catch {
+    return null;
+  }
+}

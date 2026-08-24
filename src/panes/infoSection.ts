@@ -21,25 +21,30 @@ import {
 } from "../utils/items";
 import { formatAuthors } from "../authors/pipeline";
 import { panelAuthorOptions } from "../columns/authors";
+import { getExtraBlock } from "../utils/extra";
 import { iconButton } from "../ui/icons";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
- * and where am I with it": every author on one line, venue with its rank
- * badges, citation count, reading time with the clickable per-page heat strip,
- * read status, rating, the remark, and one row of places to open the paper.
+ * and where am I with it": the title (with its translation when there is
+ * one), every author on one line, venue with its rank badges, citation count,
+ * reading time with the clickable per-page heat strip, read status, rating,
+ * the remark, one row of places to open the paper, and the abstract —
+ * translation first.
  *
  * Everything here is a view over data that already exists: reading time from
  * zest.sqlite, rating/status/remark from Extra, ranks and citations from the
- * caches the columns use. Nothing is fetched while rendering; the journal
- * lookup is only queued (and only if the user opted into remote lookups).
+ * caches the columns use, translations from the Extra lines the translation
+ * plugin (zotero-pdf-translate) writes. Nothing is fetched while rendering;
+ * the journal lookup is only queued (and only if the user opted into remote
+ * lookups). Zest never translates and never writes those lines — it shows
+ * them, whole (an abstract translation runs over several paragraphs, which
+ * the plugin's own row truncates).
  *
- * The abstract is deliberately NOT here: Zotero 10's own Abstract section sits
- * two sections up, editable. The author line and the outbound links stay by
- * the maintainer's call (2026-08-23): Zotero's Info box shows creators one row
- * at a time with a "N more" fold, and its "View Online" / Locate entries are
- * spread over several rows and menus — one scannable line and one row of
- * buttons is the point of this panel.
+ * The maintainer's brief (2026-08-23): the panel is for understanding the
+ * paper at a glance, so title and abstract belong here even though Zotero
+ * shows the originals elsewhere — with the translation that makes them
+ * readable, when one exists.
  *
  * Zotero shows the section in a reader tab's context pane as well (same
  * <item-details> element, item = the attachment's parent), so the status
@@ -158,6 +163,36 @@ function render(props: any) {
   // group libraries and read-only feeds render the section, but every write
   // would fail silently — show the values, disable the controls
   const editable = props.editable !== false && itemIsEditable(item);
+
+  /* ---------- title (+ the translation plugin's translation) ---------- */
+  {
+    let title: string;
+    try {
+      title = String(item.getField("title") || "").trim();
+    } catch {
+      title = "";
+    }
+    const translation = getExtraBlock(item, TITLE_TRANSLATION_KEYS)?.value;
+    if (title || translation) {
+      const r = row(doc, getString("info-title"));
+      const value = doc.createElement("span");
+      value.className = "zest-info-value zest-info-title";
+      if (translation) {
+        const zh = doc.createElement("div");
+        zh.className = "zest-info-translation";
+        zh.textContent = translation;
+        value.appendChild(zh);
+      }
+      if (title) {
+        const orig = doc.createElement("div");
+        orig.className = translation ? "zest-info-original" : "";
+        orig.textContent = title;
+        value.appendChild(orig);
+      }
+      r.appendChild(value);
+      body.appendChild(r);
+    }
+  }
 
   /* ---------- authors: every one, on one line, with the user's rules ---------- */
   const authors = formatAuthors(item, panelAuthorOptions());
@@ -351,7 +386,56 @@ function render(props: any) {
     }
     body.appendChild(r);
   }
+
+  /* ---------- abstract: translation first, original underneath ---------- */
+  if (getPref("info.abstract")) {
+    let abstract: string;
+    try {
+      abstract = String(item.getField("abstractNote") || "").trim();
+    } catch {
+      abstract = "";
+    }
+    const translation =
+      getExtraBlock(item, ABSTRACT_TRANSLATION_KEYS)?.value || "";
+    if (abstract || translation) {
+      const details = doc.createElement("details");
+      details.className = "zest-info-abstract";
+      // a translation is what the reader came for: open; the original alone
+      // is also in Zotero's own Abstract section, so it stays folded
+      details.open = !!translation;
+      const summary = doc.createElement("summary");
+      summary.textContent = getString("info-abstract");
+      details.appendChild(summary);
+      if (translation) {
+        const zh = doc.createElement("div");
+        zh.className = "zest-info-abstract-text zest-info-translation";
+        zh.textContent = translation;
+        details.appendChild(zh);
+      }
+      if (abstract) {
+        const text = doc.createElement("div");
+        text.className = "zest-info-abstract-text";
+        text.textContent = abstract;
+        if (translation) {
+          const original = doc.createElement("details");
+          original.className = "zest-info-abstract-original";
+          const s2 = doc.createElement("summary");
+          s2.textContent = getString("info-original");
+          original.appendChild(s2);
+          original.appendChild(text);
+          details.appendChild(original);
+        } else {
+          details.appendChild(text);
+        }
+      }
+      body.appendChild(details);
+    }
+  }
 }
+
+/** Extra keys zotero-pdf-translate writes (read here, never written) */
+const TITLE_TRANSLATION_KEYS = ["titleTranslation"];
+const ABSTRACT_TRANSLATION_KEYS = ["abstractTranslation"];
 
 /** clickable per-page heat: each segment opens the reader at that page */
 function buildHeatStrip(

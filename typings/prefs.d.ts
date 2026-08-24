@@ -95,6 +95,7 @@ declare namespace _ZoteroTypes {
       "secret.semanticscholar": string;
       "column.remark.enable": boolean;
       "info.enable": boolean;
+      "info.abstract": boolean;
       "tabs.sidebar": boolean;
       "tabs.width": number;
       "tabs.hideNative": boolean;

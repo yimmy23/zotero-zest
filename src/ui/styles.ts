@@ -307,6 +307,13 @@ export function registerStyles(win: Window) {
     .zest-info-status.zest-status-auto-text { color: var(--fill-secondary); }
     .zest-info-authors .zest-author-self { font-weight: 600; }
     .zest-info-authors .zest-author-mark { color: var(--fill-secondary); }
+    .zest-info-title { font-weight: 600; line-height: 1.4; }
+    .zest-info-title .zest-info-original { font-weight: 400; color: var(--fill-secondary); margin-top: 2px; }
+    .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-info-abstract > summary, .zest-info-abstract-original > summary { cursor: pointer; color: var(--fill-secondary); }
+    .zest-info-abstract-text { margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
+    .zest-info-abstract-original { margin-top: 4px; }
+    .zest-info-abstract-original .zest-info-abstract-text { color: var(--fill-secondary); }
 
     /* ---------- annotation locator cards ---------- */
     .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }
