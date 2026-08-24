@@ -34,7 +34,7 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 
 | 菜单项                   | 作用                                                                        |
 | ------------------------ | --------------------------------------------------------------------------- |
-| **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式 |
+| **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式。作者模式做同名消歧：同姓下按全名聚类（Wang Lei ≠ Wang Li），有 OpenAlex 缓存时按作者 ID 合并拼写变体，悬停节点显示所属机构 |
 | **阅读统计…**            | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目             |
 | **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                 |
 | **套用 Zest 推荐列布局** | 一键排好上面那套列                                                          |
@@ -215,7 +215,9 @@ Most Zest columns ship off, so the **first** apply also turns on the ones the la
 apply after that only arranges columns — a column you switch off in **Settings ▸ Zest** stays off.
 
 The same button opens the **graph**, the **reading statistics** window, the **annotation matrix** and
-the settings.
+the settings. The graph's author mode disambiguates names: same-surname authors cluster by full
+given name (Wang Lei ≠ Wang Li, an ambiguous "Wang L." stays its own node), cached OpenAlex author
+IDs merge spelling variants, and hovering a node shows the institution when known.
 
 ## The columns
 

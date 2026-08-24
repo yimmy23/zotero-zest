@@ -61,6 +61,8 @@ pref("extra.stripOnExport", true);
 // Graph pane (item-list bottom panel)
 pref("graph.visible", false);
 pref("graph.mode", "related");
+pref("graph.authorRoles", "firstlast");
+pref("graph.minShared", 2);
 pref("graph.height", 400);
 pref("graph.maxNodes", 250);
 

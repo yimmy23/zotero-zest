@@ -58,6 +58,7 @@ import * as extra from "../utils/extra";
 import * as status from "../reading/status";
 import * as statusMenu from "../reading/statusMenu";
 import * as pubTags from "../columns/pubTags";
+import * as authorMenu from "../authors/authorMenu";
 
 const TOKEN = "zest-dev-5c1e9a27";
 
@@ -160,6 +161,7 @@ export function registerDevEval() {
             status,
             statusMenu,
             pubTags,
+            authorMenu,
             startupConsole,
             cache,
             zestConfig,

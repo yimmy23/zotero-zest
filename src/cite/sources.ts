@@ -1,4 +1,10 @@
 import { http, politeParam } from "../core/http";
+import { cache } from "../core/storage";
+import {
+  OA_AUTHORS_NS,
+  authorshipsKey,
+  compactAuthorships,
+} from "../graph/authorIdentity";
 import { getSecret } from "../core/secrets";
 
 /**
@@ -20,7 +26,7 @@ export interface CiteResult {
   source: CiteSource;
 }
 
-function cleanDOI(item: Zotero.Item): string {
+export function cleanDOI(item: Zotero.Item): string {
   try {
     const raw = String(item.getField("DOI") || "").trim();
     const doi = raw.replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
@@ -70,11 +76,14 @@ export async function fetchOpenAlexCitations(
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
-  const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=cited_by_count${politeParam("&")}`;
+  const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=cited_by_count,authorships${politeParam("&")}`;
   const res = await http.request<any>("GET", url, {
     responseType: "json",
     noCache: force,
   });
+  // free ride for the author graph: same request, remember who wrote it
+  const rows = compactAuthorships(res?.authorships);
+  if (rows) cache.set(OA_AUTHORS_NS, authorshipsKey(item), rows);
   const n = res?.cited_by_count;
   return typeof n === "number" ? { count: n, source: "OpenAlex" } : null;
 }

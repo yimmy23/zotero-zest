@@ -233,7 +233,7 @@ citations-none = 所选条目都没有 DOI 或 PMID
 # ---- remark ----
 column-remark = 简记
 remark-tip = 双击编辑这条一行简记（存在 Extra 字段里）
-remark-prompt = 一行文字，保存在条目的 Extra 字段
+remark-prompt = 一句话记下这篇的要点
 
 # ---- literature info panel ----
 info-section-header =
@@ -244,6 +244,9 @@ info-authors = 作者
 info-title = 标题
 info-abstract = 摘要
 info-original = 原文
+info-affiliations = 机构
+info-affiliations-sep = {"；"}
+info-affiliations-more = { $list } 等 { $count } 家
 info-venue = 期刊 / 来源
 info-citations = 被引数
 info-citations-none = 尚未获取
@@ -328,3 +331,21 @@ menu-rank-fetch =
     .label = 联网获取期刊数据（分区 / 影响因子）
 rank-offline-tip = 「期刊标签」和「影响因子」需要联网查询期刊数据。点工具栏的 Zest 按钮 ▸「联网获取期刊数据」开启；查询按期刊进行，只发送期刊名、ISSN 或 DOI，结果缓存在本地。中科院分区、北大核心等中文体系还需要在设置里填 easyScholar 密钥。
 rank-empty-tip = 尚未查到这本期刊的分级数据。右键该单元格可单独重新查询；中科院分区、北大核心等中文体系需要 easyScholar 密钥。
+
+# ---- author menu ----
+author-click-tip = 点击：在文库中筛选，或在线搜索
+author-menu-filter = 在文库中筛选其文章
+author-menu-clear = 清除作者筛选
+author-menu-scholar = 在 Google Scholar 搜索
+author-menu-pubmed = 在 PubMed 搜索
+author-menu-openalex = 在 OpenAlex 打开
+author-menu-s2 = 在 Semantic Scholar 搜索
+author-filter-toast = 已筛选：{ $name } 共 { $count } 篇（切换分类即恢复）
+author-filter-none = 未能在文库中定位 { $name }
+
+# ---- graph author roles ----
+graph-roles-firstlast = 一作+通讯
+graph-roles-firstlast-tip = 只看第一作者与末位作者（通讯位惯例）——中间作者不进入图谱
+graph-roles-all = 全部作者
+graph-roles-all-tip = 所有署名作者都进入图谱
+graph-min-tip = 至少 { $count } 篇条目共享的作者 / 标签 / 分类才显示

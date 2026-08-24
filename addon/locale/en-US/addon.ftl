@@ -233,7 +233,7 @@ citations-none = None of the selected items has a DOI or PMID
 # ---- remark ----
 column-remark = Remark
 remark-tip = Double-click to edit this one-line remark (stored in Extra)
-remark-prompt = One line, kept in the item's Extra field
+remark-prompt = Your one-sentence takeaway
 
 # ---- literature info panel ----
 info-section-header =
@@ -244,6 +244,9 @@ info-authors = Authors
 info-title = Title
 info-abstract = Abstract
 info-original = Original
+info-affiliations = Affiliations
+info-affiliations-sep = {"; "}
+info-affiliations-more = { $list } and { $count } more
 info-venue = Venue
 info-citations = Citations
 info-citations-none = not fetched yet
@@ -328,3 +331,21 @@ menu-rank-fetch =
     .label = Look journal data up online (ranks / impact factor)
 rank-offline-tip = Publication tags and Impact factor need Zest to look journals up online. Turn it on from the Zest toolbar button ▸ "Look journal data up online". Lookups are per journal, send only the journal name, ISSN or DOI, and are cached locally. The Chinese ranking systems additionally need an easyScholar key, set in Settings.
 rank-empty-tip = No ranking data found for this journal yet. Right-click the cell to look it up again; the Chinese ranking systems need an easyScholar key.
+
+# ---- author menu ----
+author-click-tip = Click to filter the library or search online
+author-menu-filter = Filter library to this author
+author-menu-clear = Clear author filter
+author-menu-scholar = Search on Google Scholar
+author-menu-pubmed = Search on PubMed
+author-menu-openalex = Open on OpenAlex
+author-menu-s2 = Search on Semantic Scholar
+author-filter-toast = Showing { $count } items by { $name } — switch collections to clear
+author-filter-none = Could not locate { $name } in this library
+
+# ---- graph author roles ----
+graph-roles-firstlast = First + corresponding
+graph-roles-firstlast-tip = Only first and last authors (the corresponding slot) — middle authors stay out
+graph-roles-all = All authors
+graph-roles-all-tip = Every listed author joins the graph
+graph-min-tip = Show only authors / tags / collections shared by at least { $count } items

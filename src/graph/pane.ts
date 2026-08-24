@@ -3,6 +3,8 @@ import { getString } from "../utils/locale";
 import { getPref, setPref, getNumPref } from "../utils/prefs";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { guard } from "../utils/guard";
+import { ensureAuthorships } from "./authorFetch";
+import { appendAuthorMenuItems } from "../authors/authorMenu";
 import {
   buildGraph,
   type GraphMode,
@@ -43,12 +45,29 @@ interface PaneState {
   status: HTMLElement;
   view?: GraphView;
   modeButtons: Map<GraphMode, HTMLElement>;
+  roleButtons: Map<string, HTMLElement>;
+  rolesWrap: HTMLElement;
+  minButtons: Map<number, HTMLElement>;
+  minWrap: HTMLElement;
   building: boolean;
 }
 
 const panes = new Map<Window, PaneState>();
 
 type XULElement = Element & { setAttribute(name: string, value: string): void };
+
+const MIN_SHARED_STEPS = [2, 3, 5] as const;
+
+function minShared(): number {
+  const v = Number(getPref("graph.minShared")) || 2;
+  return (MIN_SHARED_STEPS as readonly number[]).includes(v) ? v : 2;
+}
+
+function authorRoles(): "all" | "firstlast" {
+  return String(getPref("graph.authorRoles") || "firstlast") === "all"
+    ? "all"
+    : "firstlast";
+}
 
 export function graphMode(): GraphMode {
   const v = String(getPref("graph.mode") || "related");
@@ -148,6 +167,50 @@ export function showGraphPane(win: Window) {
   }
   header.appendChild(modeWrap);
 
+  // author mode: every author, or only first + last (the corresponding slot)
+  const roleButtons = new Map<string, HTMLElement>();
+  const rolesWrap = doc.createElement("div");
+  rolesWrap.className = "zest-graph-modes zest-graph-roles";
+  for (const role of ["firstlast", "all"] as const) {
+    const b = doc.createElement("button");
+    b.className = "zest-graph-mode";
+    b.textContent = getString(`graph-roles-${role}`);
+    b.title = getString(`graph-roles-${role}-tip`);
+    b.addEventListener(
+      "click",
+      guard("graph roles", () => {
+        setPref("graph.authorRoles", role);
+        syncModeButtons(win);
+        void rebuild(win);
+      }),
+    );
+    rolesWrap.appendChild(b);
+    roleButtons.set(role, b);
+  }
+  header.appendChild(rolesWrap);
+
+  // bipartite modes: how many items must share an author/tag/collection
+  const minButtons = new Map<number, HTMLElement>();
+  const minWrap = doc.createElement("div");
+  minWrap.className = "zest-graph-modes zest-graph-min";
+  for (const n of MIN_SHARED_STEPS) {
+    const b = doc.createElement("button");
+    b.className = "zest-graph-mode";
+    b.textContent = `≥${n}`;
+    b.title = getString("graph-min-tip", { args: { count: n } });
+    b.addEventListener(
+      "click",
+      guard("graph min shared", () => {
+        setPref("graph.minShared", n);
+        syncModeButtons(win);
+        void rebuild(win);
+      }),
+    );
+    minWrap.appendChild(b);
+    minButtons.set(n, b);
+  }
+  header.appendChild(minWrap);
+
   const status = doc.createElement("span");
   status.className = "zest-graph-status";
   header.appendChild(status);
@@ -194,6 +257,10 @@ export function showGraphPane(win: Window) {
     canvas,
     status,
     modeButtons,
+    roleButtons,
+    rolesWrap,
+    minButtons,
+    minWrap,
     building: false,
   };
   panes.set(win, state);
@@ -202,7 +269,7 @@ export function showGraphPane(win: Window) {
 
   try {
     state.view = new GraphView(canvas, {
-      onSelect: (node) => selectNode(win, node),
+      onSelect: (node, x, y) => selectNode(win, node, x, y),
       onOpen: (node) => openNode(win, node),
       onContext: (node, x, y) => showNodeMenu(win, node, x, y),
     });
@@ -273,6 +340,16 @@ function syncModeButtons(win: Window) {
   for (const [mode, btn] of state.modeButtons) {
     btn.classList.toggle("active", mode === active);
   }
+  state.rolesWrap.style.display = active === "author" ? "" : "none";
+  const roles = authorRoles();
+  for (const [role, btn] of state.roleButtons) {
+    btn.classList.toggle("active", role === roles);
+  }
+  state.minWrap.style.display = active === "related" ? "none" : "";
+  const min = minShared();
+  for (const [n, btn] of state.minButtons) {
+    btn.classList.toggle("active", n === min);
+  }
 }
 
 /**
@@ -316,13 +393,24 @@ async function rebuild(win: Window) {
       30,
       Math.min(1200, getNumPref("graph.maxNodes", 250)),
     );
-    const data = await buildGraph(items, graphMode(), {
+    const mode = graphMode();
+    const data = await buildGraph(items, mode, {
       maxNodes,
       centerItemID,
+      authorRoles: authorRoles(),
+      minShared: minShared(),
     });
     if (!panes.get(win)) return; // pane closed while building
     state.view?.setData(data);
     state.status.textContent = statusText(data);
+    if (mode === "author") {
+      // top up the OpenAlex authorship cache in the background; rebuild
+      // only when something new actually arrived (then everything is
+      // cached or backed off, so the second pass fetches nothing)
+      void ensureAuthorships(items).then((changed) => {
+        if (changed && panes.get(win)) void rebuild(win);
+      });
+    }
   } catch (e) {
     ztoolkit.log("[graph] build failed", e);
     state.status.textContent = getString("graph-failed");
@@ -373,8 +461,14 @@ function selectedItemID(win: Window): number | undefined {
   }
 }
 
-function selectNode(win: Window, node: ZNode) {
-  if (!node.itemID) return;
+function selectNode(win: Window, node: ZNode, sx?: number, sy?: number) {
+  if (!node.itemID) {
+    // an author has no item to select — clicking it opens its menu
+    if (node.kind === "author" && node.author && sx !== undefined) {
+      showNodeMenu(win, node, sx, sy ?? 0);
+    }
+    return;
+  }
   try {
     void (win as any).ZoteroPane?.selectItem(node.itemID);
   } catch (e) {
@@ -401,7 +495,16 @@ function showNodeMenu(win: Window, node: ZNode, x: number, y: number) {
   if (!popup) {
     popup = doc.createXULElement("menupopup");
     popup.id = id;
-    doc.getElementById("mainPopupSet")?.appendChild(popup);
+    // Zotero 10's main window has no #mainPopupSet — the old target left the
+    // popup unattached and the whole node menu silently dead. Use the same
+    // Zest popupset the status picker relies on, creating it on demand.
+    let set = doc.getElementById("zest-popupset");
+    if (!set) {
+      set = doc.createXULElement("popupset");
+      set.id = "zest-popupset";
+      doc.documentElement?.appendChild(set);
+    }
+    set.appendChild(popup);
   }
   while (popup.firstChild) popup.firstChild.remove();
   const add = (label: string, fn: () => void) => {
@@ -417,6 +520,8 @@ function showNodeMenu(win: Window, node: ZNode, x: number, y: number) {
       selectNode(win, node);
       void rebuild(win);
     });
+  } else if (node.kind === "author" && node.author) {
+    appendAuthorMenuItems(win, popup, { ...node.author, label: node.label });
   } else {
     add(node.label, () => undefined);
   }

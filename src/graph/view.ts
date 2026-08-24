@@ -9,6 +9,7 @@ import {
 } from "d3-force";
 import type { Simulation } from "d3-force";
 import type { ZEdge, ZGraphData, ZNode, ZNodeKind } from "./build";
+import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
  * SVG renderer for the Zest graph view. Pure rendering: takes ZGraphData,
@@ -22,8 +23,8 @@ import type { ZEdge, ZGraphData, ZNode, ZNodeKind } from "./build";
  */
 
 export interface GraphHandlers {
-  /** single click on a node */
-  onSelect?: (node: ZNode) => void;
+  /** single click on a node (screen coords let the host anchor a menu) */
+  onSelect?: (node: ZNode, screenX?: number, screenY?: number) => void;
   /** double click on a node */
   onOpen?: (node: ZNode) => void;
   /** right click on a node (screen coords for a context menu) */
@@ -211,6 +212,10 @@ export class GraphView {
   private labelBase = LABEL_MIN;
   /** hovered node while a neighbourhood focus is dimming the rest */
   private focusedId: string | null = null;
+  /** scale the labels were last laid out for — panning skips the rewrite */
+  private lastLabelScale = -1;
+  /** hover-intent timer: focus only after a short dwell, not on fly-over */
+  private hoverTimer = 0;
 
   constructor(container: HTMLElement, handlers: GraphHandlers) {
     this.container = container;
@@ -302,6 +307,17 @@ export class GraphView {
       c.setAttribute("r", String(nodeRadius(node)));
       c.style.cursor = "pointer";
       c.style.transition = "opacity 0.15s";
+      // native tooltip: items show their full title, authors show name +
+      // institution (small nodes have no caption until you zoom in)
+      const tip =
+        node.kind === "author"
+          ? [node.label, node.hint].filter(Boolean).join("\n")
+          : node.title || "";
+      if (tip) {
+        const tt = this.createSVG<SVGElement>("title");
+        tt.textContent = tip;
+        c.appendChild(tt);
+      }
       this.attachNodeEvents(c, node);
       this.nodeLayer.appendChild(c);
       this.nodeEls.set(node.id, c);
@@ -339,7 +355,7 @@ export class GraphView {
       this.labelLayer.appendChild(t);
       this.labelEls.set(node.id, t);
     }
-    this.updateLabelVisibility();
+    this.updateLabelVisibility(true);
 
     this.applyTheme();
 
@@ -409,6 +425,10 @@ export class GraphView {
   }
 
   destroy(): void {
+    if (this.hoverTimer) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = 0;
+    }
     this.stopSim();
     this.resizeObs?.disconnect();
     this.resizeObs = null;
@@ -527,8 +547,12 @@ export class GraphView {
    * roughly tracking the extra screen room), and each caption fades in
    * through the fractional tail of the budget. The centre is always on.
    */
-  private updateLabelVisibility() {
+  private updateLabelVisibility(force = false) {
     if (this.focusedId) return; // a hover focus owns the opacities right now
+    // panning calls this on every pointermove — only a zoom (scale change)
+    // is allowed to rewrite a few hundred label opacities
+    if (!force && this.scale === this.lastLabelScale) return;
+    this.lastLabelScale = this.scale;
     const budget = this.labelBase * Math.pow(this.scale, 1.6);
     for (const [id, t] of this.labelEls) {
       const rank = this.labelRank.get(id) ?? Infinity;
@@ -918,7 +942,7 @@ export class GraphView {
       ev.stopPropagation();
       if (dragOccurred) return;
       try {
-        this.handlers.onSelect?.(node);
+        this.handlers.onSelect?.(node, ev.screenX, ev.screenY);
       } catch (e) {
         try {
           ztoolkit.log("[graph] onSelect handler failed", e);
@@ -959,12 +983,22 @@ export class GraphView {
       // NEVER move the element in the DOM here: re-inserting the node
       // under the pointer fires pointerleave/pointerenter again and the
       // cursor flips grab ↔ pointer in a loop (visible as a flickering
-      // hand). Dim everything outside the neighbourhood instead.
-      this.focusNeighborhood(node);
+      // hand). Dim everything outside the neighbourhood instead — and only
+      // after a short dwell: sweeping the cursor across a dense graph must
+      // not rewrite every element's opacity at each node it crosses.
+      if (this.hoverTimer) clearTimeout(this.hoverTimer);
+      this.hoverTimer = setTimeout(() => {
+        this.hoverTimer = 0;
+        this.focusNeighborhood(node);
+      }, 120) as unknown as number;
     });
 
     circle.addEventListener("pointerleave", () => {
-      this.clearFocus();
+      if (this.hoverTimer) {
+        clearTimeout(this.hoverTimer);
+        this.hoverTimer = 0;
+      }
+      if (this.focusedId) this.clearFocus();
     });
   }
 
@@ -997,6 +1031,6 @@ export class GraphView {
       el.style.opacity = "";
       el.setAttribute("stroke-width", edgeWidth(edge));
     }
-    this.updateLabelVisibility();
+    this.updateLabelVisibility(true);
   }
 }

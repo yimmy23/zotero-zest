@@ -57,6 +57,8 @@ export interface AuthorPart {
   text: string;
   /** css suffix: "self" | "last" | "first" | "mark" | "" */
   kind?: "self" | "last" | "first" | "mark";
+  /** set on name parts (not separators/marks): whose name this is */
+  creator?: { family: string; given: string };
 }
 
 export interface FormattedAuthors {
@@ -344,7 +346,17 @@ export function formatAuthors(
     );
     const text = advisor ? formatName(advisor, options.rules) : "";
     return {
-      parts: text ? [{ text }] : [],
+      parts: text
+        ? [
+            {
+              text,
+              creator: advisor && {
+                family: advisor.family,
+                given: advisor.given,
+              },
+            },
+          ]
+        : [],
       sortKey: foldName(text),
       total: every.length,
     };
@@ -382,7 +394,7 @@ export function formatAuthors(
       kind = "last";
     else if (options.marks?.first && originalIndex === 0 && all.length > 1)
       kind = "first";
-    parts.push({ text, kind });
+    parts.push({ text, kind, creator: { family: c.family, given: c.given } });
     // the mark itself is a separate part, so it stays out of the sort key
     if (kind === "last" && options.marks?.last) {
       parts.push({ text: options.marks.last, kind: "mark" });

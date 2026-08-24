@@ -21,6 +21,9 @@ import {
 } from "../utils/items";
 import { formatAuthors } from "../authors/pipeline";
 import { panelAuthorOptions } from "../columns/authors";
+import { cachedAuthorships, findCachedAuthor } from "../graph/authorIdentity";
+import { openAuthorMenu } from "../authors/authorMenu";
+import { ensureAuthorships } from "../graph/authorFetch";
 import { getExtraBlock } from "../utils/extra";
 import { iconButton } from "../ui/icons";
 
@@ -201,13 +204,33 @@ function render(props: any) {
     const value = doc.createElement("span");
     value.className = "zest-info-value zest-info-authors";
     for (const part of authors.parts) {
-      if (!part.kind) {
+      if (!part.kind && !part.creator) {
         value.appendChild(doc.createTextNode(part.text));
         continue;
       }
       const span = doc.createElement("span");
-      span.className = `zest-author-${part.kind}`;
+      if (part.kind) span.className = `zest-author-${part.kind}`;
       span.textContent = part.text;
+      if (part.creator) {
+        // a name is a handle on the person: filter the library, search online
+        const creator = part.creator;
+        span.style.cursor = "pointer";
+        span.title = getString("author-click-tip");
+        span.addEventListener("click", (ev: MouseEvent) => {
+          ev.stopPropagation();
+          const oa = findCachedAuthor(item, creator.family, creator.given);
+          openAuthorMenu(
+            doc.defaultView as Window,
+            {
+              family: creator.family,
+              given: creator.given,
+              oaId: oa?.i,
+              label: part.text,
+            },
+            { screenX: ev.screenX, screenY: ev.screenY },
+          );
+        });
+      }
       value.appendChild(span);
     }
     value.title = getString("authors-cell-tip", {
@@ -215,6 +238,44 @@ function render(props: any) {
     });
     r.appendChild(value);
     body.appendChild(r);
+  }
+
+  /* ---------- affiliations (OpenAlex authorship cache) ----------
+     Zotero stores no creator affiliation, so this is the cached OpenAlex
+     data the author graph keys on. Nothing is fetched while rendering —
+     a missing record only queues the bounded background top-up. */
+  {
+    const oaRows = cachedAuthorships(item);
+    const insts: string[] = [];
+    for (const a of oaRows || []) {
+      if (a.a && !insts.includes(a.a)) insts.push(a.a);
+    }
+    if (insts.length) {
+      const r = row(doc, getString("info-affiliations"));
+      const value = doc.createElement("span");
+      value.className = "zest-info-value";
+      const MAX_SHOWN = 3;
+      const shown = insts
+        .slice(0, MAX_SHOWN)
+        .join(getString("info-affiliations-sep"));
+      value.textContent =
+        insts.length > MAX_SHOWN
+          ? getString("info-affiliations-more", {
+              args: { list: shown, count: insts.length - MAX_SHOWN },
+            })
+          : shown;
+      // who is where — the verification view
+      value.title = (oaRows || [])
+        .filter((a) => a.a)
+        .map((a) => `${a.n} — ${a.a}`)
+        .join("\n");
+      r.appendChild(value);
+      body.appendChild(r);
+    } else if (getPref("cite.useOpenAlex") !== false) {
+      void ensureAuthorships([item]).then((changed) => {
+        if (changed) refreshInfoSections();
+      });
+    }
   }
 
   /* ---------- venue + ranks ---------- */

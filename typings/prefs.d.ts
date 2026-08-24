@@ -44,6 +44,8 @@ declare namespace _ZoteroTypes {
       "extra.stripOnExport": boolean;
       "graph.visible": boolean;
       "graph.mode": string;
+      "graph.authorRoles": string;
+      "graph.minShared": number;
       "graph.height": number;
       "graph.maxNodes": number;
       "nestedTags.show": boolean;
