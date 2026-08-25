@@ -90,8 +90,9 @@ const NULL_TTL = 10 * 60 * 1000;
 
 /** hide credentials in anything we log or use as a cache key */
 export function redactURL(url: string): string {
+  // compound names too: access_token, client_secret, x_api_key, …
   return url.replace(
-    /([?&])(secret_?key|api_?key|apikey|token|password|mailto)=[^&]*/gi,
+    /([?&])([a-z0-9_-]*(?:secret|api_?key|apikey|token|password|passwd|mailto)[a-z0-9_-]*)=[^&#]*/gi,
     "$1$2=***",
   );
 }
@@ -212,7 +213,9 @@ class Http {
     options: RequestOptions = {},
   ): Promise<T | null> {
     const key = `${method} ${redactURL(url)} ${options.body || ""}`;
-    if (options.noCache || options.displayURL) {
+    // a secret-bearing response must never sit in the shared cache — today's
+    // call sites also pass noCache, but the flag alone has to be enough
+    if (options.noCache || options.displayURL || options.secret) {
       return this.doRequest(method, url, options);
     }
     const cached = this.cacheGet(key);

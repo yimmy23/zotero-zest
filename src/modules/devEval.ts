@@ -64,6 +64,8 @@ const TOKEN = "zest-dev-5c1e9a27";
 
 /** dev-only: capture console errors during startup with the debug-log tail at that moment */
 export const startupConsole: string[] = [];
+let ownProbe: unknown = null;
+
 export function installStartupConsoleProbe() {
   if (__env__ !== "development") return;
   try {
@@ -82,6 +84,7 @@ export function installStartupConsoleProbe() {
       },
     };
     Services.console.registerListener(listener as any);
+    ownProbe = listener;
     (Zotero as any).__zestConsoleProbe = listener;
   } catch {
     // ignore
@@ -92,11 +95,16 @@ export function installStartupConsoleProbe() {
 export function uninstallDevEval() {
   if (__env__ !== "development") return;
   try {
+    // per-copy: an in-place reload's new copy may have installed ITS probe
+    // in the shared slot already — only unregister our own
     const probe = (Zotero as any).__zestConsoleProbe;
-    if (probe) {
+    if (probe && probe === ownProbe) {
       Services.console.unregisterListener(probe);
       delete (Zotero as any).__zestConsoleProbe;
+    } else if (ownProbe) {
+      Services.console.unregisterListener(ownProbe as any);
     }
+    ownProbe = null;
   } catch {
     // ignore
   }

@@ -41,6 +41,18 @@ class ReadingTracker {
   private timer?: number;
   private notifierID?: string;
   private startedKeys = new Set<string>();
+
+  /** "Clear reading data" wipes the record; the session bookkeeping must
+   *  follow, or automation stays dead for that item until the tab closes */
+  forgetItemSession(item: Zotero.Item) {
+    try {
+      const key = keyOfItem(item);
+      this.startedKeys.delete(key);
+      this.lastProgressCheck.delete(key);
+    } catch {
+      // ignore
+    }
+  }
   private lastProgressCheck = new Map<string, number>();
   private idleService: any = null;
   running = false;

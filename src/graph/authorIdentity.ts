@@ -379,18 +379,18 @@ export function findCachedAuthor(
 
 // ---------------------------------------------------------------- resolver
 
-export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
-  const groups = new Map<string, { surRaw: string; occs: Occ[] }>();
-  const occCat = new Map<string, AuthorCategory>();
+type Groups = Map<string, { surRaw: string; occs: Occ[] }>;
 
-  for (const item of items) {
+/** phase 1 of the resolver: one item's creators into surname groups */
+function collectOccurrences(item: Zotero.Item, groups: Groups): void {
+  {
     let creators: ReturnType<Zotero.Item["getCreators"]>;
     try {
       creators = item.getCreators();
     } catch {
-      continue;
+      return;
     }
-    if (!creators?.length) continue;
+    if (!creators?.length) return;
     const rows = cachedAuthorships(item);
     creators.forEach((cr, idx) => {
       const last = (cr.lastName || "").trim();
@@ -418,7 +418,11 @@ export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
       g.occs.push(occ);
     });
   }
+}
 
+/** phase 2: cluster every group and wire the lookups */
+function finishResolver(groups: Groups): AuthorResolver {
+  const occCat = new Map<string, AuthorCategory>();
   const groupIndex = new Map<
     string,
     Array<{ cat: AuthorCategory; cluster: Cluster }>
@@ -526,6 +530,30 @@ export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
       return out;
     },
   };
+}
+
+export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
+  const groups: Groups = new Map();
+  for (const item of items) collectOccurrences(item, groups);
+  return finishResolver(groups);
+}
+
+/**
+ * Chunked variant for library-wide scans (the author filter): identical
+ * result, but the creator sweep yields to the event loop between chunks so
+ * a 50k-item library does not freeze the UI for the whole pass.
+ */
+export async function buildAuthorResolverAsync(
+  items: Zotero.Item[],
+  chunkSize = 800,
+): Promise<AuthorResolver> {
+  const groups: Groups = new Map();
+  let n = 0;
+  for (const item of items) {
+    collectOccurrences(item, groups);
+    if (++n % chunkSize === 0) await Zotero.Promise.delay(0);
+  }
+  return finishResolver(groups);
 }
 
 /**

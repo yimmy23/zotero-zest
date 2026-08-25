@@ -24,6 +24,7 @@ import { panelAuthorOptions } from "../columns/authors";
 import { cachedAuthorships, findCachedAuthor } from "../graph/authorIdentity";
 import { openAuthorMenu } from "../authors/authorMenu";
 import { ensureAuthorships } from "../graph/authorFetch";
+import { setTimeout, clearTimeout } from "../utils/timers";
 import { getExtraBlock } from "../utils/extra";
 import { iconButton } from "../ui/icons";
 
@@ -113,6 +114,10 @@ export function registerInfoSection() {
 }
 
 export function unregisterInfoSection() {
+  if (affilTimer) {
+    clearTimeout(affilTimer);
+    affilTimer = undefined;
+  }
   refreshers.clear();
   if (!sectionID) return;
   try {
@@ -121,6 +126,18 @@ export function unregisterInfoSection() {
     ztoolkit.log("[info] unregister failed", e);
   }
   sectionID = false;
+}
+
+let affilTimer: ReturnType<typeof setTimeout> | undefined;
+
+function queueAuthorshipTopUp(item: Zotero.Item) {
+  if (affilTimer) clearTimeout(affilTimer);
+  affilTimer = setTimeout(() => {
+    affilTimer = undefined;
+    void ensureAuthorships([item]).then((changed) => {
+      if (changed) refreshInfoSections();
+    });
+  }, 400);
 }
 
 export function refreshInfoSections() {
@@ -272,9 +289,10 @@ function render(props: any) {
       r.appendChild(value);
       body.appendChild(r);
     } else if (getPref("cite.useOpenAlex") !== false) {
-      void ensureAuthorships([item]).then((changed) => {
-        if (changed) refreshInfoSections();
-      });
+      // never fetch from a render: arrowing through the list must not fire
+      // one request per selection. Only the item the user settles on for
+      // 400 ms gets the one bounded top-up (same idea as the rank queue).
+      queueAuthorshipTopUp(item);
     }
   }
 

@@ -33,17 +33,17 @@ const PATTERNS: Array<{
 }> = [
   {
     // ours / citation-tally
-    re: /^Citations:\s*(\d+)\s*(?:\(([^)]+)\))?\s*(?:\[([\d-]+)\])?/im,
+    re: /^Citations:\s*(\d+)\s*(?:\(([^)]+)\))?\s*(?:\[([\d-]+)\])?\s*$/im,
     read: (m) => ({ count: Number(m[1]), source: m[2], date: m[3] }),
   },
   {
     // eschnett gen 2: "42 citations (Crossref) [2026-07-28]"
-    re: /^(\d+)\s+citations?\s*(?:\(([^)]+)\))?\s*(?:\[([\d-]+)\])?/im,
+    re: /^(\d+)\s+citations?\s*(?:\(([^)]+)\))?\s*(?:\[([\d-]+)\])?\s*$/im,
     read: (m) => ({ count: Number(m[1]), source: m[2], date: m[3] }),
   },
   {
     // eschnett gen 1: "Citations (Crossref): 42"
-    re: /^Citations\s*\(([^)]+)\):\s*(\d+)/im,
+    re: /^Citations\s*\(([^)]+)\):\s*(\d+)\s*$/im,
     read: (m) => ({ count: Number(m[2]), source: m[1] }),
   },
   {
@@ -133,6 +133,9 @@ export function isOurCitationLine(line: string): boolean {
  * inside Extra — is preserved verbatim.
  */
 export function withCitationLine(extra: string, line: string): string {
+  // same rule as utils/extra.ts: a CRLF Extra stays CRLF — rejoining with
+  // "\n" would rewrite every line the docstring promises to leave alone
+  const eol = (extra || "").includes("\r\n") ? "\r\n" : "\n";
   const lines = (extra || "").split(/\r?\n/);
   const out: string[] = [];
   let placed = false;
@@ -152,5 +155,5 @@ export function withCitationLine(extra: string, line: string): string {
     while (out.length && !out[out.length - 1].trim()) out.pop();
     out.push(line);
   }
-  return out.join("\n");
+  return out.join(eol);
 }

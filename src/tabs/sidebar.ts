@@ -105,6 +105,10 @@ export function showSidebar(win: Window) {
     return;
   }
 
+  // leftover from an in-place upgrade (the outgoing copy removes its own
+  // bar only when its shutdown finally runs)
+  doc.getElementById(`${config.addonRef}-tabbar`)?.remove();
+
   const box = doc.createXULElement("vbox") as unknown as XULish;
   box.id = `${config.addonRef}-tabbar`;
   box.classList.add("zest-tabbar");

@@ -50,6 +50,7 @@ import {
   refreshAllTagTrees,
 } from "./tags/nestedTree";
 import { clearItemFilters, clearWindowFilters } from "./views/itemFilter";
+import { clearAuthorFilter, clearAllAuthorFilters } from "./authors/authorMenu";
 import { clearTagCache } from "./tags/scope";
 import {
   installRevealGuard,
@@ -250,6 +251,7 @@ async function onStartup() {
     await readingStore.load();
   })();
   step("db", () => storeReady);
+  startupSettled = Promise.allSettled([configReady, storeReady]);
   // Register columns only once the main item tree is mounted: each
   // registerColumn() makes Zotero refresh every ItemTree instance, and an
   // instance without a rendered `tree` throws inside Zotero's notify handler
@@ -498,14 +500,29 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   uninstallToolbarMenu(win);
   hideSidebar(win, false);
   clearWindowFilters(win);
+  clearAuthorFilter(win);
   uninstallTitleDecor(win);
   unregisterStyles(win);
 }
+
+/** lets shutdown wait for the async startup inits instead of racing them */
+let startupSettled: Promise<unknown> | undefined;
 
 async function onShutdown() {
   // first thing: nothing that is still awaiting a startup wait may install
   // anything from here on
   addon.data.alive = false;
+  // …and teardown must not overlap a still-running startup init (a fast
+  // disable right after enable): wait for the loads to settle, bounded so a
+  // hung init can never wedge shutdown
+  try {
+    await Promise.race([
+      startupSettled ?? Promise.resolve(),
+      Zotero.Promise.delay(3000),
+    ]);
+  } catch {
+    // allSettled never rejects; belt and braces
+  }
   if (pluginObserver) {
     try {
       (Zotero as any).Plugins?.removeObserver?.(pluginObserver);
@@ -526,6 +543,7 @@ async function onShutdown() {
   uninstallAllCollectionCounts();
   uninstallAllRevealGuards();
   clearItemFilters();
+  clearAllAuthorFilters();
   uninstallGraphPanes();
   uninstallAllToolbarMenus();
   uninstallSidebars();
@@ -568,6 +586,14 @@ async function onShutdown() {
 
 /** APP_SHUTDOWN: only persist — Zotero closes its DB right after us. */
 async function onAppShutdown() {
+  try {
+    await Promise.race([
+      startupSettled ?? Promise.resolve(),
+      Zotero.Promise.delay(3000),
+    ]);
+  } catch {
+    // never wedge app shutdown
+  }
   try {
     readingTracker.stop();
     await readingStore.shutdown();

@@ -208,6 +208,12 @@ class ReadingStore {
       warnDBUnavailable(e);
     }
     this.loaded = true;
+    // a load that outlived shutdown (fast disable) must not re-arm the timer
+    try {
+      if (!(addon as any)?.data?.alive) return;
+    } catch {
+      return;
+    }
     this.startFlushTimer();
     this.emit([...this.items.keys()]);
   }

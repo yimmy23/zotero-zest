@@ -26,7 +26,11 @@ src/
                                (maintainer's call, 2026-08-23)
   panes/                       item-pane sections, statistics window, annotation matrix
   tabs/                        vertical tab sidebar + groups/sessions model
-  graph/                       d3-force panel
+  graph/                       d3-force panel + author identity (authorIdentity: name
+                               clustering + cached OpenAlex ids; authorFetch: bounded
+                               authorship top-up); authors/authorMenu.ts is the click menu
+                               (library filter + online search) both the panel and the
+                               graph open
   core/                        config store, JSON caches, sqlite, HTTP, secrets
   ui/                          stylesheet + accent tokens, icon set, palette, batch runner
   utils/                       Extra lines, CSV, guard, prefs, timers, locale, item helpers
@@ -117,6 +121,11 @@ These are not style preferences. Breaking one is a bug even if everything still 
   the old value), `renderCell` reads need `redrawAll`. Adding a control to `preferences.xhtml` without
   adding its pref there produces a setting that silently does nothing until something else invalidates
   the tree.
+- **Fixing a class of bug means sweeping its siblings**: after any fix, `grep -rn` the repo for
+  the same shape and fix or report every other instance (the 2026-08-25 audit found three shipped
+  fixes — CRLF preservation, `onItemChange` visibility, `keepZero` — whose twins were missed).
+  Method wrappers use `utils/wrap.ts` (per-copy alive set) — never restore "the original"
+  unconditionally.
 - Errors are logged with `ztoolkit.log("[area] what failed", e)` and never rethrown into Zotero's own
   call stacks.
 

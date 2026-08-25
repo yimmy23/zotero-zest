@@ -22,7 +22,22 @@ function prefKeyFor(name: SecretName): string {
   return `secret.${name}` as const;
 }
 
+/** set while the PREF holds the newest value: a failed login-manager write
+ *  leaves the old entry behind, and without this marker a later unlock
+ *  would silently resurrect the stale key over the newer fallback */
+function prefWinsKey(name: SecretName): string {
+  return `secret.${name}PrefWins` as const;
+}
+
 export async function getSecret(name: SecretName): Promise<string> {
+  try {
+    if (getPref(prefWinsKey(name) as any)) {
+      const v = getPref(prefKeyFor(name) as any);
+      return typeof v === "string" ? v : "";
+    }
+  } catch {
+    // fall through to the login manager
+  }
   try {
     const logins = await Services.logins.searchLoginsAsync({
       origin: ORIGIN,
@@ -73,13 +88,17 @@ export async function setSecret(
     // never leave a copy behind in prefs
     try {
       Zotero.Prefs.clear(`${config.prefsPrefix}.${prefKeyFor(name)}`, true);
+      Zotero.Prefs.clear(`${config.prefsPrefix}.${prefWinsKey(name)}`, true);
     } catch {
       // no pref set
     }
     return "login-manager";
   } catch {
-    // last resort: a pref, and the settings pane warns about it
+    // last resort: a pref, and the settings pane warns about it. The marker
+    // makes the pref authoritative — the login manager may still hold the
+    // OLD value (its removal just failed) and must not win a later read.
     setPref(prefKeyFor(name) as any, clean);
+    setPref(prefWinsKey(name) as any, true);
     return "prefs";
   }
 }

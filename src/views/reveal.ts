@@ -1,4 +1,5 @@
 import { activeItemFilters, refreshItemView } from "./itemFilter";
+import { createWrapGuard } from "../utils/wrap";
 import { clearSelection as clearTagSelection } from "../tags/nestedTree";
 
 /**
@@ -19,7 +20,11 @@ import { clearSelection as clearTagSelection } from "../tags/nestedTree";
 interface Wrapped {
   pane: any;
   original: (...args: any[]) => any;
+  /** this copy's wrapper — uninstall restores only over ITS OWN function */
+  wrapper: (...args: any[]) => any;
 }
+
+const wrapGuard = createWrapGuard("__zestRevealAlive");
 
 const wrapped = new Map<Window, Wrapped>();
 
@@ -37,10 +42,9 @@ export function installRevealGuard(win: Window) {
   if (wrapped.has(win)) return;
   const pane = (win as any).ZoteroPane;
   if (!pane || typeof pane.selectItems !== "function") return;
-  // undo a wrapper left by a previous plugin instance (hot reload)
-  let base = pane.selectItems;
-  let hops = 0;
-  while (base?.__zestOriginal && hops++ < 5) base = base.__zestOriginal;
+  // unwind only wrappers whose copy has retired; a live copy's wrapper
+  // stays (same rule as itemFilter / collectionCounts)
+  const base = wrapGuard.stripStale(pane.selectItems);
   pane.selectItems = base;
 
   const original = base;
@@ -57,9 +61,9 @@ export function installRevealGuard(win: Window) {
       return result;
     }
   };
-  (wrapper as any).__zestOriginal = original;
+  wrapGuard.mark(wrapper, original);
   pane.selectItems = wrapper;
-  wrapped.set(win, { pane, original });
+  wrapped.set(win, { pane, original, wrapper });
 }
 
 /** clear every Zest filter in this window, UI state included */
@@ -77,7 +81,9 @@ export function uninstallRevealGuard(win: Window) {
   if (!entry) return;
   wrapped.delete(win);
   try {
-    if (entry.pane.selectItems?.__zestOriginal === entry.original) {
+    // referential identity: two copies' wrappers share the same base, so
+    // comparing __zestOriginal let one copy strip the other's live wrapper
+    if (entry.pane.selectItems === entry.wrapper) {
       entry.pane.selectItems = entry.original;
     }
   } catch {
@@ -87,6 +93,7 @@ export function uninstallRevealGuard(win: Window) {
 
 export function uninstallAllRevealGuards() {
   for (const win of [...wrapped.keys()]) uninstallRevealGuard(win);
+  wrapGuard.retire();
 }
 
 /** exported for the probe */

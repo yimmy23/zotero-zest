@@ -271,6 +271,21 @@ function warnConfigDamaged(path: string, e: unknown) {
   ztoolkit.log(`[zest] config unreadable, writes disabled: ${path}`, e);
 }
 
+function warnConfigBackedUp(backupName: string) {
+  try {
+    new ztoolkit.ProgressWindow(config.addonName, { closeTime: 15000 })
+      .createLine({
+        text: getString("config-damaged-backup", {
+          args: { name: backupName },
+        }),
+        type: "fail",
+      })
+      .show();
+  } catch {
+    // UI is optional here
+  }
+}
+
 export class ConfigStore {
   private damaged = false;
   private data: ZestConfig = { ...EMPTY };
@@ -293,11 +308,32 @@ export class ConfigStore {
     } catch (e) {
       // The file exists but could not be read or parsed — a hand edit with a
       // trailing comma, or a sync tool's conflicted copy. Coming up empty is
-      // survivable; OVERWRITING it with the empty config is not, so the store
-      // goes read-only until the user deals with it.
-      this.damaged = true;
+      // survivable; OVERWRITING it with the empty config is not. Move the
+      // unreadable file aside (kept for hand repair) so THIS session's edits
+      // still persist — the old behaviour silently discarded every write for
+      // the rest of the session after one 12-second toast. Only when even the
+      // rename fails does the store go read-only, and then every dropped
+      // write re-warns (throttled) instead of failing silently.
       this.data = { ...EMPTY };
-      warnConfigDamaged(this.path, e);
+      let backup: string;
+      try {
+        const stamp = new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace(/[:T]/g, "-");
+        backup = `${this.path}.damaged-${stamp}`;
+        await IOUtils.move(this.path, backup);
+      } catch (moveErr) {
+        backup = "";
+        ztoolkit.log("[zest] could not set aside the damaged config", moveErr);
+      }
+      if (backup) {
+        warnConfigBackedUp(PathUtils.filename(backup));
+        ztoolkit.log(`[zest] damaged config backed up: ${backup}`, e);
+      } else {
+        this.damaged = true;
+        warnConfigDamaged(this.path, e);
+      }
     }
     this.loaded = true;
     // readers that memoised the empty default before the file resolved must be
@@ -349,8 +385,19 @@ export class ConfigStore {
     return this.damaged;
   }
 
+  private lastDropWarn = 0;
+
   async flush() {
-    if (!this.loaded || !this.path || this.damaged) return;
+    if (!this.loaded || !this.path) return;
+    if (this.damaged) {
+      // read-only fallback: make the loss visible, not silent
+      const now = Date.now();
+      if (now - this.lastDropWarn > 10 * 60 * 1000) {
+        this.lastDropWarn = now;
+        warnConfigDamaged(this.path, "write discarded");
+      }
+      return;
+    }
     await Zotero.File.putContentsAsync(
       this.path,
       JSON.stringify(this.data, null, 1),
@@ -367,6 +414,8 @@ export class ConfigStore {
     } catch (e) {
       ztoolkit.log("[zest] config flush on shutdown failed", e);
     }
+    // a dangling init() must not notify into a torn-down plugin
+    this.listeners.clear();
   }
 }
 

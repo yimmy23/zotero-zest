@@ -349,3 +349,6 @@ graph-roles-firstlast-tip = 只看第一作者与末位作者（通讯位惯例�
 graph-roles-all = 全部作者
 graph-roles-all-tip = 所有署名作者都进入图谱
 graph-min-tip = 至少 { $count } 篇条目共享的作者 / 标签 / 分类才显示
+config-damaged-backup = 配置文件损坏，已备份为 { $name }；本次从空白配置开始，新的修改会正常保存
+migrate-idmatch-confirm = 有 { $count } 条旧记录按本机数据库编号匹配条目——仅在同一台机器、同一配置下可靠；换过机器或重建过数据库会把阅读时长算到无关条目上。仍要导入这些记录吗？（取消则跳过它们，其余照常导入）
+tags-rename-skipped = { $count } 个标签的显示名无法对应回原始标签，已跳过

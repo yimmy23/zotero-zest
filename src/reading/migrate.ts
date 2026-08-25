@@ -34,6 +34,9 @@ export interface LegacyRecord {
   source: { kind: "note" | "note-v1" | "file"; ref: string };
   offsetFixed?: boolean;
   unresolved?: boolean;
+  /** matched via the LOCAL numeric itemID — unreliable on any other
+   *  machine/profile or after a database rebuild */
+  viaItemID?: boolean;
 }
 
 export interface ScanReport {
@@ -206,8 +209,11 @@ async function scanFile(
     for (const [k, v] of Object.entries<any>(data)) {
       let key = k;
       let lib = userLib;
+      let viaItemID = false;
       if (/^\d+$/.test(k)) {
-        // G3a: keyed by item.id (only meaningful on this machine)
+        // G3a: keyed by item.id — Zotero's LOCAL autoincrement, meaningless
+        // on another machine/profile or after a DB rebuild, where it can
+        // resolve to an unrelated item. Flag it; the UI asks before merging.
         const item = Zotero.Items.get(Number(k)) as Zotero.Item | false;
         if (!item) {
           report.skipped++;
@@ -215,10 +221,12 @@ async function scanFile(
         }
         key = item.key;
         lib = item.libraryID;
+        viaItemID = true;
       }
       if (!/^[A-Z0-9]{8}$/.test(key)) continue;
       const rec = recordFromPayload(v, key, lib, { kind: "file", ref: path });
       if (!rec) continue;
+      if (viaItemID) rec.viaItemID = true;
       report.parsed++;
       if (rec.offsetFixed) report.offsetFixed++;
       out.push(rec);
@@ -343,7 +351,8 @@ export async function migrateLegacyUI() {
   })
     .createLine({ text: getString("migrate-scanning"), type: "default" })
     .show();
-  const { records, report } = await scanLegacy();
+  // eslint-disable-next-line prefer-const
+  let { records, report } = await scanLegacy();
   pw.close();
   if (!records.length) {
     Services.prompt.alert(
@@ -354,6 +363,24 @@ export async function migrateLegacyUI() {
       }),
     );
     return;
+  }
+  // records matched by the local numeric itemID can point at the wrong
+  // paper on any other machine — merging those silently is data corruption
+  const idMatched = records.filter((r) => r.viaItemID).length;
+  if (idMatched) {
+    const keep = Services.prompt.confirm(
+      win as any,
+      getString("migrate-title"),
+      getString("migrate-idmatch-confirm", { args: { count: idMatched } }),
+    );
+    if (!keep) {
+      records = records.filter((r) => !r.viaItemID);
+      report.skipped += idMatched;
+      report.details.push(`id-matched records skipped by user: ${idMatched}`);
+      if (!records.length) return;
+    } else {
+      report.details.push(`id-matched records accepted: ${idMatched}`);
+    }
   }
   const hours = (report.totalSeconds / 3600).toFixed(1);
   const mode = askMergeMode(records.length);

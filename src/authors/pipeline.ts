@@ -168,11 +168,6 @@ export function normalizeCreator(raw: any, role: string): NormalizedCreator {
 }
 
 /** the thesis advisor, if the item has one (first contributor) */
-export function advisorOf(item: Zotero.Item): NormalizedCreator | undefined {
-  const all = resolveRoles(item, { include: "all" });
-  return all.find((c) => c.role === "contributor" || c.role === "advisor");
-}
-
 /* ------------------------------------------------------------------ */
 /* 2. select                                                           */
 /* ------------------------------------------------------------------ */
@@ -291,6 +286,8 @@ function isSelf(c: NormalizedCreator, self: string[] | undefined): boolean {
   const forms = new Set(
     [
       family,
+      // a creator with everything in "given" (empty family) must still match
+      family ? "" : given,
       given && `${family} ${given}`,
       given && `${given} ${family}`,
       // CJK names are drawn without the space ("王小明"), and that is what the
@@ -357,7 +354,9 @@ export function formatAuthors(
             },
           ]
         : [],
-      sortKey: foldName(text),
+      // raw family+given, like every other preset — the display-formatted
+      // text would collapse distinct advisors under initials rules
+      sortKey: advisor ? foldName(`${advisor.family} ${advisor.given}`) : "",
       total: every.length,
     };
   }

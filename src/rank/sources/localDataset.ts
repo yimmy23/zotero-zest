@@ -50,10 +50,6 @@ function filePath(id: string): string {
   return PathUtils.join(dirPath(), `${id}.json`);
 }
 
-export function datasetsReady(): boolean {
-  return ready;
-}
-
 /** resolves when the datasets are in memory (the lookup queue waits on it) */
 let loading: Promise<void> | undefined;
 
@@ -240,7 +236,10 @@ export function parseCsvRows(text: string): string[][] {
       } else cell += c;
       continue;
     }
-    if (c === '"') quoted = true;
+    if (c === '"' && cell === "") quoted = true;
+    // RFC 4180: a bare quote inside an unquoted cell is literal text —
+    // flipping into quoted mode swallowed the rest of the row silently
+    else if (c === '"') cell += '"';
     else if (c === "," || c === "\t") {
       row.push(cell);
       cell = "";

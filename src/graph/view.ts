@@ -39,11 +39,14 @@ function edgeEndpointIds(edge: ZEdge): [string, string] {
   return [a, b];
 }
 
-/** stroke width from the edge weight (co-occurrence count in author/tag modes) */
-function edgeWidth(edge: ZEdge): string {
-  return String(
-    Math.min(3, 0.9 + 0.5 * Math.log2(1 + Math.max(0, edge.weight))),
-  );
+/**
+ * Stroke width of an edge. Every edge the builders emit today carries
+ * weight 1 (item→category links and pairwise relations alike), so this is a
+ * constant — kept as a function so a future weighted projection changes one
+ * place instead of four call sites.
+ */
+function edgeWidth(_edge: ZEdge): string {
+  return "1.4";
 }
 
 interface ComponentInfo {
@@ -466,6 +469,12 @@ export class GraphView {
   }
 
   private clearScene() {
+    // a pending hover focus must not fire against the next scene: the stale
+    // node's neighbourhood matches nothing and the whole graph stays dimmed
+    if (this.hoverTimer) {
+      clearTimeout(this.hoverTimer);
+      this.hoverTimer = 0;
+    }
     this.stopSim();
     this.edgeLayer.textContent = "";
     this.nodeLayer.textContent = "";

@@ -155,18 +155,26 @@ export function installTagTree(win: Window) {
   const native = doc.getElementById("zotero-tag-selector");
   if (!container || !native) {
     // The tag selector is created after the pane and may be collapsed at
-    // startup; retry for a while instead of silently never appearing.
+    // startup; retry for a while instead of silently never appearing. The
+    // counter must survive the retries (deleting it inside the callback made
+    // the cap unreachable and the chain retried forever), and a closed or
+    // torn-down window (its pendingInstalls entry cleared) ends the chain.
     const attempts = pendingInstalls.get(win) ?? 0;
-    if (attempts < 40) {
+    if (attempts < 40 && !win.closed) {
       pendingInstalls.set(win, attempts + 1);
       setTimeout(() => {
-        pendingInstalls.delete(win);
-        installTagTree(win);
+        if (pendingInstalls.has(win) && !win.closed) installTagTree(win);
       }, 500);
+    } else {
+      pendingInstalls.delete(win);
     }
     return;
   }
   pendingInstalls.delete(win);
+
+  // leftover from an in-place upgrade: the outgoing copy's tree may still be
+  // mounted here until its own shutdown runs
+  doc.getElementById(`${config.addonRef}-tag-tree`)?.remove();
 
   const root = doc.createElement("div");
   root.id = `${config.addonRef}-tag-tree`;
@@ -305,6 +313,9 @@ export function installTagTree(win: Window) {
 }
 
 export function uninstallTagTree(win: Window) {
+  // a window may be torn down while still waiting for its tag selector —
+  // clearing the entry stops the pending retry chain
+  pendingInstalls.delete(win);
   const state = states.get(win);
   if (!state) return;
   states.delete(win);
@@ -344,6 +355,7 @@ export function uninstallTagTree(win: Window) {
 }
 
 export function uninstallAllTagTrees() {
+  pendingInstalls.clear();
   for (const win of [...states.keys()]) uninstallTagTree(win);
   // nothing left to filter, so the cached tag lists are dead weight
   clearTagCache();

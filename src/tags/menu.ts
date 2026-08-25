@@ -161,6 +161,7 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
   const from = ctx.node.name;
   const matcher = parseTagRule(getPref("textTags.match") as string);
   const pairs: Array<[string, string]> = [];
+  let unrewritable = 0;
   for (const tag of names) {
     const shown = matcher.test(tag) ?? tag;
     let rewritten: string | null = null;
@@ -172,6 +173,26 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
       ? tag.slice(0, tag.length - shown.length) + rewritten
       : tag.replace(shown, rewritten);
     if (real !== tag) pairs.push([tag, real]);
+    // a multi-capture-group rule can display text that is not a substring of
+    // the real tag — such a tag cannot be rewritten mechanically, and
+    // dropping it silently made the whole action look broken
+    else unrewritable++;
+  }
+  if (unrewritable) {
+    try {
+      new ztoolkit.ProgressWindow(getString("tags-rename-title"), {
+        closeTime: 6000,
+      })
+        .createLine({
+          text: getString("tags-rename-skipped", {
+            args: { count: unrewritable },
+          }),
+          type: "fail",
+        })
+        .show();
+    } catch {
+      // toast is best-effort
+    }
   }
   if (!pairs.length) return;
 
@@ -191,6 +212,9 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
     getString("tags-rename-title"),
     pairs,
     async ([oldName, newName]) => {
+      // the menu context is a snapshot; a sync or another client may have
+      // removed the tag while the confirm dialog was open
+      if (!Zotero.Tags.getID(oldName)) return;
       await Zotero.Tags.rename(ctx.libraryID, oldName, newName);
     },
     { confirmMessage: message },

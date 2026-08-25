@@ -72,6 +72,22 @@ export function registerAnnotSection() {
         // window gone
       }
     },
+    // Zotero skips hidden panes in its render loop, so a section that hid
+    // itself inside onRender (attachment selected, multi-select, reader tab)
+    // would never render again; visibility has to be decided here, where
+    // every item change lands — same fix as infoSection.ts
+    onItemChange: (props: any) => {
+      try {
+        const item = props?.item;
+        props?.setEnabled?.(
+          props?.tabType !== "reader" &&
+            item instanceof Zotero.Item &&
+            item.isRegularItem(),
+        );
+      } catch (e) {
+        ztoolkit.log("[annots] item change failed", e);
+      }
+    },
     onRender: (props: any) => {
       try {
         renderCards(props);

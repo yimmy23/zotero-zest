@@ -349,3 +349,6 @@ graph-roles-firstlast-tip = Only first and last authors (the corresponding slot)
 graph-roles-all = All authors
 graph-roles-all-tip = Every listed author joins the graph
 graph-min-tip = Show only authors / tags / collections shared by at least { $count } items
+config-damaged-backup = The config file was unreadable — it was set aside as { $name }; this session starts from an empty config and new changes save normally
+migrate-idmatch-confirm = { $count } legacy records match items by this machine's database ID — reliable only on the same machine and profile; after a move or database rebuild they can credit reading time to unrelated items. Import them anyway? (Cancel skips them; everything else imports as usual)
+tags-rename-skipped = { $count } tags could not be mapped back from their display name and were skipped

@@ -119,6 +119,11 @@ export function showGraphPane(win: Window) {
     return;
   }
 
+  // an in-place upgrade can reach here while the outgoing copy's pane is
+  // still mounted — same defence as the toolbar button's leftover check
+  doc.getElementById(`${config.addonRef}-graph-pane`)?.remove();
+  doc.getElementById(`${config.addonRef}-graph-splitter`)?.remove();
+
   const splitter = doc.createXULElement("splitter") as unknown as XULElement;
   splitter.id = `${config.addonRef}-graph-splitter`;
   splitter.setAttribute("orient", "vertical");
@@ -400,7 +405,9 @@ async function rebuild(win: Window) {
       authorRoles: authorRoles(),
       minShared: minShared(),
     });
-    if (!panes.get(win)) return; // pane closed while building
+    // closed while building — or closed AND reopened, which makes a fresh
+    // PaneState under the same window key; only our own state may proceed
+    if (panes.get(win) !== state) return;
     state.view?.setData(data);
     state.status.textContent = statusText(data);
     if (mode === "author") {

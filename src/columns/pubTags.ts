@@ -110,7 +110,9 @@ export function publicationTagsColumn(): ColumnSpec {
         return spec
           .map(({ field, desc }) => {
             const v = valueOf(rec, field);
-            if (!v) return "9'9999999";
+            // "~" (0x7E) sorts after every digit, so a missing field lands
+            // behind even present-but-unparsable values ("99999999")
+            if (!v) return "~9999999";
             const key = sortKeyFor(v.field, v.value);
             return desc ? invert(key) : key;
           })
@@ -185,7 +187,8 @@ export function impactFactorColumn(): ColumnSpec {
       const rec = requestJournalRecord(item);
       const field = String(getPref("if.field") || "sciif");
       const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
-      return n === undefined ? "" : numKey(Math.round(n * 1000));
+      // keepZero: OpenAlex legitimately reports 0.00 for tiny venues
+      return n === undefined ? "" : numKey(Math.round(n * 1000), 8, true);
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "if");

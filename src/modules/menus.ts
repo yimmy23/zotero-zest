@@ -1,4 +1,6 @@
 import { config } from "../../package.json";
+import { forgetAutoStatus } from "../reading/statusAuto";
+import { readingTracker } from "../reading/tracker";
 import { getLocaleID, getString } from "../utils/locale";
 import { READ_STATUSES } from "../reading/status";
 import { setStatusForAll } from "../reading/statusMenu";
@@ -151,7 +153,13 @@ async function clearReadingData(items: Zotero.Item[]) {
   );
   if (!ok) return;
   try {
-    for (const it of items) await readingStore.clearItem(it.libraryID, it.key);
+    for (const it of items) {
+      await readingStore.clearItem(it.libraryID, it.key);
+      // the record is gone; the session caches must forget it too, or the
+      // auto status never re-triggers while the tab stays open
+      forgetAutoStatus(it);
+      readingTracker.forgetItemSession(it);
+    }
   } catch (e) {
     ztoolkit.log("[menus] clear reading data failed", e);
     Services.prompt.alert(

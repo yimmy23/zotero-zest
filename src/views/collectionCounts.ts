@@ -1,4 +1,5 @@
 import { getPref, getNumPref } from "../utils/prefs";
+import { createWrapGuard } from "../utils/wrap";
 import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
@@ -22,7 +23,11 @@ interface Patched {
   win: Window;
   tree: any;
   original: (...args: any[]) => any;
+  /** this copy's wrapper — uninstall restores only over ITS OWN function */
+  wrapped: (...args: any[]) => any;
 }
+
+const wrapGuard = createWrapGuard("__zestCountsAlive");
 
 const patched = new Map<Window, Patched>();
 const counts = new Map<number, { direct: number; total: number }>();
@@ -168,10 +173,9 @@ export function installCollectionCounts(win: Window) {
     ztoolkit.log("[counts] collectionsView.renderItem unavailable");
     return;
   }
-  // undo a wrapper left by a previous plugin instance (hot reload / upgrade)
-  let base = tree.renderItem;
-  let guard = 0;
-  while (base?.__zestOriginal && guard++ < 5) base = base.__zestOriginal;
+  // unwind only wrappers whose copy has RETIRED — a live copy's wrapper
+  // (the outgoing one during an in-place upgrade) must stay in the chain
+  const base = wrapGuard.stripStale(tree.renderItem);
   tree.renderItem = base;
   const original = base.bind(tree);
   const wrapped = (...args: any[]) => {
@@ -197,9 +201,9 @@ export function installCollectionCounts(win: Window) {
     }
     return row;
   };
-  (wrapped as any).__zestOriginal = base;
+  wrapGuard.mark(wrapped, base);
   tree.renderItem = wrapped;
-  patched.set(win, { win, tree, original: base });
+  patched.set(win, { win, tree, original: base, wrapped });
   startWatch();
   invalidateCounts();
   redraw(tree);
@@ -216,7 +220,11 @@ export function uninstallCollectionCounts(win: Window) {
   }
   patched.delete(win);
   try {
-    entry.tree.renderItem = entry.original;
+    // restore only over our own wrapper; anything else (another plugin, the
+    // incoming copy of an upgrade) owns the slot now
+    if (entry.tree.renderItem === entry.wrapped) {
+      entry.tree.renderItem = entry.original;
+    }
     // The virtualized table reuses row nodes, so restoring renderItem does not
     // remove badges that are already in the DOM — take them out ourselves.
     sweepBadgesIn(entry.win);
@@ -232,6 +240,9 @@ export function uninstallCollectionCounts(win: Window) {
 
 export function uninstallAllCollectionCounts() {
   for (const win of [...patched.keys()]) uninstallCollectionCounts(win);
+  // this copy stops wrapping for good — a newer copy may now strip our
+  // leftovers safely
+  wrapGuard.retire();
 }
 
 /** react to the enable/mode prefs */

@@ -6,7 +6,8 @@ import {
   refreshItemView,
   setItemFilter,
 } from "../views/itemFilter";
-import { buildAuthorResolver } from "../graph/authorIdentity";
+import { buildAuthorResolverAsync } from "../graph/authorIdentity";
+import type { AuthorResolver } from "../graph/authorIdentity";
 import type { AuthorLookupRef } from "../graph/authorIdentity";
 
 /**
@@ -40,13 +41,32 @@ function armAutoClear(win: Window) {
   try {
     const target = (win as any).ZoteroPane?.collectionsView?.onSelect;
     if (!target?.addListener) return;
+    const armedAt = Date.now();
     const listener = guard("author filter auto-clear", () => {
+      // the collection switch WE made (over to the library root) can settle
+      // after the fixed post-switch delay on a slow library — its own
+      // onSelect must not wipe the filter that was just applied
+      if (Date.now() - armedAt < 1000) return;
       clearAuthorFilter(win);
     });
     target.addListener(listener);
     watchers.set(win, { target, listener });
   } catch {
     // no listener API — the menu's clear entry still works
+  }
+}
+
+/** every window's filter and watcher — plugin shutdown */
+export function clearAllAuthorFilters() {
+  for (const win of [...watchers.keys()]) clearAuthorFilter(win);
+  resolverCache = null;
+  if (notifierID) {
+    try {
+      Zotero.Notifier.unregisterObserver(notifierID);
+    } catch {
+      // already gone
+    }
+    notifierID = null;
   }
 }
 
@@ -83,6 +103,60 @@ function toast(text: string) {
  * Show the whole library filtered down to this author's items.
  * Returns how many items matched (0 = nothing found, no filter applied).
  */
+/**
+ * The library-wide resolver is expensive on big libraries, so it is built
+ * chunked (yielding to the event loop) and cached for a couple of minutes —
+ * repeated clicks in the same session are instant, and a just-changed
+ * creator is at worst two minutes late.
+ */
+let resolverCache: {
+  libraryID: number;
+  builtAt: number;
+  resolver: AuthorResolver;
+} | null = null;
+const RESOLVER_TTL_MS = 2 * 60 * 1000;
+
+/** any item change invalidates the cached clustering — a freshly added
+ *  paper must be filterable immediately, not after the TTL runs out */
+let notifierID: string | null = null;
+function armCacheInvalidation() {
+  if (notifierID) return;
+  try {
+    notifierID = Zotero.Notifier.registerObserver(
+      {
+        notify: () => {
+          resolverCache = null;
+        },
+      },
+      ["item"],
+      "zest-author-filter",
+    ) as unknown as string;
+  } catch {
+    notifierID = null;
+  }
+}
+
+async function libraryResolver(libraryID: number): Promise<AuthorResolver> {
+  if (
+    resolverCache &&
+    resolverCache.libraryID === libraryID &&
+    Date.now() - resolverCache.builtAt < RESOLVER_TTL_MS
+  ) {
+    return resolverCache.resolver;
+  }
+  const all = (await Zotero.Items.getAll(
+    libraryID,
+    true,
+    false,
+  )) as Zotero.Item[];
+  const resolver = await buildAuthorResolverAsync(
+    all.filter((i) => i.isRegularItem()),
+  );
+  resolverCache = { libraryID, builtAt: Date.now(), resolver };
+  armCacheInvalidation();
+  return resolver;
+}
+
 export async function applyAuthorFilter(
   win: Window,
   ref: AuthorRef,
@@ -96,13 +170,7 @@ export async function applyAuthorFilter(
   } catch {
     // keep the user library
   }
-  const all = (await Zotero.Items.getAll(
-    libraryID,
-    true,
-    false,
-  )) as Zotero.Item[];
-  const items = all.filter((i) => i.isRegularItem());
-  const resolver = buildAuthorResolver(items);
+  const resolver = await libraryResolver(libraryID);
   const ids = resolver.memberItemIDs(ref);
   if (!ids.size) {
     toast(getString("author-filter-none", { args: { name: ref.label } }));

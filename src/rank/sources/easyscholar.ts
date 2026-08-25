@@ -31,10 +31,6 @@ export function easyScholarBlocked(): boolean {
   return Date.now() < blockedUntil;
 }
 
-export function easyScholarBackoffMs(): number {
-  return Math.max(0, blockedUntil - Date.now());
-}
-
 export async function fetchEasyScholar(
   publicationName: string,
   /** a user-triggered refresh ignores the back-off and any cached answer */
