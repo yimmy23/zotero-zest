@@ -3,6 +3,20 @@
 > 阶段 A 产出。研究底稿在会话 scratchpad `research/`（19 份报告 + 5 份对抗核验 + 批评稿），本计划只保留结论与依据。所有"文件:行"引用指 Zotero 9.0.6 解包源码（`omni-app/`）或 zotero-style AGPL 源码（`zotero-style/`）。
 > 图例：✅ 已定（可回退）· ⏸ 需拍板 · 🔍 需 dev 实例真机探针后再定。
 
+## Release 1.0.8 — APP_SHUTDOWN lifecycle repair
+
+- [x] Reproduce the shutdown race in an isolated profile: the plugin's own
+      `Zotero.Plugins` shutdown notification queued a delayed re-registration after
+      `zest.sqlite` had closed.
+- [x] Mark the instance dead and unregister its sweep observer before the
+      app-shutdown persistence barrier; preserve in-place upgrade recovery.
+- [x] Add a Phase E regression assertion and run all declared static/build and
+      Zotero 10 isolated-profile probes.
+- [x] Capture the maintainer's production columns, order and sort, and
+      make it the non-destructive recommended default with a regression check.
+- [x] Publish `v1.0.8`, refresh the rolling `release/update.json`, and verify the
+      public XPI version and SHA-512 independently.
+
 ---
 
 ## 0. 决策摘要（先看这一页）
@@ -293,6 +307,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **B1（阶段 B 内已改，commit 0b9c449）**：未读加粗只对「未读/待读」（无状态可选加入，默认关）；`#标签` 文字色 `auto`（同色相、亮度压到可读，暗色主题反向）；Tags 列不再重复显示被 `#标签` 规则命中的标签；`~~X` 多字符按字符类；前缀规则余下为空则隐藏；热力默认色原为 `#FFC6D3`/0.7 对齐原版，**用户拍板改为 GitHub / Codex 式的蓝色离散热力（4 级台阶，基色 `#66ADFF` = Zotero `--accent-azure`，不透明度 0.7），徽章默认 `#4072E5` = Zotero `--accent-blue`；待读圆点与星级也统一到蓝系**；评级 `mark/option/color` 三个符号项 + `Extra 键名`（默认 `rate` 兼容原版，读取两者）；工具→Zest 顶部「Zest 设置…」入口；设置页 hint 修正。
 
 **折进阶段 C（原 plan 缺失或需细化）**
+
 1. 嵌套标签的**标注定位卡片**：按选中标签过滤当前条目的 PDF 标注 → 单击复制、双击 `Zotero.Reader.open(itemID,{annotationID})` 跳转（原版 2.2 的核心承诺，原 plan 遗漏）。宿主：条目面板 section（与 D 的信息面板同一容器）。
 2. 期刊标签：`Fields`（默认 `sci, sciif5, eii`，40+ 字段清单入设置页）、`Sort By` 多键（`sci, -sciif`；**缺失值永远排最后**，README 注明有意修正）、rank 阈值表（sciif ≥10/4/2/1/0 → 1–5 等）、`rankColors` 5 色（`#EE0000, #2F998C, #D2A500, #DA6D00, #007BF6`）、`Map` 对 key/value 分别映射（`A=B` 全等、`/re/=X` 正则 replace）、`defaultColor/textColor`、单条强制刷新（单元格右键）、easyScholar 密钥申请引导 + 全角逗号纠正 + 字段名大小写不敏感 + 刊名括号剥离。
 3. IF 列 `max`（15）/`progress`（条）/`info`（文字）三开关 + 默认色。
@@ -305,6 +320,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **折进阶段 D**：Authors 列接受旧变量 `${firstName} ${lastName} ${firstCreator}`、旧切片语法 `0:1, -1:`、`join` 默认 `", "` 并提供旧配置导入；信息面板的每页热力条可点击跳页（原「高能进度条」）；阅读统计面板注明数据来源与导出方式。
 
 **D10 · 与 Zotero 10 原生功能的关系（2026-08-18 用户拍板）**：Zest 只做 Zotero 10 的**扩展与优化**，不与原生功能冲突。落地约束：
+
 1. 任何**替换**原生界面的功能默认关闭、可一键切回，且只隐藏不删除原生节点（嵌套标签树 `nestedTags.show` 默认 false，只对 `#zotero-tag-selector` 设 `hidden`，原生 React 根永不移除）。
 2. 不占用原生已经在用的机制：筛选走 Zest 自己的 `getItems` 管线，**不碰** Zotero 10 的 `setFilter('advanced-search')`（那是高级搜索面板的槽位）、不改 `setFilter('tags')` 的语义、不替换 `getSearchObject`。
 3. 复用而非另建：阅读器主题写官方 `readerCustomThemes`（按 id 合并，保留用户自己的主题）；标签颜色 ≤9 仍走 `Zotero.Tags.setColor`，超出部分才用 Zest 本地规则；列一律走 `ItemTreeManager.registerColumn`。
@@ -322,6 +338,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **新增模块**：`core/{storage,config,secrets}.ts`（zest-cache.json / zest-config.json / 登录管理器密钥）、`tags/{tree,scope,rules,nestedTree,menu}.ts`、`views/{itemFilter,viewGroups,typeFilter,collectionCounts}.ts`、`rank/{types,rank,normalize,map,index}.ts + sources/{localDataset,easyscholar,openalex}.ts`、`annots/density.ts`、`panes/annotSection.ts`、`graph/{build,view,pane}.ts`、`reader/{themes,colorSchemes}.ts`、`columns/{annotations,pubTags}.ts`。
 
 **与 Phase A 计划的三处修正（真机核对后）**
+
 1. **前缀筛选不能用 `setFilter('tags', Set)`**：Zotero 对该集合是「精确标签 AND」，父节点展开成兄弟标签必然筛空。改为自建 `getItems` 过滤管线（`views/itemFilter.ts`，分支内 OR、分支间 AND，附件/笔记/标注的标签也算），Zotero 10 的 `setFilter('advanced-search')` 属于高级搜索面板的槽位，**故意不占用**。管线额外处理：只对顶层条目跑判定，子条目按父条目存亡带走（否则条目树会因残留子条目把父行重新拉回来）。
 2. **`ZoteroPane.getSelectedLibraryID()` 在 Zotero 10 被移除并主动抛错**，必须用 `getSelectedLibraryIDs()`（`tags/scope.ts:selectedLibraryID` 统一封装）。
 3. **视图组**：`_getColumnPrefs()` 在没手动调过列的 profile 上返回 `{}`（Z10 删掉了构造函数里的回写），必须 `prefs[dataKey] ??= {dataKey}`；`_storeColumnPrefs()` 不再改活动列模型，之后必须 `_resetColumns()` + `sort()`。
@@ -331,6 +348,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **验收探针**：`scripts/phase-c-probe.js`（`scripts/dev-eval.sh -f scripts/phase-c-probe.js`），覆盖嵌套树挂载/筛选/搜索、标注卡片、9 个列注册、期刊链路、视图组应用与还原、类型筛选、分类计数开关、图谱渲染与拆除、阅读器主题与菜单钩子、错误控制台。
 
 **阶段 C 对抗审查（5 维 × 54 条原始发现 → 逐条反驳 → 27 条确认，全部修复）**：`.research/` 外的修复清单见 git 历史（commits `98e6755`、`5b01717`、`3af9edd`）。要点：
+
 - **数据**：本地数据集写盘用自有格式、读回却又走了一遍导入解析器 → 重启后字段全部塌成 `[object Object]`（已改为 `readStoredRows`）；网络不可达被当成「该刊没有分区」缓存 30 天（改为内存态 10 分钟退避）；`getItems` 过滤在 Trash / 快搜命中子条目时会误删子行（改为「父条目原本就不在集合里则保留」）；标注删除事件里 Zotero 只给 `{libraryID,key}`，原分支是死代码（改为在扫描时记录 annotation→条目 的归属表）。
 - **隐私**：easyScholar 密钥在 URL 里 → Zotero 会把每个请求 URL 写进 debug 日志（其内置脱敏只匹配 `key=`），我们自己的日志也会打印 → 改为 **绕过 `Zotero.HTTP` 用裸 XHR 发送 + 自有日志脱敏 + 该请求永不进 URL 缓存**；`politeEmail()` 不再伪造一个固定邮箱，用户没填就不带 `mailto`；配置导出永不包含任何含 `secret/key/token/password` 的项。
 - **默认值**：`rank.autoFetch` 与 `column.pubtags.enable` 改为默认关闭——全新安装不应在首帧就对第三方 API 发起成百上千次查询。
@@ -345,6 +363,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **新增模块**：`authors/pipeline.ts` + `columns/authors.ts`（作者三列）、`cite/{index,sources,extraFormat}.ts` + `columns/citations.ts`（被引数）、`columns/remark.ts`、`panes/infoSection.ts`（Zest 文献面板）、`panes/statsDialog.ts`（阅读统计 + 日历）、`panes/annotMatrix.ts`（标注矩阵）、`tabs/{model,sidebar}.ts`（垂直标签页）、`ui/icons.ts`（内联图标集）。
 
 **关键设计**
+
 - **作者**：角色由 `Zotero.CreatorTypes.getPrimaryIDForType` 动态解析（film→director、thesis→author + contributor 作导师），姓名顺序与分隔符按**相邻两名的文字系统**决定（王小明、李雷 / 王小明, John Smith），标记（†、我）作为独立 part 渲染，**永不进入排序键**；提供 better-authors 设置导入。
 - **被引数**：数值只存 `Extra` 的 `Citations: N (Source) [YYYY-MM-DD]`（citation-tally 同款），列直接读 Extra（O(1)、无缓存可陈旧）；读取 8 种历史格式（GSCC/ZSCC/eschnett 两代/openalex/裸行）并在写入时**替换而非叠加**；来源链 Crossref → OpenAlex → 可选 S2，**只在用户触发时联网**（Crossref 的 `/works/{doi}` 不支持 `select`，实测 400，已改为取整条记录）。
 - **面板**：`registerSection` 注册「Zest」与「Annotation Finder」两节；面板内每页热力条可点击跳页；渲染期间不发网络请求。
@@ -359,6 +378,7 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **验收探针**：`scripts/phase-d-probe.js` —— Zotero 10.0 **22/22 通过**（9.0.6 本机已随自动更新升到 10.0，用户拍板不再单独回归 9）。
 
 **阶段 D 对抗审查（42 个 agent × 41 条原始发现 → 逐条反驳 → 30 条确认，全部修复；commits `7a5d05f`、`72a5af1`）**
+
 - **侧栏挂载点（critical）**：`#zotero-layout-switcher` 位于 `#zotero-trees`，即 library 标签页自己的 deck 页 —— 一切到阅读器标签页侧栏就消失。改挂 `#tabs-deck` 同级（其父为 `#zotero-pane-stack` 内的匿名 hbox）。
 - **标签页 → 条目解析（major）**：`Zotero.Reader.getByTabID` 只认已加载的阅读器，而重启后所有标签页都是 `reader-unloaded`，分组全部失效。改读 `tab.data.itemID`（由 `Zotero_Tabs.add()` 写入并经 session.json 往返），阅读器查找降级为兜底。
 - **`Zotero_Tabs.move` 语义（major）**：前移时内部先删后插会自减索引 —— 向下拖永远差一位、且无法拖到末尾。向下移动改传 `to + 1`。
@@ -374,15 +394,18 @@ addon/   manifest.json bootstrap.js prefs.js preferences.xhtml locale/{en-US,zh-
 **审计方式**：7 维（安全隐私 / 数据完整性 / 与原生 Zotero 10 冲突 / 核心正确性 / 性能 / UI·主题·本地化·可访问性 / 生命周期）多智能体全库审查，每条发现交由独立"反驳者"对抗验证（构造不出具体失败场景即判不成立）。**41 → 34 条原始发现 → 25 条确认，全部修复**（commit `f943e63`）。
 
 **两条 critical（均在分类计数）**
+
 - `redraw()` 里调了 `CollectionTree.refresh()`，而它是**数据重建**：会置 `selection.selectEventsSuppressed = true` 并要求调用方恢复选择后清标志。裸调（且每个 item 事件都调）导致选择事件被永久抑制——**点分类不再加载条目**。改为 `forceUpdate + invalidate`（徽章只需要重绘）。
 - 递归子树计数跑在**行渲染器**里，每行 O(子树)，且被每个 item 事件作废。改为渲染路径之外的一次自底向上遍历（1.5 s 合并、忽略不可能改变计数的 item 事件），渲染器只读；>2000 个分类的库只算直接计数并记录日志。
 
 **"不与原生冲突"这条红线上的三处**
+
 - 评分星、状态点、简记单元格吞掉 mousedown/mouseup → 落在这些列上的 **Shift/Cmd 点击变成了改评分**而不是扩展选择。现在只有"无修饰键的左键"归我们。
 - Zest 的过滤器活在 `CollectionTreeRow.getItems` 里，Zotero 的 reveal 路径看不见 → 阅读器里的 **View ▸ Show Item in Library**、Connector 保存、Word 的"Show in Library"在条目被过滤时**静默失败**。现包一层 `ZoteroPane.selectItems`：Zotero 先试，条目没出现且 Zest 有过滤时，清掉**我们自己的**过滤再让 Zotero 试一次。
 - 嵌套标签树替换了 Zotero 可键盘操作的标签选择器，却没有键盘契约 → 补齐 `role=tree/treeitem`、`aria-selected/expanded`、单一 roving tab stop、方向键 + Home/End + Enter/Space、焦点描边。
 
 **Extra 是用户的字段**
+
 - "更新被引数"会删除 GSCC / ZSCC / `openalex.cit_count`——**别的插件的数据**，且是批量跨条目。现在只替换我们自己的 `Citations:` 行，且**原位替换**不再挪到末尾。
 - 写一个键会删掉该键的**另一种拼写**（`rate:` 与 `Rating:` 并存时），迁移过来的库每次写入都在丢行。
 - `zest-config.json` 解析失败不再变成"空配置 + 下一次写入把真文件覆盖"：存储转只读并提示用户。

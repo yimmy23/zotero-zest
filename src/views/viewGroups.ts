@@ -38,6 +38,32 @@ interface ColumnLike {
   sortDirection?: number;
 }
 
+/**
+ * The maintainer's working layout, captured from the production profile on
+ * 2026-08-27. Only column content and order are prescribed: widths remain
+ * responsive to the screen and to the user's own adjustments. Keep semantic
+ * keys here; Zotero's escaped plugin dataKeys are resolved only on apply.
+ */
+export const RECOMMENDED_LAYOUT = {
+  columns: [
+    "title",
+    "remark",
+    "year",
+    "authors",
+    "reading",
+    "status",
+    "rating",
+    "publicationTitle",
+    "pubtags",
+    "if",
+    "citations",
+    "dateAdded",
+    "hasAttachment",
+  ],
+  sortField: "dateAdded",
+  sortDirection: -1 as const,
+};
+
 function itemsView(win: Window): any {
   return (win as any).ZoteroPane?.itemsView;
 }
@@ -236,19 +262,14 @@ async function waitForColumns(
 export async function applyRecommendedLayout(win: Window): Promise<boolean> {
   // never hardcode the plugin's dataKeys: Zotero escapes them
   // ("zest\\@zotero-zest\\.app-reading"), so ask the registry for the real one
-  const wanted: Array<[string, number]> = [
-    ["title", 320],
-    ["firstCreator", 150],
-    ["date", 60],
-    ["reading", 90],
-    ["status", 86],
-    ["rating", 88],
-    ["annots", 78],
-    ["pubtags", 120],
-    ["if", 84],
-    ["citations", 74],
-  ];
-  const native = new Set(["title", "firstCreator", "date"]);
+  const wanted = RECOMMENDED_LAYOUT.columns;
+  const native = new Set([
+    "title",
+    "year",
+    "publicationTitle",
+    "dateAdded",
+    "hasAttachment",
+  ]);
   // Most Zest columns ship off, so an untouched profile has nothing to lay out
   // and the action quietly produced a five-column layout — the "where is the
   // journal-tag column?" report. The FIRST apply turns on the columns it needs;
@@ -260,7 +281,7 @@ export async function applyRecommendedLayout(win: Window): Promise<boolean> {
   // have switched it straight back on.
   const seededPref = `${config.prefsPrefix}.layout.seeded`;
   if (!Zotero.Prefs.get(seededPref, true)) {
-    for (const [key] of wanted) {
+    for (const key of wanted) {
       if (native.has(key) || registeredDataKey(key)) continue;
       Zotero.Prefs.set(
         `${config.prefsPrefix}.column.${key}.enable`,
@@ -274,22 +295,22 @@ export async function applyRecommendedLayout(win: Window): Promise<boolean> {
   await waitForColumns(
     win,
     wanted
-      .map(([key]) => (native.has(key) ? key : registeredDataKey(key)))
+      .map((key) => (native.has(key) ? key : registeredDataKey(key)))
       .filter(Boolean) as string[],
   );
   const columns: ViewGroupColumn[] = [];
-  for (const [key, width] of wanted) {
+  for (const key of wanted) {
     const dataKey = native.has(key) ? key : registeredDataKey(key);
     // a column the user turned off in Settings is simply not in the layout
     if (!dataKey) continue;
-    columns.push({ dataKey, width, ordinal: columns.length });
+    columns.push({ dataKey, ordinal: columns.length });
   }
   return applyView(win, {
     id: "zest-recommended",
     name: getString("views-recommended"),
     columns,
-    sortField: registeredDataKey("reading"),
-    sortDirection: -1,
+    sortField: RECOMMENDED_LAYOUT.sortField,
+    sortDirection: RECOMMENDED_LAYOUT.sortDirection,
   });
 }
 

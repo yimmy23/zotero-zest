@@ -111,6 +111,17 @@ import { forgetRegistrations } from "./columns/registry";
 let prefObservers: symbol[] = [];
 let pluginObserver: { shutdown: (p: { id: string }) => void } | undefined;
 
+/** Stop this copy from reacting to any later plugin-shutdown sweep. */
+function stopPluginSweep() {
+  if (!pluginObserver) return;
+  try {
+    (Zotero as any).Plugins?.removeObserver?.(pluginObserver);
+  } catch {
+    // Zotero may already be dismantling the observer service
+  }
+  pluginObserver = undefined;
+}
+
 /**
  * Preference keys that changed meaning between releases, migrated once.
  *  - `if.progress` (bool) became `if.style` (heat | bar | none): a user who had
@@ -523,14 +534,7 @@ async function onShutdown() {
   } catch {
     // allSettled never rejects; belt and braces
   }
-  if (pluginObserver) {
-    try {
-      (Zotero as any).Plugins?.removeObserver?.(pluginObserver);
-    } catch {
-      // ignore
-    }
-    pluginObserver = undefined;
-  }
+  stopPluginSweep();
   readingTracker.stop();
   unregisterAnnotSection();
   unregisterInfoSection();
@@ -586,6 +590,12 @@ async function onShutdown() {
 
 /** APP_SHUTDOWN: only persist — Zotero closes its DB right after us. */
 async function onAppShutdown() {
+  // APP_SHUTDOWN skips the full UI teardown, but it must still stop every
+  // delayed recovery callback before closing persistence. Otherwise our own
+  // Zotero.Plugins shutdown sweep schedules registrations against a closed DB
+  // while Zotero is already waiting for its shutdown barrier.
+  addon.data.alive = false;
+  stopPluginSweep();
   try {
     await Promise.race([
       startupSettled ?? Promise.resolve(),

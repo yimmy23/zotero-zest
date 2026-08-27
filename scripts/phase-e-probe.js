@@ -31,6 +31,42 @@ const mk = async (fields, creators) => {
 };
 const trash = [];
 
+/* ---------- 0. app shutdown disables delayed sweep recovery ---------- */
+// Running APP_SHUTDOWN would destroy this probe's own transport, so pin the
+// two guards non-destructively here. The real close path is exercised by the
+// isolated-profile shutdown smoke test during release validation.
+const appShutdownSource = String(addon.hooks.onAppShutdown);
+check(
+  "lifecycle.appShutdownStopsSweepRecovery",
+  /addon\.data\.alive\s*=\s*false/.test(appShutdownSource) &&
+    /stopPluginSweep\(\)/.test(appShutdownSource),
+);
+
+/* ---------- 0b. the recommended layout is the production default ---------- */
+check(
+  "layout.recommendedMatchesProduction",
+  JSON.stringify(dev.viewGroups.RECOMMENDED_LAYOUT) ===
+    JSON.stringify({
+      columns: [
+        "title",
+        "remark",
+        "year",
+        "authors",
+        "reading",
+        "status",
+        "rating",
+        "publicationTitle",
+        "pubtags",
+        "if",
+        "citations",
+        "dateAdded",
+        "hasAttachment",
+      ],
+      sortField: "dateAdded",
+      sortDirection: -1,
+    }),
+);
+
 /* ---------- 1. collection counts never suppress selection events ---------- */
 setPref("collectionCounts.enable", true);
 setPref("collectionCounts.mode", 2);

@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.0.4 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.0.8 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -23,7 +23,7 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 装好后，条目工具栏上会出现一个 **Z** 按钮（线条风格，和 Zotero 自带图标同一套），点它 →**套用 Zest
 推荐列布局**。
 
-这一步会把标题、作者、年份、阅读、状态、评级、标注、期刊标签、影响因子、被引数排成一行，并按阅读时长排序。
+这一步会把标题、简记、年份、作者、阅读、状态、评级、期刊、期刊标签、影响因子、被引数、添加日期、附件排成一行，并按添加日期倒序。
 不喜欢可以立刻还原：**工具 ▸ Zest ▸ 撤销上一次布局切换**。你也可以自己右键列标题勾选想要的列——Zest 的列
 和 Zotero 原生列一样，可以随意拖动、调宽、排序。
 
@@ -32,14 +32,14 @@ Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.x
 
 ## Z 按钮里有什么
 
-| 菜单项                   | 作用                                                                        |
-| ------------------------ | --------------------------------------------------------------------------- |
+| 菜单项                   | 作用                                                                                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式。作者模式做同名消歧：同姓下按全名聚类（Wang Lei ≠ Wang Li），有 OpenAlex 缓存时按作者 ID 合并拼写变体，悬停节点显示所属机构 |
-| **阅读统计…**            | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目             |
-| **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                 |
-| **套用 Zest 推荐列布局** | 一键排好上面那套列                                                          |
-| **联网获取期刊数据**     | 分区 / 影响因子的联网开关（默认关）——不开这一项，期刊标签列会是空的         |
-| **Zest 设置…**           | 打开设置页                                                                  |
+| **阅读统计…**            | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目                                                                                                                                         |
+| **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                                                                                                                                             |
+| **套用 Zest 推荐列布局** | 一键排好上面那套列                                                                                                                                                                                      |
+| **联网获取期刊数据**     | 分区 / 影响因子的联网开关（默认关）——不开这一项，期刊标签列会是空的                                                                                                                                     |
+| **Zest 设置…**           | 打开设置页                                                                                                                                                                                              |
 
 ## 各个列怎么用
 
@@ -209,8 +209,9 @@ The release notes carry the file's MD5.
 ## Start here
 
 A **Z** button appears in the item toolbar, drawn in Zotero's own line-icon style. Click it →
-**Apply the Zest column layout**: title, creator, year, reading, status, rating, annotations, journal
-tags, IF and citations, sorted by reading time. Don't like it? **Tools ▸ Zest ▸ Undo layout change**.
+**Apply the Zest column layout**: title, remark, year, authors, reading, status, rating, journal,
+journal tags, IF, citations, date added and attachments, sorted by date added (newest first). Don't
+like it? **Tools ▸ Zest ▸ Undo layout change**.
 Most Zest columns ship off, so the **first** apply also turns on the ones the layout needs. Every
 apply after that only arranges columns — a column you switch off in **Settings ▸ Zest** stays off.
 
