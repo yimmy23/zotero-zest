@@ -153,3 +153,13 @@ a screenshot in both themes shows the result. Prefs defaults only load at plugin
 
 When you touch one of the invariants above, add an assertion to `scripts/phase-e-probe.js` so the next
 change cannot quietly undo it.
+
+## Releasing
+
+Releases are cut locally with the GitHub CLI after the verification above and GitHub CI both pass.
+Publish the versioned `zest.xpi` first, then replace the rolling `release/update.json`, and independently
+download both public assets to confirm the advertised version, URL and hash before reporting success.
+
+GitHub Release notes are user-facing and bilingual: include only changes, fixes and upgrade guidance.
+Do not include a `验证 / Validation` section, probe or test counts, lint/build details, archive checks,
+SHA-512, MD5 or other checksum values. Keep that evidence in the task record rather than the Release body.

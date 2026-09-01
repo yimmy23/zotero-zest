@@ -15,9 +15,6 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
 
-Release 页面附有该文件的 MD5，可自行校验：`md5 ~/Downloads/zest.xpi`（macOS）/ `md5sum zest.xpi`（Linux）/
-`certutil -hashfile zest.xpi MD5`（Windows）。
-
 ## 第一步：套用推荐布局
 
 装好后，条目工具栏上会出现一个 **Z** 按钮（线条风格，和 Zotero 自带图标同一套），点它 →**套用 Zest
@@ -206,7 +203,6 @@ with a graph, a reading-statistics window and an annotation matrix on top.
 
 Download `zest.xpi` from the [latest release](https://github.com/yimmy23/zotero-zest/releases/latest),
 then Zotero → **Tools ▸ Plugins** → gear icon → **Install Plugin From File…** → restart when prompted.
-The release notes carry the file's MD5.
 
 ## Start here
 
