@@ -363,3 +363,25 @@ export function displayValues(
   }
   return out;
 }
+
+/** A mapped UI value plus the canonical field that selected it. */
+export interface UIJournalRankValue extends RankValue {
+  sourceField: string;
+}
+
+/**
+ * UI variant of `displayValues` that retains the canonical field key after a
+ * user's `rank.map` rewrites the visible field label. The public API keeps its
+ * established `{ field, value, source }` shape and never exposes this marker.
+ */
+export function displayValuesForUI(
+  rec: JournalRecord | undefined,
+  fields: string[],
+): UIJournalRankValue[] {
+  const out: UIJournalRankValue[] = [];
+  for (const sourceField of fields) {
+    const value = displayValues(rec, [sourceField])[0];
+    if (value) out.push({ ...value, sourceField });
+  }
+  return out;
+}

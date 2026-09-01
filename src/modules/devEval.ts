@@ -29,6 +29,7 @@ import * as itemFilter from "../views/itemFilter";
 import * as annotSection from "../panes/annotSection";
 import * as rank from "../rank";
 import * as rankRank from "../rank/rank";
+import * as rankDisplay from "../rank/display";
 import * as dataset from "../rank/sources/localDataset";
 import * as secrets from "../core/secrets";
 import * as easyscholarSrc from "../rank/sources/easyscholar";
@@ -187,6 +188,7 @@ export function registerDevEval() {
             annotSection,
             rank,
             rankRank,
+            rankDisplay,
             dataset,
             secrets,
             easyscholarSrc,

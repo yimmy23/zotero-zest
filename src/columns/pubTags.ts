@@ -7,7 +7,7 @@ import { accentColor } from "../ui/styles";
 import {
   requestJournalRecord,
   getJournalRecord,
-  displayValues,
+  displayValuesForUI,
   journalKeyOf,
 } from "../rank";
 import {
@@ -18,6 +18,7 @@ import {
   defaultRankColor,
 } from "../rank/rank";
 import { valueOf, numberOf } from "../rank/types";
+import { rankFieldsForDisplay, rankValueDisplay } from "../rank/display";
 import { venueOf } from "../rank/normalize";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 
@@ -54,9 +55,9 @@ const FALLBACK_FIELDS = [
 ];
 
 function shownValues(rec: ReturnType<typeof getJournalRecord>) {
-  const shown = displayValues(rec, displayFields());
+  const shown = displayValuesForUI(rec, rankFieldsForDisplay(displayFields()));
   if (shown.length) return shown;
-  const fallback = displayValues(rec, FALLBACK_FIELDS);
+  const fallback = displayValuesForUI(rec, FALLBACK_FIELDS);
   return fallback.slice(0, 2);
 }
 
@@ -118,7 +119,7 @@ export function publicationTagsColumn(): ColumnSpec {
           })
           .join(".");
       }
-      return shown.map((v) => sortKeyFor(v.field, v.value)).join(".");
+      return shown.map((v) => sortKeyFor(v.sourceField, v.value)).join(".");
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "pubtags");
@@ -135,10 +136,17 @@ export function publicationTagsColumn(): ColumnSpec {
       const alpha = badgeOpacity();
       const textPref = String(getPref("rank.textColor") || "auto");
       for (const v of shown) {
+        const display = rankValueDisplay(v, v.sourceField);
         const badge = doc.createElement("span");
         badge.className = "zest-badge zest-rank-badge";
-        badge.textContent = v.value;
-        badge.title = `${v.field}: ${v.value} · ${v.source}`;
+        badge.textContent = display.text;
+        badge.title = getString("rank-badge-tip", {
+          args: {
+            field: v.field,
+            value: display.description,
+            source: v.source,
+          },
+        });
         const color = v.rank ? colorForRank(v.rank) : defaultRankColor();
         const rgb = hexToRgb(color);
         if (rgb) {

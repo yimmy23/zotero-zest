@@ -565,6 +565,92 @@ check(
   }
 }
 
+/* ---------- 10. easyScholar rank labels follow the Zotero locale ---------- */
+{
+  const medicine = {
+    field: "sciUp",
+    value: "医学1区",
+    source: "easyscholar",
+  };
+  const multidisciplinary = {
+    field: "sciUp",
+    value: "综合性期刊1区",
+    source: "easyscholar",
+  };
+  const medDisplay = dev.rankDisplay.rankValueDisplay(medicine);
+  const multiDisplay = dev.rankDisplay.rankValueDisplay(multidisciplinary);
+  const chineseUI = /^zh(?:-|$)/i.test(String(Zotero.locale || ""));
+  check(
+    "rank.displayFollowsLocale",
+    chineseUI
+      ? medDisplay.text === "医学1区" && multiDisplay.text === "综合性期刊1区"
+      : medDisplay.text === "CAS Z1 · Med." &&
+          multiDisplay.text === "CAS Z1 · Multidisc." &&
+          medDisplay.description ===
+            "CAS Journal Ranking (Upgraded) — Medicine, Zone 1" &&
+          multiDisplay.description ===
+            "CAS Journal Ranking (Upgraded) — Multidisciplinary, Zone 1",
+    `${Zotero.locale}: ${medDisplay.text} / ${multiDisplay.text}`,
+  );
+  const unknown = dev.rankDisplay.rankValueDisplay({
+    field: "custom",
+    value: "用户自定义分级",
+    source: "easyscholar",
+  });
+  const collidingCustom = dev.rankDisplay.rankValueDisplay({
+    field: "myCustom",
+    value: "医学1区",
+    source: "easyscholar",
+  });
+  const dataset = dev.rankDisplay.rankValueDisplay({
+    field: "sciUp",
+    value: "医学1区",
+    source: "dataset",
+  });
+  setPref("rank.map", "sciUp=CAS");
+  const mapped = dev.rank.displayValuesForUI(
+    {
+      key: "rank-display-fixture",
+      name: "Rank display fixture",
+      values: [medicine],
+      updated: Date.now(),
+    },
+    ["sciUp"],
+  )[0];
+  const mappedDisplay = dev.rankDisplay.rankValueDisplay(
+    mapped,
+    mapped.sourceField,
+  );
+  check(
+    "rank.displayPreservesUnknownAndHandlesMigratedCache",
+    unknown.text === "用户自定义分级" &&
+      collidingCustom.text === "医学1区" &&
+      dataset.text === (chineseUI ? "医学1区" : "CAS Z1 · Med."),
+  );
+  check(
+    "rank.displayKeepsFieldMapAndLocalization",
+    mapped.field === "CAS" &&
+      mappedDisplay.text === (chineseUI ? "医学1区" : "CAS Z1 · Med."),
+  );
+  check(
+    "rank.displayDoesNotMutateSourceValue",
+    medicine.value === "医学1区" && multidisciplinary.value === "综合性期刊1区",
+  );
+  const defaultFields = dev.rankDisplay.rankFieldsForDisplay([
+    "sciUp",
+    "sciif",
+    "sci",
+  ]);
+  const customFields = dev.rankDisplay.rankFieldsForDisplay(["sciUp", "sci"]);
+  check(
+    "rank.displayOrderFollowsLocale",
+    defaultFields.join(",") ===
+      (chineseUI ? "sciUp,sciif,sci" : "sci,sciUp,sciif") &&
+      customFields.join(",") === "sciUp,sci",
+    `${Zotero.locale}: ${defaultFields.join(" ")}`,
+  );
+}
+
 /* ---------- cleanup ---------- */
 if (nativeShowAllBefore === undefined || nativeShowAllBefore === null)
   Zotero.Prefs.clear(NATIVE_SHOW_ALL, true);

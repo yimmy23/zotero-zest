@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.0.8 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.0.9 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -74,6 +74,8 @@ Alan Turing 自动）、**「等」文案**（留空 = Zotero 自身语言）、
 所以刚装好时这两列是空的：从 **Z 按钮 ▸ 联网获取期刊数据**（等同于设置里的「自动获取」）打开，或右键条目
 ▸ Zest ▸ 更新期刊分区。空单元格的悬停提示会告诉你是哪种情况。查询按期刊（不是按条目）进行，只发送期刊名、
 ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等中文体系只有 easyScholar 有，需要在设置里填密钥。
+英文界面使用默认字段时按 **JCR → 中科院 → IF** 显示，中科院标签会写成 `CAS Z1 · Med.` 等英文短名，
+悬停可看完整英文说明；中文界面保留原始中文和原顺序。你手动设置过的 Fields 顺序始终优先。
 
 **被引数**——右键条目 ▸ Zest ▸ 更新被引数（可批量、可随时取消）。数值写进 `Extra` 的
 `Citations: 12 (Crossref) [2026-08-18]`，来源依次 Crossref → OpenAlex →（可选）Semantic Scholar。
@@ -254,9 +256,12 @@ IDs merge spelling variants, and hovering a node shows the institution when know
   switch lookups on from **Z button ▸ Look journal data up online** (the same pref as auto-fetch in
   Settings), or use the item context menu. Hovering an empty cell tells you which case you are in.
   Lookups are per journal, send only the name, ISSN or DOI, and are cached for 30 days. The Chinese
-  ranking systems exist only in easyScholar and need a key. **Venue** merges publication title,
-  proceedings, book title and publisher into one column by item type — Zotero's own Publication
-  column is journal titles only.
+  ranking systems exist only in easyScholar and need a key. With the shipped fields, an English UI
+  shows **JCR → CAS → IF** and renders CAS labels as compact English badges such as
+  `CAS Z1 · Med.`, with the full wording on hover. A Chinese UI keeps the source wording and order;
+  any Fields order you set yourself always wins. **Venue** merges publication title, proceedings,
+  book title and publisher into one column by item type — Zotero's own Publication column is journal
+  titles only.
 - **Citations** — right-click ▸ Zest ▸ update (batchable, cancellable). Written to `Extra` as
   `Citations: 12 (Crossref) [2026-08-18]`, sourced Crossref → OpenAlex → optional Semantic Scholar.
   Other plugins' records (`GSCC:`, `ZSCC:`, `openalex.cit_count:`) are read but never deleted.

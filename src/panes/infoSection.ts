@@ -10,8 +10,13 @@ import { effectiveStatus, statusLabel } from "../reading/status";
 import { openStatusMenu } from "../reading/statusMenu";
 import { getRating, setRating } from "../columns/rating";
 import { remarkOf, setRemark } from "../columns/remark";
-import { getJournalRecord, requestJournalRecord, displayValues } from "../rank";
+import {
+  getJournalRecord,
+  requestJournalRecord,
+  displayValuesForUI,
+} from "../rank";
 import { displayFields, colorForRank, defaultRankColor } from "../rank/rank";
+import { rankFieldsForDisplay, rankValueDisplay } from "../rank/display";
 import { citationOf, updateCitations } from "../cite";
 import { venueOf } from "../rank/normalize";
 import {
@@ -307,11 +312,21 @@ function render(props: any) {
     // rank badges, if we already know them (never fetched during a render)
     requestJournalRecord(item);
     const rec = getJournalRecord(item);
-    for (const v of displayValues(rec, displayFields()).slice(0, 3)) {
+    for (const v of displayValuesForUI(
+      rec,
+      rankFieldsForDisplay(displayFields()),
+    ).slice(0, 3)) {
+      const display = rankValueDisplay(v, v.sourceField);
       const badge = doc.createElement("span");
       badge.className = "zest-badge zest-rank-badge";
-      badge.textContent = v.value;
-      badge.title = `${v.field} · ${v.source}`;
+      badge.textContent = display.text;
+      badge.title = getString("rank-badge-tip", {
+        args: {
+          field: v.field,
+          value: display.description,
+          source: v.source,
+        },
+      });
       const rgb = hexToRgb(v.rank ? colorForRank(v.rank) : defaultRankColor());
       if (rgb) {
         badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.15)`;
