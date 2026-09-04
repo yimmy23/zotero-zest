@@ -8,8 +8,8 @@
 - [x] 核对当前工作区、`main`/`origin/main`、公开最新版与发布范围；确定下一个补丁版本为 `1.0.10`。
 - [x] 完成全部 diff 对抗审计，更新 package/lockfile/README 版本号与发布说明。
 - [x] 运行 lint、TypeScript、生产构建、XPI manifest/压缩包检查及 Zotero 10 Phase C/D/E/F 隔离探针。
-- [ ] 提交并推送 `main`，等待 GitHub CI 通过，再发布版本化 `zest.xpi`。
-- [ ] 替换滚动 `release/update.json`，匿名下载公开资产，独立核对版本、兼容性、URL、大小与 SHA-512。
+- [x] 提交并推送 `main`，等待 GitHub CI 通过，再发布版本化 `zest.xpi`。
+- [x] 替换滚动 `release/update.json`，匿名下载公开资产，独立核对版本、兼容性、URL、大小与 SHA-512。
 
 ## 2026-09-04 — easyScholar 官方刊名后缀兼容
 
