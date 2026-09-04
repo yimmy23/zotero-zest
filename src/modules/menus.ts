@@ -18,7 +18,7 @@ import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
 import { toggleSidebar } from "../tabs/sidebar";
 import { importBetterAuthors } from "../columns/authors";
-import { rankSourceThrottled, refreshJournal } from "../rank";
+import { journalKeyOf, rankSourceThrottled, refreshJournal } from "../rank";
 import { updateCitations, citableItems } from "../cite";
 
 /**
@@ -73,13 +73,12 @@ async function refreshJournalsFor(items: Zotero.Item[]) {
   // one request per JOURNAL, not per item — dedupe before the batch
   const byJournal = new Map<string, Zotero.Item>();
   for (const it of items) {
-    let key: string;
+    let key = "";
     try {
-      key = String(
-        it.getField("publicationTitle") || it.getField("ISSN") || "",
-      );
+      const id = journalKeyOf(it);
+      key = id.key || (id.issn ? `issn:${id.issn}` : "");
     } catch {
-      key = "";
+      // unloaded item
     }
     if (!key || byJournal.has(key)) continue;
     byJournal.set(key, it);

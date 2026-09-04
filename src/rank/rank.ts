@@ -145,7 +145,7 @@ export function sortKeyFor(field: string, value: string): string {
 /** the fields the user wants to see, in their order */
 export function displayFields(): string[] {
   const raw = String(getPref("rank.fields") || "").trim();
-  const list = (raw || "sciUp, sciif, sci")
+  const list = (raw || "sciUp, sci, sciif")
     .split(/[,，;；]\s*/)
     .map((s) => s.trim())
     .filter(Boolean);

@@ -3,6 +3,28 @@
 > 阶段 A 产出。研究底稿在会话 scratchpad `research/`（19 份报告 + 5 份对抗核验 + 批评稿），本计划只保留结论与依据。所有"文件:行"引用指 Zotero 9.0.6 解包源码（`omni-app/`）或 zotero-style AGPL 源码（`zotero-style/`）。
 > 图例：✅ 已定（可回退）· ⏸ 需拍板 · 🔍 需 dev 实例真机探针后再定。
 
+## Release 1.0.10 — 期刊分级与刊名查询修复
+
+- [x] 核对当前工作区、`main`/`origin/main`、公开最新版与发布范围；确定下一个补丁版本为 `1.0.10`。
+- [x] 完成全部 diff 对抗审计，更新 package/lockfile/README 版本号与发布说明。
+- [x] 运行 lint、TypeScript、生产构建、XPI manifest/压缩包检查及 Zotero 10 Phase C/D/E/F 隔离探针。
+- [ ] 提交并推送 `main`，等待 GitHub CI 通过，再发布版本化 `zest.xpi`。
+- [ ] 替换滚动 `release/update.json`，匿名下载公开资产，独立核对版本、兼容性、URL、大小与 SHA-512。
+
+## 2026-09-04 — easyScholar 官方刊名后缀兼容
+
+- [x] 追踪 publicationTitle → 查询名 → easyScholar → 负缓存链路，界定不会误截断正式冒号刊名的保守规则。
+- [x] 对 `: Official Journal/Publication/Organ of …` 生成主刊查询名和共享缓存键，保留 Zotero 原始出版物字段。
+- [x] 增加示例长刊名、全角冒号、合法冒号刊名与缓存身份回归断言。
+- [x] 运行格式、TypeScript、ESLint、构建及 Zotero 10 隔离开发实例探针，检查最终 diff。
+
+## 2026-09-04 — 中文期刊标签默认顺序
+
+- [x] 核对 easyScholar 当前公开字段、字段语义及权威期刊评价体系的一手来源。
+- [x] 将未自定义字段顺序的中文界面默认值改为：中科院分区 → JCR 分区 → 影响因子；保留英文默认和用户自定义顺序。
+- [x] 同步更新中英文说明与回归断言，避免旧默认偏好失去 locale-aware 迁移。
+- [x] 运行格式、TypeScript、ESLint、构建及 Zotero 10 Phase C/D/E/F 探针，并检查最终 diff。
+
 ## Release 1.0.8 — APP_SHUTDOWN lifecycle repair
 
 - [x] Reproduce the shutdown race in an isolated profile: the plugin's own

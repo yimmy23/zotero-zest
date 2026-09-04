@@ -78,7 +78,7 @@ pref("nestedTags.matchChildTags", true);
 pref("column.pubtags.enable", false);
 pref("column.if.enable", false);
 pref("column.venue.enable", false);
-pref("rank.fields", "sciUp, sciif, sci");
+pref("rank.fields", "sciUp, sci, sciif");
 pref("rank.sortBy", "");
 pref("rank.map", "");
 pref("rank.colors", "");

@@ -25,9 +25,32 @@ export function stripTrailingParenthetical(s: string): string {
   return s.replace(/\s*[([{][^)\]}]*[)\]}]\s*$/u, "").trim();
 }
 
+/**
+ * The conservative title sent to journal metadata services.
+ *
+ * Some Zotero translators append an organisation description to the actual
+ * journal title, for example "European Journal ...: Official Journal of ...".
+ * easyScholar indexes the title before that suffix.  Only remove this explicit
+ * bibliographic boilerplate: text after a generic colon can be an essential
+ * part of a journal title ("CA: A Cancer Journal for Clinicians").
+ */
+export function journalLookupName(raw: string | undefined | null): string {
+  if (!raw) return "";
+  const name = String(raw).trim();
+  const searchable = toHalfWidth(name).replace(/\s+/g, " ");
+  const stripped = searchable.replace(
+    /\s*:\s*(?:(?:an?|the)\s+)?official\s+(?:journal|publication|organ)\s+of\b[\s\S]*\S\s*$/iu,
+    "",
+  );
+  // Keep every unmatched title byte-for-byte (apart from outer whitespace).
+  // This helper must not silently reinterpret a real subtitle.
+  if (stripped === searchable) return name;
+  return stripped.trim();
+}
+
 export function normalizeJournal(raw: string | undefined | null): string {
   if (!raw) return "";
-  let s = toHalfWidth(String(raw)).trim();
+  let s = toHalfWidth(journalLookupName(raw)).trim();
   s = stripTrailingParenthetical(s);
   s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "");
   s = s.toLowerCase();

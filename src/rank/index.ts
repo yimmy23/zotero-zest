@@ -5,6 +5,7 @@ import {
   normalizeJournal,
   normalizeISSN,
   allISSNs,
+  journalLookupName,
   rankableVenueOf,
 } from "./normalize";
 import { inferRank } from "./rank";
@@ -100,6 +101,8 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
 export function journalKeyOf(item: Zotero.Item): {
   key: string;
   name: string;
+  /** conservative name sent to external journal services */
+  queryName: string;
   issn: string;
   doi: string;
 } {
@@ -117,7 +120,14 @@ export function journalKeyOf(item: Zotero.Item): {
   } catch {
     // unloaded item
   }
-  return { key: normalizeJournal(name), name, issn, doi };
+  const queryName = journalLookupName(name);
+  return {
+    key: normalizeJournal(queryName),
+    name,
+    queryName,
+    issn,
+    doi,
+  };
 }
 
 /** synchronous cache read — safe in dataProvider/renderCell */
@@ -223,7 +233,7 @@ export async function lookupJournal(
   item: Zotero.Item,
   force = false,
 ): Promise<JournalRecord | null> {
-  const { key, name, issn, doi } = journalKeyOf(item);
+  const { key, name, queryName, issn, doi } = journalKeyOf(item);
   if (!key && !issn && !doi) return null;
   const cacheKey = key || `issn:${issn}`;
   if (!force) {
@@ -251,14 +261,14 @@ export async function lookupJournal(
   push(lookupDataset(key, issn));
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
-  if (getPref("rank.useEasyScholar") && name) {
+  if (getPref("rank.useEasyScholar") && queryName) {
     if (easyScholarBlocked()) {
       // we did not even ask: the record must not be cached for 30 days as
       // "this journal has no Chinese ranking"
       misses.push("easyscholar");
       unreachable = true;
     } else {
-      const es = await fetchEasyScholar(name, force);
+      const es = await fetchEasyScholar(queryName, force);
       if (es.values.length) push(es.values);
       else if (es.error) {
         misses.push("easyscholar");
@@ -279,9 +289,9 @@ export async function lookupJournal(
         resolvedISSN = byDoi.issn || resolvedISSN;
       }
     }
-    if (!oa && name) {
+    if (!oa && queryName) {
       // last resort, still free: exact-name autocomplete → ISSN → singleton
-      const byName = await fetchOpenAlexByName(name);
+      const byName = await fetchOpenAlexByName(queryName);
       if (byName) {
         oa = byName;
         resolvedISSN = byName.issn || resolvedISSN;

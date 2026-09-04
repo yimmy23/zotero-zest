@@ -39,7 +39,7 @@ import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 
 /**
  * Fallback chain for the badges:
- *   1. the fields the user configured (default `sciUp, sciif, sci`)
+ *   1. the fields the user configured (default `sciUp, sci, sciif`)
  *   2. the common Chinese indexes — a domestic journal has none of the JCR
  *      fields, so the column would otherwise be empty for exactly the
  *      libraries that care most about it

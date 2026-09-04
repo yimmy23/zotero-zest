@@ -147,18 +147,23 @@ function chineseUI(): boolean {
   return /^zh(?:-|$)/i.test(String((Zotero as any).locale || ""));
 }
 
+const SHIPPED_RANK_FIELD_ORDERS = new Set([
+  // 1.0.9 and earlier: CAS -> IF -> JCR
+  "sciup,sciif,sci",
+  // Current default: CAS -> JCR -> IF
+  "sciup,sci,sciif",
+]);
+
 /**
- * The shipped field order reflects Chinese usage (CAS first). In an English
- * Zotero, make JCR the leading badge and put CAS immediately after it. IF is
- * already available in its own column, so it comes last here. This applies
- * only while the preference is exactly the shipped default; a user-authored
- * field order is an explicit choice and always wins.
+ * Canonicalize both the current and legacy shipped defaults by locale. This
+ * gives existing Chinese users the new CAS -> JCR -> IF order without
+ * rewriting their preference, while English keeps JCR -> CAS -> IF. Any other
+ * field order is user-authored and always wins.
  */
 export function rankFieldsForDisplay(fields: string[]): string[] {
-  if (chineseUI()) return fields;
   const normalized = fields.map((field) => field.toLowerCase()).join(",");
-  if (normalized !== "sciup,sciif,sci") return fields;
-  return ["sci", "sciUp", "sciif"];
+  if (!SHIPPED_RANK_FIELD_ORDERS.has(normalized)) return fields;
+  return chineseUI() ? ["sciUp", "sci", "sciif"] : ["sci", "sciUp", "sciif"];
 }
 
 interface CategoryDisplay {

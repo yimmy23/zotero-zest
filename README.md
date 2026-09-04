@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.0.9 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.0.10 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -71,8 +71,13 @@ Alan Turing 自动）、**「等」文案**（留空 = Zotero 自身语言）、
 所以刚装好时这两列是空的：从 **Z 按钮 ▸ 联网获取期刊数据**（等同于设置里的「自动获取」）打开，或右键条目
 ▸ Zest ▸ 更新期刊分区。空单元格的悬停提示会告诉你是哪种情况。查询按期刊（不是按条目）进行，只发送期刊名、
 ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等中文体系只有 easyScholar 有，需要在设置里填密钥。
-英文界面使用默认字段时按 **JCR → 中科院 → IF** 显示，中科院标签会写成 `CAS Z1 · Med.` 等英文短名，
-悬停可看完整英文说明；中文界面保留原始中文和原顺序。你手动设置过的 Fields 顺序始终优先。
+中文界面使用默认字段时按 **中科院升级版大类（`sciUp`）→ JCR 分区（`sci`）→ 影响因子（`sciif`）** 显示；
+英文界面仍按 **JCR → CAS → IF** 显示，中科院标签会写成 `CAS Z1 · Med.` 等英文短名，悬停可看完整英文说明。
+旧版默认值也会自动显示为新顺序；你手动设置过的其他 Fields 顺序始终优先。easyScholar 还提供 `ssci`、`sciif5`、
+`jci`、`esi`、`sciBase`、`sciUpSmall`、`sciUpTop`、`sciwarn` 以及 `xr` / `xrSmall` / `xrTop` / `xrWarn` 等字段；
+中科院文献情报中心[已声明自 2026 年起不再更新和发布期刊分区表](https://las.cas.cn/news/tzgg/202603/t20260327_8178738.html)，因此 `sciUp` 应视为历史口径。
+`xr*` 是 2026 年启动的独立“新锐学术”体系，不是新版中科院分区，不会自动替换 `sciUp`。
+若 Zotero 出版物标题末尾带有 `: Official Journal/Publication/Organ of …` 机构说明，查询时会自动使用冒号前的主刊名，界面仍保留原始题名。
 
 **被引数**——右键条目 ▸ Zest ▸ 更新被引数（可批量、可随时取消）。数值写进 `Extra` 的
 `Citations: 12 (Crossref) [2026-08-18]`，来源依次 Crossref → OpenAlex →（可选）Semantic Scholar。
@@ -252,10 +257,17 @@ IDs merge spelling variants, and hovering a node shows the institution when know
   switch lookups on from **Z button ▸ Look journal data up online** (the same pref as auto-fetch in
   Settings), or use the item context menu. Hovering an empty cell tells you which case you are in.
   Lookups are per journal, send only the name, ISSN or DOI, and are cached for 30 days. The Chinese
-  ranking systems exist only in easyScholar and need a key. With the shipped fields, an English UI
-  shows **JCR → CAS → IF** and renders CAS labels as compact English badges such as
-  `CAS Z1 · Med.`, with the full wording on hover. A Chinese UI keeps the source wording and order;
-  any Fields order you set yourself always wins. **Venue** merges publication title, proceedings,
+  ranking systems exist only in easyScholar and need a key. With the shipped fields, a Chinese UI
+  shows **CAS → JCR → IF**, while an English UI shows **JCR → CAS → IF** and renders CAS
+  labels as compact English badges such as `CAS Z1 · Med.`, with the full wording on hover. Legacy
+  shipped defaults are normalized to the same locale-aware order; any other Fields order you set
+  yourself always wins. easyScholar also exposes `ssci`, `sciif5`, `jci`, `esi`, `sciBase`, the
+  remaining `sciUp*` fields, and the independent 2026 XinRui `xr*` family. The CAS National Science
+  Library [stopped updating and publishing its ranking in 2026](https://las.cas.cn/news/tzgg/202603/t20260327_8178738.html),
+  so `sciUp` is now a historical scheme. XinRui is not a successor CAS ranking and is never
+  substituted for `sciUp`. When a Zotero publication title ends in an institutional descriptor such
+  as `: Official Journal/Publication/Organ of …`, lookups use the main title before the colon while
+  the original title remains unchanged in the UI. **Venue** merges publication title, proceedings,
   book title and publisher into one column by item type — Zotero's own Publication column is journal
   titles only.
 - **Citations** — right-click ▸ Zest ▸ update (batchable, cancellable). Written to `Extra` as

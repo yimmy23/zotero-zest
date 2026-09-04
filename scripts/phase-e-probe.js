@@ -567,6 +567,57 @@ check(
 
 /* ---------- 10. easyScholar rank labels follow the Zotero locale ---------- */
 {
+  const shortJournal = "European Journal of Cardio-Thoracic Surgery";
+  const longJournal =
+    `${shortJournal}: Official Journal of the European Association ` +
+    "for Cardio-Thoracic Surgery";
+  check(
+    "rank.lookupStripsOfficialJournalDescriptor",
+    dev.rankNormalize.journalLookupName(longJournal) === shortJournal &&
+      dev.rankNormalize.journalLookupName(
+        `${shortJournal}： THE OFFICIAL PUBLICATION OF Example Society`,
+      ) === shortJournal &&
+      dev.rankNormalize.journalLookupName(
+        "Journal X: Series A: An Official Organ of Example Society",
+      ) === "Journal X: Series A" &&
+      dev.rankNormalize.journalLookupName(
+        "Medicine (Baltimore): Official Journal of Example Society",
+      ) === "Medicine (Baltimore)",
+  );
+  const realColonTitles = [
+    "CA: A Cancer Journal for Clinicians",
+    "Circulation: Cardiovascular Imaging",
+    "Journal of Physics A: Mathematical and Theoretical",
+    "Chemistry: A European Journal",
+    "Title: Official Journal",
+    "Title: Official Journal of",
+  ];
+  check(
+    "rank.lookupPreservesRealColonTitles",
+    realColonTitles.every(
+      (title) => dev.rankNormalize.journalLookupName(title) === title,
+    ),
+  );
+  const longJournalItem = await mk({
+    title: "phase-e long journal title",
+    publicationTitle: longJournal,
+  });
+  const shortJournalItem = await mk({
+    title: "phase-e short journal title",
+    publicationTitle: shortJournal,
+  });
+  trash.push(longJournalItem, shortJournalItem);
+  const longIdentity = dev.rank.journalKeyOf(longJournalItem);
+  const shortIdentity = dev.rank.journalKeyOf(shortJournalItem);
+  check(
+    "rank.officialJournalDescriptorSharesCacheIdentity",
+    longIdentity.name === longJournal &&
+      longIdentity.queryName === shortJournal &&
+      longIdentity.key === shortIdentity.key &&
+      longIdentity.key === dev.rankNormalize.normalizeJournal(shortJournal),
+    JSON.stringify(longIdentity),
+  );
+
   const medicine = {
     field: "sciUp",
     value: "医学1区",
@@ -636,18 +687,26 @@ check(
     "rank.displayDoesNotMutateSourceValue",
     medicine.value === "医学1区" && multidisciplinary.value === "综合性期刊1区",
   );
-  const defaultFields = dev.rankDisplay.rankFieldsForDisplay([
+  const legacyDefaultFields = dev.rankDisplay.rankFieldsForDisplay([
     "sciUp",
     "sciif",
     "sci",
   ]);
+  const defaultFields = dev.rankDisplay.rankFieldsForDisplay([
+    "sciUp",
+    "sci",
+    "sciif",
+  ]);
   const customFields = dev.rankDisplay.rankFieldsForDisplay(["sciUp", "sci"]);
+  const expectedDefaultFields = chineseUI
+    ? "sciUp,sci,sciif"
+    : "sci,sciUp,sciif";
   check(
     "rank.displayOrderFollowsLocale",
-    defaultFields.join(",") ===
-      (chineseUI ? "sciUp,sciif,sci" : "sci,sciUp,sciif") &&
+    legacyDefaultFields.join(",") === expectedDefaultFields &&
+      defaultFields.join(",") === expectedDefaultFields &&
       customFields.join(",") === "sciUp,sci",
-    `${Zotero.locale}: ${defaultFields.join(" ")}`,
+    `${Zotero.locale}: legacy=${legacyDefaultFields.join(" ")} current=${defaultFields.join(" ")}`,
   );
 }
 
