@@ -18,13 +18,17 @@ import {
  */
 
 const MISS_NS = "oaAuthorsMiss";
+const DETAILS_RETRY_NS = "oaAuthorsDetailsRetry";
 const MISS_TTL = 6 * 60 * 60 * 1000;
+const DETAILS_RETRY_TTL = 30 * 1000;
 const MAX_PER_CALL = 30;
 const MAX_ERRORS = 3;
 
 export interface AuthorshipFetchOptions {
   /** Background rendering must explicitly opt into network access. */
   automatic?: boolean;
+  /** The item panel needs roles and full institutions, not only graph identities. */
+  details?: boolean;
   /** The caller's pane/item is still current. */
   shouldContinue?: () => boolean;
 }
@@ -98,36 +102,64 @@ export async function ensureAuthorships(
     }
     if (!doi) continue;
     const key = authorshipsKey(item);
-    if (cachedAuthorships(item)) continue;
-    const miss = cache.ageOf(MISS_NS, key);
+    const existing = cachedAuthorships(item);
+    const upgrading = !!existing && options.details === true;
+    if (existing && (!options.details || existing.every((r) => r.v === 2))) {
+      continue;
+    }
+    const retryKey = `${key}/${doi.toLowerCase()}`;
+    const miss = cache.ageOf(MISS_NS, retryKey);
     if (miss !== undefined && miss < MISS_TTL) continue;
+    const retry = cache.ageOf(DETAILS_RETRY_NS, retryKey);
+    if (retry !== undefined && retry < DETAILS_RETRY_TTL) continue;
+    // A DOI can change while transport is pending, independently of panel selection.
+    const itemValid = () => {
+      try {
+        return valid() && cleanDOI(item).toLowerCase() === doi.toLowerCase();
+      } catch {
+        return false;
+      }
+    };
+    const backOffUpgrade = () => {
+      if (upgrading && itemValid()) cache.set(DETAILS_RETRY_NS, retryKey, 1);
+    };
     budget--;
     let result: HttpResult;
     try {
-      result = await fetchAuthorships(doi, valid);
+      result = await fetchAuthorships(doi, itemValid);
     } catch (e) {
       ztoolkit.log("[graph] authorship fetch failed", e);
+      backOffUpgrade();
       errors++;
       continue;
     }
     if (!valid() || result.kind === "cancelled") break;
-    if (result.kind === "throttled" || result.kind === "unreachable") break;
+    if (!itemValid()) continue;
+    if (result.kind === "throttled" || result.kind === "unreachable") {
+      backOffUpgrade();
+      break;
+    }
     if (result.kind !== "ok" && result.kind !== "not-found") {
+      backOffUpgrade();
       errors++;
       continue;
     }
-    const rows = compactAuthorships(result.value?.authorships);
+    const rows = compactAuthorships(result.value?.authorships, doi);
     if (rows) {
       cache.set(OA_AUTHORS_NS, key, rows);
-      cache.remove(MISS_NS, key);
+      cache.remove(MISS_NS, retryKey);
+      cache.remove(DETAILS_RETRY_NS, retryKey);
       changed = true;
       errors = 0;
     } else if (
       result.kind === "not-found" ||
       Array.isArray(result.value?.authorships)
     ) {
-      cache.set(MISS_NS, key, 1);
-    } else errors++;
+      cache.set(MISS_NS, retryKey, 1);
+    } else {
+      backOffUpgrade();
+      errors++;
+    }
   }
   return changed;
 }

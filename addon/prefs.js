@@ -136,7 +136,7 @@ pref("secret.semanticscholar", "");
 pref("column.remark.enable", false);
 pref("info.enable", true);
 pref("info.affiliations.autoFetch", false);
-// abstract in the Zest panel, translation (pdf-translate's Extra line) first
+// One abstract body; translation is displayed only after an explicit click.
 pref("info.abstract", true);
 
 // Vertical tab manager (off by default — it changes a window people know)

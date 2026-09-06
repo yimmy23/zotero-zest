@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.1.0 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.1.1 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -14,6 +14,16 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 1. 从 [最新 Release](https://github.com/yimmy23/zotero-zest/releases/latest) 下载 `zest.xpi`。
 2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
+
+## 1.1.1 更新
+
+- 改进大文库图谱布局、标签避让与视图适配，缩放、拖动和调整面板后保持阅读位置。
+- 摘要支持按 DOI / PMID 获取补全，保留结构段落；只显示一个摘要，点击「翻译」才显示中文，可随时切回原文。
+- 关键作者默认可见，其余折叠；优先明确第一／通讯标记，缺少标记时显示条目首位和末位。
+- 机构标注第一作者、通讯作者或末位作者归属，共同机构保留双标签；优化书目信息、窄栏和明暗主题布局。
+- 修复简记草稿与选区丢失、保存失败重试及异步信息补全时的过期结果问题。
+
+升级后请重启 Zotero。摘要获取和翻译不会覆盖已有文献字段；翻译按需联网，阅读时长仍保存在本机。
 
 ## 1.1.0 更新
 
@@ -100,15 +110,21 @@ ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等�
 
 ## 条目面板里的两栏
 
-**Zest**——为了一眼了解这篇文献：**标题**（有译文时译文在上、原文在下）、**全部作者一行列出**（按作者列
-的姓名规则，自己的名字高亮、末位标记；Zotero 信息栏一行一个、超过五个就折叠）、期刊与分区徽章、被引数
+**Zest**——为了一眼了解这篇文献：**标题**（有译文时译文在上、原文在下）、紧随标题的期刊与分区徽章、**可展开的完整作者列表**（按作者列
+的姓名规则，自己的名字高亮）、逐条列出的核心机构、被引数
 （带刷新按钮）、阅读时长 + **可点击的每页热力条**（点哪一段就跳到那一页）、状态 / 评级 / 简记直接编辑、
 一排外部链接（DOI、PubMed——有 PMID 直达，没有就按标题搜、arXiv、Google Scholar、Semantic Scholar、
-OpenAlex、Connected Papers），以及**摘要**：装了 zotero-pdf-translate 并翻译过的，先显示译文（多段完整
-显示），原文折叠在下面；没翻译的只显示原文（默认折叠）。译文读的是翻译插件写进 Extra 的 `titleTranslation`
-/ `abstractTranslation`，Zest 自己不翻译、不改写这两行。Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
+OpenAlex、Connected Papers）。文献信息、**摘要**和阅读工作区分组展示；长摘要可点「阅读完整摘要」，保留结构标题、段落和统计符号。
+摘要缺失或只有简介时，可手动点「查找完整摘要」，按 DOI / PMID 精确查询 Europe PMC、PubMed，符合身份校验条件时再尝试 Crossref。
+摘要始终只有一个主体，优先显示已补全的来源摘要。点击「翻译」才翻译为中文并切换显示，点击「原文」即可返回；不会默认展示译文或多个重复摘要区。
+翻译优先复用 Translate for Zotero 已配置的引擎；未安装时使用内置 Microsoft 网页翻译接口，不需要另填密钥。内置接口可用性取决于服务；已配置引擎失败时不会自动换服务。
+相同文本的翻译在本次运行中短暂缓存，切换文献后仍需点击才显示。摘要、Extra 中已有译文及语言字段不会被改写；标题仍可显示 `titleTranslation`。
+Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
+作者优先展示来源明确标记的第一作者和通讯作者；第一作者无明确标记时取条目作者列表首位，无明确通讯作者时显示末位，分别用「一作」「通讯」「末位」区分。其余作者折叠，单作者不重复展示。
+机构按这些作者在该文献中的归属去重，并标注「第一作者」「通讯作者」或「末位作者」；共同机构保留双重标签。默认最多三家并兼顾第一与通讯／末位机构，其余可展开；缺少可靠归属时仅显示两家不同机构，不添加作者归属标签。
+同一条目的刷新会保留展开状态、正在编辑的简记及光标位置。简记或评级保存失败时会显示提示；简记草稿保留，便于重试。
 
-作者机构信息优先读取 OpenAlex 缓存。缺少信息时，可点击面板里的「获取机构信息」，将当前条目的 DOI
+作者机构信息优先读取 OpenAlex 缓存。缺少信息或旧缓存未含通讯身份时，可点击面板里的「获取机构信息」或「补全作者信息」，将当前条目的 DOI
 发送到 OpenAlex，无需密钥。**自动查询默认关闭**；可在设置 ▸ Zest ▸ 条目面板中开启，只有在当前可见面板中
 停留片刻才会查询。切换条目或隐藏面板会取消尚未执行的查询。
 
@@ -235,6 +251,16 @@ with a graph, a reading-statistics window and an annotation matrix on top.
 Download `zest.xpi` from the [latest release](https://github.com/yimmy23/zotero-zest/releases/latest),
 then Zotero → **Tools ▸ Plugins** → gear icon → **Install Plugin From File…** → restart when prompted.
 
+## What's new in 1.1.1
+
+- Improve large-library graph layouts, label collision avoidance, and fit-to-view behavior while preserving the view during zooming, dragging, and resizing.
+- Retrieve complete abstracts by DOI / PMID and preserve structured paragraphs. Click **Translate** to show Chinese in the same abstract body, or **Original** to switch back.
+- Keep first and explicitly marked corresponding authors visible; without metadata, show the first and last creators and collapse the rest.
+- Label institutions by first, corresponding, or last author, keeping both labels for shared institutions; refine bibliography layout and narrow/light/dark views.
+- Preserve remark drafts and text selection, and improve failed-save retries and cancellation of stale metadata requests.
+
+Restart Zotero after updating. Abstract retrieval and translation do not overwrite existing item fields; reading time remains local to each device.
+
 ## What's new in 1.1.0
 
 - More compact settings, item panels and relationship graphs, with improved wrapping, light/dark themes and keyboard navigation. Existing icons are unchanged.
@@ -317,15 +343,28 @@ IDs merge spelling variants, and hovering a node shows the institution when know
 ## Item pane
 
 **Zest** — the paper at a glance: the **title** (translation above the original when there is one),
-**every author on one line** (the Authors column's name rules, your own name highlighted, the
-last-author mark; Zotero's Info box folds after five), venue and rank badges, citations with a
+**an expandable, complete author list** (the Authors column's name rules, your own name highlighted,
+and explicit role labels), venue and rank badges, citations with a
 refresh button, reading time and a **clickable** per-page heat strip (click a segment, land on that
 page), status / rating / remark inline, one row of links out (DOI, PubMed — by PMID, else a title
-search —, arXiv, Google Scholar, Semantic Scholar, OpenAlex, Connected Papers), and the **abstract**:
-zotero-pdf-translate's translation first (every paragraph) with the original folded underneath, or
-the original alone (folded) when nothing was translated. The translations are read from the
-`titleTranslation` / `abstractTranslation` lines that plugin writes into Extra; Zest neither
-translates nor rewrites them. Zotero shows the same section in a reader tab's context pane.
+search —, arXiv, Google Scholar, Semantic Scholar, OpenAlex, Connected Papers).
+Bibliography, **abstract**, and reading controls have separate groups. Long abstracts expand with
+**Read full abstract**, preserving section headings, paragraphs, and statistical notation.
+For a missing abstract or a short blurb, manually choose **Find full abstract** to query Europe PMC,
+PubMed, then Crossref when identifier checks permit, using exact DOI / PMID matches.
+There is one abstract body, preferring the retrieved source text. Click **Translate** to display Chinese
+in the same body and **Original** to switch back. Translation uses a configured Translate for Zotero
+engine, or the built-in Microsoft web translation service when the plugin is absent; a configured
+engine's failure does not silently switch services. Translations use a short-lived memory cache and
+are never displayed automatically. Stored abstract, Extra, and language fields remain unchanged;
+title translations still come from `titleTranslation`. Zotero shows the same section in a reader tab's context pane.
+
+Authors with explicit first/corresponding metadata stay visible. Without first-author metadata, the
+first creator is used; without explicit correspondence, the last creator is shown as **Last**, not
+confirmed **Corresponding**. Other authors collapse, and a sole author appears only once.
+Institutions carry **First author**, **Corresponding author**, or **Last author** labels; a shared
+institution appears once with both labels. The three-institution preview represents both ends when
+known. Unmatched institutions may appear as a two-entry fallback, without attributing them to an author.
 
 Author affiliations are read from the OpenAlex cache first. When they are missing, click
 **Fetch affiliations** in the panel to send the current item's DOI to OpenAlex; no key is needed.

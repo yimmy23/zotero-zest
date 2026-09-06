@@ -10,6 +10,8 @@ import {
 import type { Simulation } from "d3-force";
 import type { ZEdge, ZGraphData, ZNode, ZNodeKind } from "./build";
 import { setTimeout, clearTimeout } from "../utils/timers";
+import { componentTargets, fitGraphBounds } from "./layout";
+import { LABEL_HEIGHT, placeLabels } from "./labels";
 
 /**
  * SVG renderer for the Zest graph view. Pure rendering: takes ZGraphData,
@@ -54,6 +56,7 @@ interface ComponentInfo {
   count: number;
   /** node id → component index; 0 is the largest component */
   compOf: Map<string, number>;
+  sizes: number[];
 }
 
 /** connected components — they drive the pull, the grid, and the palette */
@@ -86,7 +89,11 @@ function componentInfo(nodes: ZNode[], edges: ZEdge[]): ComponentInfo {
   const idx = new Map(order.map((root, i) => [root, i] as const));
   const compOf = new Map<string, number>();
   for (const n of nodes) compOf.set(n.id, idx.get(find(n.id)) ?? 0);
-  return { count: order.length, compOf };
+  return {
+    count: order.length,
+    compOf,
+    sizes: order.map((id) => bySize.get(id)!),
+  };
 }
 
 interface GraphTheme {
@@ -135,11 +142,6 @@ const COMPONENT_PALETTE = [
   "#a0cbe8",
 ];
 
-/** at this many components the layout switches to the forceInABox-style grid */
-const GRID_MIN_COMPONENTS = 6;
-/** per-axis pull toward the component's grid cell centre */
-const GRID_PULL = 0.12;
-
 /**
  * Layout budget. The first WARMUP_TICKS run synchronously before the first
  * paint (a few ms for 50 nodes) so nodes start near their final positions;
@@ -157,7 +159,6 @@ const MOTION_EPS = 0.08;
 const LABEL_MIN = 4;
 const LABEL_MAX = 12;
 const PX_PER_LABEL = 45;
-const MIN_SCALE = 0.2;
 const MAX_SCALE = 5;
 /** pointer movement (px) below which a press counts as a click */
 const CLICK_SLOP = 3;
@@ -196,6 +197,9 @@ export class GraphView {
   private panX = 0;
   private panY = 0;
   private scale = 1;
+  private fitScale = 1;
+  /** Only automatic framing may follow settling/resizes; gestures own the camera. */
+  private autoFit = true;
 
   private rafId = 0;
   private tickBudget = 0;
@@ -204,13 +208,14 @@ export class GraphView {
   private darkQuery: MediaQueryList | null = null;
   private onThemeChange = () => this.applyTheme();
   private theme: GraphTheme;
-  /** ids of nodes that carry a caption (collision radius is larger) */
-  private labeledIds = new Set<string>();
   /** node id → connected-component index (0 = largest), set by setData */
   private compOf = new Map<string, number>();
   private compCount = 1;
-  /** caption order: node id → rank (0 = centre, then by node size) */
-  private labelRank = new Map<string, number>();
+  private labelOrder: ZNode[] = [];
+  private labelWidths = new Map<string, number>();
+  private visibleLabels = new Set<string>();
+  private labelFontSize = 11;
+  private labelHeight = LABEL_HEIGHT;
   /** caption ranks visible at scale 1; zooming in raises the budget */
   private labelBase = LABEL_MIN;
   /** hovered node while a neighbourhood focus is dimming the rest */
@@ -218,8 +223,6 @@ export class GraphView {
   private selectedId: string | null = null;
   /** One tab stop for the canvas; arrow keys move between nodes. */
   private tabStopId: string | null = null;
-  /** scale the labels were last laid out for — panning skips the rewrite */
-  private lastLabelScale = -1;
   /** hover-intent timer: focus only after a short dwell, not on fly-over */
   private hoverTimer = 0;
 
@@ -281,19 +284,23 @@ export class GraphView {
     this.clearScene();
     if (!data?.nodes.length) return;
     this.data = data;
+    this.autoFit = true;
+    this.scale = this.fitScale = 1;
+    this.panX = this.panY = 0;
 
-    // the center node (if any) is pinned at the simulation origin
     const centerNodes = data.nodes.filter((n) => n.kind === "center");
     this.tabStopId = centerNodes[0]?.id || data.nodes[0].id;
-    for (const c of centerNodes) {
-      c.fx = 0;
-      c.fy = 0;
-    }
 
     // connected components drive the palette, the pull, and the grid
     const comps = componentInfo(data.nodes, data.edges);
     this.compOf = comps.compOf;
     this.compCount = comps.count;
+    const targets = componentTargets(comps.sizes, this.width, this.height);
+    const cellOf = (n: ZNode) => targets[this.compOf.get(n.id) ?? 0];
+    for (const c of centerNodes) {
+      c.fx = cellOf(c).x;
+      c.fy = cellOf(c).y;
+    }
 
     this.adj.clear();
     const addAdj = (a: string, b: string) => {
@@ -340,11 +347,9 @@ export class GraphView {
       this.nodeEls.set(node.id, c);
     }
 
-    // Every node gets a caption; the zoom level decides how many show
-    // (Obsidian-style: zooming in fades more in — see
-    // updateLabelVisibility). At scale 1 the pane width sets the budget
-    // (a 300px pane ~6, a wide one 12), and the collision force reserves
-    // caption room only for that base set, so the layout is unchanged.
+    // Full captions stay available through native node tooltips. Visible
+    // captions are measured once, then placed without collisions in screen
+    // space; they must never inflate the simulation's collision circles.
     this.labelBase = Math.max(
       LABEL_MIN,
       Math.min(LABEL_MAX, Math.round(this.width / PX_PER_LABEL)),
@@ -352,56 +357,31 @@ export class GraphView {
     const ranked = data.nodes
       .filter((n) => n.kind !== "center")
       .sort((a, b) => nodeRadius(b) - nodeRadius(a));
-    this.labelRank.clear();
-    for (const c of centerNodes) this.labelRank.set(c.id, 0);
-    ranked.forEach((n, i) => this.labelRank.set(n.id, i + 1));
-    this.labeledIds = new Set(
-      [...centerNodes, ...ranked.slice(0, this.labelBase)].map((n) => n.id),
-    );
+    this.labelOrder = [...centerNodes, ...ranked];
     for (const node of data.nodes) {
       const t = this.createSVG<SVGTextElement>("text");
       t.setAttribute("class", "zest-graph-label");
       t.setAttribute("aria-hidden", "true");
       t.textContent = node.label;
-      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("text-anchor", "start");
       t.setAttribute("font-size", "10.5");
       t.setAttribute("font-family", "system-ui, -apple-system, sans-serif");
       t.setAttribute("paint-order", "stroke");
       t.setAttribute("stroke-width", "2.5");
       t.setAttribute("stroke-linejoin", "round");
       t.style.pointerEvents = "none";
-      t.style.transition = "opacity 0.15s";
+      t.style.opacity = "0";
       this.labelLayer.appendChild(t);
       this.labelEls.set(node.id, t);
     }
-    this.updateLabelVisibility(true);
+    this.measureLabels();
 
     this.applyTheme();
 
-    // The sandbox has no ambient timers, so the simulation is created
-    // stopped and stepped manually from a requestAnimationFrame loop.
-    // A scope usually falls apart into many components (each paper and its
-    // co-author/tag satellites). Unbounded many-body repulsion pushes whole
-    // components apart until the canvas clamp flattens them into lines along
-    // the border (issue #2's second half) — so repulsion is short-range only.
-    // A handful of components gets a centering pull that grows with the
-    // count; MANY components get a forceInABox-style grid instead — each
-    // component is pulled into its own cell (largest, and the centre node's,
-    // in the middle), which reads tidier than a herded cloud.
-    const centerComp = centerNodes.length
-      ? this.compOf.get(centerNodes[0].id)
-      : undefined;
-    const grid =
-      this.compCount >= GRID_MIN_COMPONENTS
-        ? this.buildComponentGrid(this.compCount, centerComp)
-        : null;
-    const pull =
-      this.compCount > 1 ? Math.min(0.1, 0.04 + this.compCount * 0.004) : 0.03;
-    const reach = grid
-      ? Math.max(60, Math.min(grid.cellW, grid.cellH) * 0.9)
-      : Math.max(160, Math.min(this.width, this.height) / 2.5);
-    const cellOf = (n: ZNode) =>
-      grid ? grid.centers[this.compOf.get(n.id) ?? 0] : { x: 0, y: 0 };
+    // Simulate in model space, never against a hard viewport wall. Larger
+    // components receive more space; the camera fits the resulting bounds.
+    const multiple = this.compCount > 1;
+    const reach = Math.max(160, Math.min(this.width, this.height) / 2.5);
     this.sim = forceSimulation<ZNode>(data.nodes)
       .force(
         "link",
@@ -411,31 +391,25 @@ export class GraphView {
           .strength(0.3),
       )
       .force("charge", forceManyBody<ZNode>().strength(-120).distanceMax(reach))
-      // the grid replaces global centering (it would drag cells off-centre)
-      .force("center", grid ? null : forceCenter<ZNode>(0, 0))
+      .force("center", multiple ? null : forceCenter<ZNode>(0, 0))
       .force(
         "collide",
-        // labeled nodes reserve room for their caption below the circle
-        forceCollide<ZNode>((n) =>
-          this.labeledIds.has(n.id) ? nodeRadius(n) + 13 : nodeRadius(n) + 5,
-        ).strength(0.9),
+        forceCollide<ZNode>((n) => nodeRadius(n) + 5).strength(0.9),
       )
-      // few components: keep them in the middle ground; many: herd each
-      // toward its cell centre
       .force(
         "x",
-        forceX<ZNode>((n) => cellOf(n).x).strength(grid ? GRID_PULL : pull),
+        forceX<ZNode>((n) => cellOf(n).x).strength(multiple ? 0.09 : 0.03),
       )
       .force(
         "y",
-        forceY<ZNode>((n) => cellOf(n).y).strength(grid ? GRID_PULL : pull),
+        forceY<ZNode>((n) => cellOf(n).y).strength(multiple ? 0.09 : 0.03),
       )
       .stop();
 
     // off-screen warm-up: converge most of the way before the first paint
     for (let i = 0; i < WARMUP_TICKS; i++) this.sim.tick();
-    this.clampToCanvas();
     this.updatePositions();
+    this.fitView();
     this.runTicks(SETTLE_TICKS);
   }
 
@@ -443,12 +417,35 @@ export class GraphView {
     this.handleResize();
   }
 
-  destroy(): void {
-    if (this.hoverTimer) {
-      clearTimeout(this.hoverTimer);
-      this.hoverTimer = 0;
+  /** Reframe the whole model without changing a node, an edge or the simulation. */
+  fitView(): void {
+    const nodes = this.data?.nodes;
+    if (!nodes?.length) return;
+    const bounds = {
+      minX: Infinity,
+      minY: Infinity,
+      maxX: -Infinity,
+      maxY: -Infinity,
+    };
+    for (const node of nodes) {
+      const r = nodeRadius(node) + 3;
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
+      bounds.minX = Math.min(bounds.minX, x - r);
+      bounds.maxX = Math.max(bounds.maxX, x + r);
+      bounds.minY = Math.min(bounds.minY, y - r);
+      bounds.maxY = Math.max(bounds.maxY, y + r);
     }
-    this.stopSim();
+    const camera = fitGraphBounds(bounds, this.width, this.height);
+    this.scale = this.fitScale = camera.scale;
+    this.panX = camera.panX;
+    this.panY = camera.panY;
+    this.autoFit = true;
+    this.applyTransform();
+  }
+
+  destroy(): void {
+    this.clearScene();
     this.resizeObs?.disconnect();
     this.resizeObs = null;
     try {
@@ -460,10 +457,6 @@ export class GraphView {
     this.svg.removeEventListener("wheel", this.onWheel);
     this.svg.removeEventListener("pointerdown", this.onBackgroundDown);
     this.svg.remove();
-    this.nodeEls.clear();
-    this.labelEls.clear();
-    this.edgeEls = [];
-    this.data = null;
   }
 
   // ------------------------------------------------------------------ scene
@@ -498,44 +491,16 @@ export class GraphView {
     this.nodeEls.clear();
     this.labelEls.clear();
     this.edgeEls = [];
-    this.labelRank.clear();
+    this.labelOrder = [];
+    this.labelWidths.clear();
+    this.visibleLabels.clear();
+    this.adj.clear();
+    this.compOf.clear();
+    this.compCount = 1;
     this.focusedId = null;
     this.selectedId = null;
     this.tabStopId = null;
     this.data = null;
-  }
-
-  /**
-   * forceInABox-lite: split the canvas into a near-square grid with one
-   * cell per component, cells handed out centre-first so the largest
-   * component (and the pinned centre node's, which sits at the origin)
-   * lands in the middle.
-   */
-  private buildComponentGrid(count: number, centerComp?: number) {
-    const w = Math.max(120, this.width - 60);
-    const h = Math.max(120, this.height - 60);
-    const cols = Math.max(1, Math.round(Math.sqrt((count * w) / h)));
-    const rows = Math.ceil(count / cols);
-    const cellW = w / cols;
-    const cellH = h / rows;
-    const cells: Array<{ x: number; y: number }> = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        cells.push({
-          x: -w / 2 + (c + 0.5) * cellW,
-          y: -h / 2 + (r + 0.5) * cellH,
-        });
-      }
-    }
-    cells.sort((a, b) => Math.hypot(a.x, a.y) - Math.hypot(b.x, b.y));
-    const order: number[] = [];
-    if (centerComp !== undefined) order.push(centerComp);
-    for (let i = 0; i < count; i++) {
-      if (i !== centerComp) order.push(i);
-    }
-    const centers = new Array<{ x: number; y: number }>(count);
-    order.forEach((comp, i) => (centers[comp] = cells[i]));
-    return { centers, cellW, cellH };
   }
 
   private handleResize() {
@@ -553,8 +518,9 @@ export class GraphView {
           Math.min(LABEL_MAX, Math.round(this.width / PX_PER_LABEL)),
         );
         this.updateViewBox();
-        this.applyTransform();
-        this.updateLabelVisibility(true);
+        this.measureLabels();
+        if (this.autoFit && this.data?.nodes.length) this.fitView();
+        else this.applyTransform();
       }
     } catch {
       // ignore: container may already be detached
@@ -577,24 +543,114 @@ export class GraphView {
     this.updateLabelVisibility();
   }
 
-  /**
-   * Obsidian-style label reveal. At scale 1 only the base budget of the
-   * largest nodes is captioned; zooming in raises the budget (zoom^1.6,
-   * roughly tracking the extra screen room), and each caption fades in
-   * through the fractional tail of the budget. The centre is always on.
-   */
-  private updateLabelVisibility(force = false) {
-    if (this.focusedId) return; // a hover focus owns the opacities right now
-    // panning calls this on every pointermove — only a zoom (scale change)
-    // is allowed to rewrite a few hundred label opacities
-    if (!force && this.scale === this.lastLabelScale) return;
-    this.lastLabelScale = this.scale;
-    const budget = this.labelBase * Math.pow(this.scale, 1.6);
-    for (const [id, t] of this.labelEls) {
-      const rank = this.labelRank.get(id) ?? Infinity;
-      const o = rank === 0 ? 1 : Math.max(0, Math.min(1, budget - rank + 1));
-      t.style.opacity = String(Math.round(o * 100) / 100);
+  /** Text metrics are cached between graph/font/viewport changes, never read per tick. */
+  private measureLabels() {
+    this.labelFontSize =
+      (parseFloat(this.win.getComputedStyle(this.container)?.fontSize || "") ||
+        13) * 0.846;
+    this.labelHeight = Math.max(
+      LABEL_HEIGHT,
+      Math.ceil(this.labelFontSize * 1.5),
+    );
+    const maxWidth = Math.max(1, Math.min(180, this.width - 8));
+    for (const node of this.labelOrder) {
+      const t = this.labelEls.get(node.id)!;
+      t.style.fontSize = `${this.labelFontSize}px`;
+      const chars = Array.from(node.label);
+      const widthOf = () => {
+        try {
+          const width = t.getComputedTextLength();
+          if (width > 0) return width;
+        } catch {
+          /* detached SVG or test DOM */
+        }
+        return Array.from(t.textContent || "").reduce(
+          (sum, c) =>
+            sum +
+            (c.charCodeAt(0) > 255
+              ? this.labelFontSize
+              : this.labelFontSize * 0.58),
+          0,
+        );
+      };
+      t.textContent = node.label;
+      let width = widthOf();
+      if (width > maxWidth) {
+        let end = Math.max(
+          0,
+          Math.floor((chars.length * maxWidth) / width) - 1,
+        );
+        do {
+          t.textContent = `${chars.slice(0, end).join("")}…`;
+          width = widthOf();
+          end--;
+        } while (width > maxWidth && end >= 0);
+      }
+      this.labelWidths.set(node.id, width);
     }
+  }
+
+  /** Keep only collision-free, on-screen captions. Zoom reveals more; a hub
+   * hover must not force hundreds of overlapping neighbour captions on. */
+  private updateLabelVisibility() {
+    if (!this.data?.nodes.length) return;
+    const budget = Math.min(
+      40,
+      Math.max(
+        4,
+        Math.round(this.labelBase * Math.pow(this.scale / this.fitScale, 0.8)),
+      ),
+    );
+    const forceId = this.focusedId || this.selectedId || this.labelOrder[0]?.id;
+    const neighbors = this.focusedId ? this.adj.get(this.focusedId) : null;
+    const candidates = this.labelOrder.filter(
+      (n) => !this.focusedId || n.id === this.focusedId || neighbors?.has(n.id),
+    );
+    const forced = candidates.find((n) => n.id === forceId);
+    const ordered = forced
+      ? [forced, ...candidates.filter((n) => n !== forced)]
+      : candidates;
+    const tx = this.width / 2 + this.panX;
+    const ty = this.height / 2 + this.panY;
+    const screenNode = (n: ZNode) => ({
+      id: n.id,
+      x: tx + (n.x ?? 0) * this.scale,
+      y: ty + (n.y ?? 0) * this.scale,
+      radius: nodeRadius(n) * this.scale,
+      width: this.labelWidths.get(n.id) || 0,
+    });
+    const placed = placeLabels(
+      ordered
+        .map(screenNode)
+        .filter(
+          (n) =>
+            n.x + n.radius > 0 &&
+            n.y + n.radius > 0 &&
+            n.x - n.radius < this.width &&
+            n.y - n.radius < this.height,
+        )
+        .slice(0, budget * 6),
+      this.data.nodes.map(screenNode),
+      { width: this.width, height: this.height },
+      budget,
+      forceId,
+      this.labelHeight,
+    );
+    for (const id of this.visibleLabels) {
+      if (!placed.has(id)) this.labelEls.get(id)!.style.opacity = "0";
+    }
+    for (const [id, position] of placed) {
+      const t = this.labelEls.get(id)!;
+      t.style.opacity = "1";
+      t.style.fontSize = `${this.labelFontSize / this.scale}px`;
+      t.setAttribute("stroke-width", String(2.5 / this.scale));
+      t.setAttribute("x", String((position.x - tx) / this.scale));
+      t.setAttribute(
+        "y",
+        String((position.y + this.labelHeight * 0.8 - ty) / this.scale),
+      );
+    }
+    this.visibleLabels = new Set(placed.keys());
   }
 
   /** client (screen) coordinates -> simulation coordinates */
@@ -638,7 +694,6 @@ export class GraphView {
         }
       }
       if (ticked) {
-        this.clampToCanvas();
         this.updatePositions();
         // nothing visibly moving any more (and no drag holding alpha up):
         // stop early instead of burning frames on sub-pixel drift
@@ -648,7 +703,7 @@ export class GraphView {
       }
       if (this.tickBudget > 0) {
         this.rafId = this.win.requestAnimationFrame(step);
-      }
+      } else if (this.autoFit) this.fitView();
     };
     this.rafId = this.win.requestAnimationFrame(step);
   }
@@ -661,36 +716,6 @@ export class GraphView {
     this.tickBudget = 0;
     this.sim?.stop();
     this.sim = null;
-  }
-
-  /**
-   * Keep every node inside the visible canvas. Zeroing the velocity on the
-   * clamped axis matters: clamping position alone lets the force keep
-   * pushing outward every tick, and the node visibly shivers at the border.
-   */
-  private clampToCanvas() {
-    const boundX = Math.max(60, this.width / 2 - 14);
-    const boundY = Math.max(60, this.height / 2 - 14);
-    for (const node of this.data?.nodes || []) {
-      if (typeof node.x === "number") {
-        if (node.x < -boundX) {
-          node.x = -boundX;
-          node.vx = 0;
-        } else if (node.x > boundX) {
-          node.x = boundX;
-          node.vx = 0;
-        }
-      }
-      if (typeof node.y === "number") {
-        if (node.y < -boundY) {
-          node.y = -boundY;
-          node.vy = 0;
-        } else if (node.y > boundY) {
-          node.y = boundY;
-          node.vy = 0;
-        }
-      }
-    }
   }
 
   private updatePositions() {
@@ -718,12 +743,8 @@ export class GraphView {
         c.setAttribute("cx", String(node.x ?? 0));
         c.setAttribute("cy", String(node.y ?? 0));
       }
-      const t = this.labelEls.get(node.id);
-      if (t) {
-        t.setAttribute("x", String(node.x ?? 0));
-        t.setAttribute("y", String((node.y ?? 0) + nodeRadius(node) + 10));
-      }
     }
+    this.updateLabelVisibility();
   }
 
   // ------------------------------------------------------------------ theme
@@ -860,8 +881,12 @@ export class GraphView {
     if (!ev.ctrlKey && !ev.metaKey) return;
     ev.preventDefault();
     const factor = ev.deltaY < 0 ? 1.15 : 1 / 1.15;
-    const k = Math.min(MAX_SCALE, Math.max(MIN_SCALE, this.scale * factor));
+    const k = Math.min(
+      MAX_SCALE,
+      Math.max(Math.min(0.2, this.fitScale * 0.5), this.scale * factor),
+    );
     if (k === this.scale) return;
+    this.autoFit = false;
     // zoom anchored at the cursor: keep the point under it fixed
     const r = this.svg.getBoundingClientRect();
     const sx = r.width > 0 ? ((ev.clientX - r.left) / r.width) * this.width : 0;
@@ -888,6 +913,7 @@ export class GraphView {
     const ky = rect.height > 0 ? this.height / rect.height : 1;
     this.svg.style.cursor = "grabbing";
     const move = (e: PointerEvent) => {
+      this.autoFit = false;
       this.panX = startPanX + (e.clientX - startX) * kx;
       this.panY = startPanY + (e.clientY - startY) * ky;
       this.applyTransform();
@@ -991,6 +1017,7 @@ export class GraphView {
         }
         if (!dragging) {
           dragging = true;
+          this.autoFit = false;
           this.sim?.alphaTarget(0.3);
         }
         const p = this.toLocal(e.clientX, e.clientY);
@@ -1113,6 +1140,7 @@ export class GraphView {
     circle?.setAttribute("aria-pressed", "true");
     this.selectedId = node.id;
     this.moveTabStop(node.id);
+    this.updateLabelVisibility();
   }
 
   /** hover: keep the node and its direct neighbours crisp, fade the rest */
@@ -1122,10 +1150,7 @@ export class GraphView {
     for (const [id, c] of this.nodeEls) {
       c.style.opacity = keep.has(id) ? "1" : "0.15";
     }
-    // every neighbour's caption shows while focused, whatever the zoom
-    for (const [id, t] of this.labelEls) {
-      t.style.opacity = keep.has(id) ? "1" : "0";
-    }
+    this.updateLabelVisibility();
     for (const { el, edge } of this.edgeEls) {
       const [a, b] = edgeEndpointIds(edge);
       const on = a === node.id || b === node.id;
@@ -1144,6 +1169,6 @@ export class GraphView {
       el.style.opacity = "";
       el.setAttribute("stroke-width", edgeWidth(edge));
     }
-    this.updateLabelVisibility(true);
+    this.updateLabelVisibility();
   }
 }

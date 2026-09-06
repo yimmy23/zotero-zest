@@ -254,6 +254,17 @@ export function showGraphPane(win: Window) {
   );
   actions.appendChild(refresh);
 
+  const fit = doc.createElement("button");
+  fit.type = "button";
+  fit.className = "zest-graph-btn zest-graph-fit";
+  fit.textContent = getString("graph-fit");
+  fit.title = getString("graph-fit-tip");
+  fit.addEventListener(
+    "click",
+    guard("graph fit", () => panes.get(win)?.view?.fitView()),
+  );
+  actions.appendChild(fit);
+
   const close = iconButton(
     doc,
     "close",

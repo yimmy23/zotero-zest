@@ -109,8 +109,9 @@ export async function fetchOpenAlexCitations(
     onFailure,
   );
   // free ride for the author graph: same request, remember who wrote it
-  const rows = compactAuthorships(res?.authorships);
-  if (rows) cache.set(OA_AUTHORS_NS, authorshipsKey(item), rows);
+  const rows = compactAuthorships(res?.authorships, doi);
+  if (rows && cleanDOI(item).toLowerCase() === doi.toLowerCase())
+    cache.set(OA_AUTHORS_NS, authorshipsKey(item), rows);
   const n = res?.cited_by_count;
   return typeof n === "number" ? { count: n, source: "OpenAlex" } : null;
 }

@@ -308,32 +308,73 @@ export function registerStyles(win: Window) {
     .zest-info-btn:disabled:hover { background-color: var(--fill-quinary); }
     .zest-info-stars.disabled .zest-info-star { cursor: default; }
     .zest-info-stars.disabled { opacity: .7; }
-    .zest-info { display: flex; flex-direction: column; gap: 5px; padding: 4px 10px 10px; line-height: 1.4; }
+    .zest-info { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; line-height: 1.5; }
+    .zest-info-card { min-width: 0; box-sizing: border-box; padding: 10px 12px;
+      border: 1px solid var(--fill-quinary); border-radius: 9px;
+      background-color: var(--material-background, transparent); }
+    .zest-info-bibliography, .zest-info-workspace { display: flex; flex-direction: column; gap: 7px; }
+    .zest-info-bibliography { gap: 12px; }
+    .zest-info-group-title { color: var(--fill-secondary); font-weight: 600; font-size: .9em; margin-bottom: 1px; }
     .zest-info-row { display: grid; grid-template-columns: minmax(0, 5em) minmax(0, 1fr);
       align-items: start; gap: 3px 7px; min-width: 0; }
-    .zest-info-heading { display: block; padding-bottom: 2px; }
-    .zest-info-heading > .zest-info-key { display: block; margin-bottom: 2px; padding-top: 0; }
+    .zest-info-heading { display: block; padding-bottom: 5px; }
+    .zest-info-heading > .zest-info-key { display: none; }
     .zest-info-divider { border-top: 1px solid var(--fill-quinary); padding-top: 6px; margin-top: 1px; }
     .zest-info-key {
       min-width: 0; padding-top: 2px; color: var(--fill-secondary);
       font-size: calc(var(--zotero-font-size, 13px) * .923); overflow-wrap: anywhere;
     }
     .zest-info-value { min-width: 0; overflow-wrap: anywhere; }
+    .zest-info-metadata { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
+    .zest-info-metadata > .zest-info-key { grid-column: 1; grid-row: 1; padding: 0; font-size: .82em; font-weight: 500; }
+    .zest-info-metadata > .zest-info-value { grid-column: 1 / -1; grid-row: 2; }
+    .zest-info-metadata > .zest-info-metadata-toggle { grid-column: 2; grid-row: 1; margin: 0; padding: 0; font-size: .82em; text-decoration: none; }
+    .zest-info-source { padding-bottom: 10px; border-bottom: 1px solid var(--fill-quinary); }
+    .zest-info-venue-name { font-weight: 500; line-height: 1.45; }
+    .zest-info-author-entry { display: inline-flex; align-items: baseline; max-width: 100%; vertical-align: top; }
+    .zest-info-author-separator { white-space: pre; }
+    .zest-info-author-role { flex-shrink: 0; margin-inline-start: 5px; font-size: .76em; color: var(--fill-secondary); white-space: nowrap; }
+    .zest-info-author-entry[hidden], .zest-info-institutions > li[hidden] { display: none; }
+    .zest-info-author, .zest-info-star, .zest-info-heat-seg { appearance: none; margin: 0; padding: 0; min-width: 0; border: 0; background: transparent; font: inherit; color: inherit; }
+    .zest-info-author { max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; cursor: pointer; border-radius: 2px; }
+    .zest-info-author:hover { text-decoration: underline; text-underline-offset: 3px; }
+    .zest-info-institutions { margin: 0; padding: 0; list-style: none; font-size: .92em; line-height: 1.5; color: var(--fill-secondary); }
+    .zest-info-institutions > li { margin: 0; padding-inline-start: 9px; border-inline-start: 2px solid var(--fill-quinary); }
+    .zest-info-institutions > li + li { margin-top: 5px; }
+    .zest-info-institution-roles { display: inline-flex; flex-wrap: wrap; gap: 3px;
+      margin-inline-start: 6px; vertical-align: baseline; }
+    .zest-info-institution-role { display: inline-block; border: 1px solid var(--fill-quinary);
+      border-radius: 4px; padding: 0 4px; font-size: .78em; line-height: 1.6;
+      color: var(--fill-primary); white-space: nowrap; background-color: var(--fill-quinary); }
+    .zest-info-institution-role[data-role="corresponding"] { border-color: var(--fill-tertiary);
+      background-color: transparent; }
+    .zest-info-institution-role[data-role="last"] { border-style: dashed;
+      color: var(--fill-secondary); background-color: transparent; }
+    .zest-info-citations { display: flex; align-items: baseline; gap: 8px; }
+    .zest-info-citations > .zest-info-key { flex: 0 0 auto; font-size: .82em; }
+    .zest-info-citations > .zest-info-controls { flex: 1; }
+    .zest-info-citation-count { font-variant-numeric: tabular-nums; font-weight: 600; margin-inline-end: 8px; }
+    .zest-info-provenance { color: var(--fill-secondary); font-size: .88em; }
     .zest-info-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; }
     .zest-info-controls > .zest-info-value { flex: 1 1 8em; }
     .zest-info-venue { display: flex; flex-direction: column; gap: 3px; }
     .zest-info-ranks { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; min-width: 0; }
     .zest-info-ranks > .zest-rank-badge { flex: 0 0 auto; max-width: 100%; }
-    .zest-info-btn, .zest-info-link, .zest-affiliations-fetch {
+    .zest-info-btn, .zest-info-link, .zest-affiliations-fetch, .zest-abstract-fetch {
       appearance: none; margin: 0; border: 1px solid transparent; border-radius: 5px; padding: 2px 6px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);
       font: inherit; font-size: calc(var(--zotero-font-size, 13px) * .923); line-height: 1.4;
     }
-    .zest-info-btn:not(:disabled):hover, .zest-info-link:hover, .zest-affiliations-fetch:not(:disabled):hover { background-color: var(--fill-quarternary, var(--fill-quinary)); border-color: var(--fill-quarternary); }
-    .zest-affiliations-fetch:disabled { cursor: default; color: var(--fill-secondary); }
+    .zest-info-btn:not(:disabled):hover, .zest-info-link:hover, .zest-affiliations-fetch:not(:disabled):hover, .zest-abstract-fetch:not(:disabled):hover { background-color: var(--fill-quarternary, var(--fill-quinary)); border-color: var(--fill-quarternary); }
+    .zest-affiliations-fetch:disabled, .zest-abstract-fetch:disabled { cursor: default; color: var(--fill-secondary); }
+    .zest-info-text-toggle { appearance: none; margin: 2px 0 0; padding: 1px 0; border: 0;
+      background: transparent; font: inherit; font-size: .88em; color: var(--fill-secondary); cursor: pointer;
+      text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--fill-quarternary); }
+    .zest-info-text-toggle:hover { color: var(--fill-primary); text-decoration-color: currentColor; }
     .zest-info-feedback { display: block; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-info-feedback:empty { display: none; }
-    .zest-info :is(button, input, summary):focus-visible,
+    .zest-info-remark-feedback { grid-column: 2; }
+    .zest-info :is(button, input, textarea, summary):focus-visible,
     .zest-annot-copy:focus-visible,
     .zest-tabbar :is(button, input):focus-visible,
     .zest-tagtree :is(button, input):focus-visible {
@@ -346,26 +387,34 @@ export function registerStyles(win: Window) {
       width: 100%; box-sizing: border-box; min-width: 0; margin: 0; padding: 3px 6px; border-radius: 5px; font: inherit;
       border: 1px solid var(--fill-quarternary);
       background-color: var(--material-background, transparent); color: var(--fill-primary);
+      resize: vertical; min-height: 3.5em; max-height: 14em; line-height: 1.5;
     }
     .zest-info-heat { display: flex; height: 14px; gap: 1px; border-radius: 4px; overflow: hidden; }
     .zest-info-heat-seg { flex: 1 1 auto; cursor: pointer; background-color: transparent; }
     .zest-info-heat-seg:hover { outline: 1px solid var(--zest-accent-strong); outline-offset: -1px; }
     .zest-info-status { max-width: 100%; text-align: start; }
     .zest-info-status.zest-status-auto-text { color: var(--fill-secondary); }
-    .zest-info-open { display: block; }
+    .zest-info-open { display: block; padding: 0 3px; }
     .zest-info-open > .zest-info-key { display: block; margin-bottom: 4px; }
     .zest-info-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
     .zest-info-link { background-color: transparent; border-color: var(--fill-quarternary);
       white-space: nowrap; max-width: 100%; }
     .zest-info-authors .zest-author-self { font-weight: 600; }
     .zest-info-authors .zest-author-mark { color: var(--fill-secondary); }
-    .zest-info-title { font-weight: 600; line-height: 1.5; font-size: 1.05em; }
+    .zest-info-title { display: block; max-width: 68ch; font-weight: 600; line-height: 1.45; font-size: 1.08em; text-wrap: pretty; }
     .zest-info-title .zest-info-original { font-weight: 400; color: var(--fill-secondary); margin-top: 6px; font-size: .95em; }
-    .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    .zest-info-abstract > summary, .zest-info-abstract-original > summary { cursor: pointer; color: var(--fill-secondary); padding-block: 4px; }
-    .zest-info-abstract-text { margin-top: 6px; white-space: pre-wrap; line-height: 1.65; }
-    .zest-info-abstract-original { margin-top: 4px; }
-    .zest-info-abstract-original .zest-info-abstract-text { color: var(--fill-secondary); }
+    .zest-info-abstract { font-size: 1em; }
+    .zest-info-abstract > summary { cursor: pointer; color: var(--fill-primary); font-weight: 600; padding-block: 1px; }
+    .zest-info-abstract-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; margin-top: 7px; }
+    .zest-info-abstract-source { color: var(--fill-secondary); font-size: .85em; overflow-wrap: anywhere; }
+    .zest-abstract-fetch { border-color: var(--fill-quarternary); background-color: transparent; }
+    .zest-info-abstract-text { max-width: 72ch; margin-top: 9px; white-space: normal; line-height: 1.7; overflow-wrap: anywhere; }
+    .zest-info-abstract-text p { margin: 0 0 .85em; }
+    .zest-info-abstract-text p:last-child { margin-bottom: 0; }
+    .zest-info-abstract-text p > span { white-space: pre-wrap; }
+    .zest-info-abstract-preview { max-height: 16em; overflow: hidden; mask-image: linear-gradient(to bottom, black calc(100% - 2em), transparent); }
+    .zest-info-abstract-expand { margin-top: 6px; color: var(--fill-primary); }
+    .zest-info-abstract-heading { display: block; margin-bottom: 2px; font-weight: 600; color: var(--fill-primary); }
 
     /* ---------- annotation locator cards ---------- */
     .zest-annot-cards { display: flex; flex-direction: column; gap: 8px; padding: 6px 12px 14px; }

@@ -94,6 +94,8 @@ import {
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
 import { stopAuthorshipFetches } from "./graph/authorFetch";
+import { stopAbstractFetches } from "./panes/abstractSource";
+import { stopAbstractTranslations } from "./panes/abstractTranslation";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -541,6 +543,8 @@ async function onShutdown() {
   // anything from here on
   addon.data.alive = false;
   stopAuthorshipFetches();
+  stopAbstractFetches();
+  stopAbstractTranslations();
   // …and teardown must not overlap a still-running startup init (a fast
   // disable right after enable): wait for the loads to settle, bounded so a
   // hung init can never wedge shutdown
@@ -614,6 +618,8 @@ async function onAppShutdown() {
   // while Zotero is already waiting for its shutdown barrier.
   addon.data.alive = false;
   stopAuthorshipFetches();
+  stopAbstractFetches();
+  stopAbstractTranslations();
   stopPluginSweep();
   try {
     await Promise.race([

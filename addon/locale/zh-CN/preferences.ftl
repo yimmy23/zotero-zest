@@ -242,9 +242,9 @@ pref-cite-hint = 只有你主动触发时才会联网获取（条目右键 → Z
 
 pref-group-panel = 条目面板
 pref-info-enable =
-    .label = 显示 Zest 面板（标题、全部作者一行、期刊与分区、被引、阅读、状态、评级、简记、外部链接、摘要）
+    .label = 显示 Zest 面板（标题、可展开作者列表、期刊与分区、摘要、阅读记录、状态、评级、简记与外部链接）
 pref-info-abstract =
-    .label = 面板中包含摘要——有 zotero-pdf-translate 写下的译文（Extra 里的 titleTranslation / abstractTranslation）时先显示译文，原文折叠在下
+    .label = 显示摘要（支持获取完整摘要、点击翻译）
 pref-info-affiliations-auto =
     .label = 浏览条目时自动获取作者机构
 pref-info-affiliations-hint = 默认关闭。开启后，在可见面板中停留片刻会将该条目的 DOI 发送到 OpenAlex。也可在面板中手动获取机构信息，无需密钥。

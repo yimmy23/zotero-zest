@@ -242,9 +242,9 @@ pref-cite-hint = Counts are only fetched when you ask for them, from the item co
 
 pref-group-panel = Item panel
 pref-info-enable =
-    .label = Show the Zest panel (title, all authors on one line, venue and ranks, citations, reading, status, rating, remark, links out, abstract)
+    .label = Show the Zest panel (title, expandable authors, venue and ranks, abstract, reading, status, rating, remark and links out)
 pref-info-abstract =
-    .label = Include the abstract — when zotero-pdf-translate has written a translation (titleTranslation / abstractTranslation in Extra) it comes first, the original folded underneath
+    .label = Show abstracts with full-abstract lookup and click-to-translate
 pref-info-affiliations-auto =
     .label = Automatically fetch author affiliations when viewing an item
 pref-info-affiliations-hint = Off by default. When enabled, the visible panel sends the item's DOI to OpenAlex after you pause on it. You can also fetch affiliations manually in the panel; no key is needed.

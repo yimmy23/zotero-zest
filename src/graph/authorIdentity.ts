@@ -57,6 +57,15 @@ export interface CachedAuthorship {
   n: string;
   /** first institution (or raw affiliation string) */
   a?: string;
+  /** Detailed authorship schema; present even when roles are unknown. */
+  v?: 2;
+  p?: "first" | "middle" | "last";
+  /** Only a provider's explicit boolean is accepted; last is not corresponding. */
+  c?: boolean;
+  /** Complete, bounded institution names, in the provider's order. */
+  af?: Array<{ i?: string; n: string }>;
+  /** DOI used for this lookup, so edits cannot reuse another paper's roles. */
+  d?: string;
 }
 
 export const OA_AUTHORS_NS = "oaAuthors";
@@ -65,20 +74,72 @@ export function authorshipsKey(item: Zotero.Item): string {
   return `${item.libraryID}/${item.key}`;
 }
 
-/** shrink an OpenAlex `authorships` array to what the graph needs */
-export function compactAuthorships(raw: unknown): CachedAuthorship[] | null {
+const MAX_AUTHORS = 100;
+const MAX_INSTITUTIONS = 40;
+
+function doiKey(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const doi = value.trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
+  return /^10\.\d{4,9}\/\S+$/.test(doi) ? doi.toLowerCase() : "";
+}
+
+function text(value: unknown, max: number): string {
+  return typeof value === "string" ? value.trim().slice(0, max) : "";
+}
+
+function institutions(raw: unknown): NonNullable<CachedAuthorship["af"]> {
+  if (!Array.isArray(raw)) return [];
+  const out: NonNullable<CachedAuthorship["af"]> = [];
+  const seen = new Set<string>();
+  for (const value of raw.slice(0, MAX_INSTITUTIONS)) {
+    const n = text(value?.n, 2000);
+    const i = text(value?.i, 100).split("/").pop();
+    const key = i || n.normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
+    if (!n || seen.has(key)) continue;
+    seen.add(key);
+    out.push(i ? { i, n } : { n });
+  }
+  return out;
+}
+
+/** Preserve role evidence and full institutions while keeping old graph hints. */
+export function compactAuthorships(
+  raw: unknown,
+  doi?: string,
+): CachedAuthorship[] | null {
   if (!Array.isArray(raw)) return null;
   const out: CachedAuthorship[] = [];
-  for (const a of raw.slice(0, 100)) {
-    const id = String((a as any)?.author?.id || "")
-      .split("/")
-      .pop();
-    const n = String((a as any)?.author?.display_name || "").trim();
+  const d = doiKey(doi);
+  for (const a of raw.slice(0, MAX_AUTHORS)) {
+    const id = text(a?.author?.id, 100).split("/").pop();
+    const n = text(a?.author?.display_name, 500);
     if (!id || !n) continue;
-    const inst =
-      String((a as any)?.institutions?.[0]?.display_name || "").trim() ||
-      String((a as any)?.raw_affiliation_strings?.[0] || "").trim();
-    out.push(inst ? { i: id, n, a: inst.slice(0, 120) } : { i: id, n });
+    let af = institutions(
+      Array.isArray(a?.institutions)
+        ? a.institutions.slice(0, MAX_INSTITUTIONS).map((inst: any) => ({
+            i: inst?.id,
+            n: inst?.display_name,
+          }))
+        : [],
+    );
+    if (!af.length && Array.isArray(a?.raw_affiliation_strings)) {
+      af = institutions(
+        a.raw_affiliation_strings
+          .slice(0, MAX_INSTITUTIONS)
+          .map((n: unknown) => ({ n })),
+      );
+    }
+    const row: CachedAuthorship = { i: id, n, v: 2 };
+    if (af.length) {
+      row.af = af;
+      row.a = af[0].n.slice(0, 120).trim();
+    }
+    if (["first", "middle", "last"].includes(a?.author_position)) {
+      row.p = a.author_position;
+    }
+    if (typeof a?.is_corresponding === "boolean") row.c = a.is_corresponding;
+    if (d) row.d = d;
+    out.push(row);
   }
   return out.length ? out : null;
 }
@@ -86,13 +147,24 @@ export function compactAuthorships(raw: unknown): CachedAuthorship[] | null {
 function sanitizeRows(raw: unknown): CachedAuthorship[] | null {
   if (!Array.isArray(raw)) return null;
   const out: CachedAuthorship[] = [];
-  for (const r of raw) {
+  for (const r of raw.slice(0, MAX_AUTHORS)) {
     if (!r || typeof r !== "object") continue;
-    const i = typeof (r as any).i === "string" ? (r as any).i : "";
-    const n = typeof (r as any).n === "string" ? (r as any).n : "";
+    const i = text(r.i, 100);
+    const n = text(r.n, 500);
     if (!i || !n) continue;
-    const a = typeof (r as any).a === "string" ? (r as any).a : undefined;
-    out.push(a ? { i, n, a } : { i, n });
+    const row: CachedAuthorship = { i, n };
+    const a = text(r.a, 2000);
+    if (a) row.a = a;
+    if (r.v === 2) {
+      row.v = 2;
+      if (["first", "middle", "last"].includes(r.p)) row.p = r.p;
+      if (typeof r.c === "boolean") row.c = r.c;
+      const af = institutions(r.af);
+      if (af.length) row.af = af;
+      const d = doiKey(r.d);
+      if (d) row.d = d;
+    }
+    out.push(row);
   }
   return out.length ? out : null;
 }
@@ -101,7 +173,17 @@ export function cachedAuthorships(
   item: Zotero.Item,
 ): CachedAuthorship[] | null {
   const hit = cache.get(OA_AUTHORS_NS, authorshipsKey(item), sanitizeRows);
-  return hit ? hit.data : null;
+  if (!hit) return null;
+  if (hit.data.some((row) => row.d)) {
+    let doi = "";
+    try {
+      doi = doiKey(item.getField("DOI"));
+    } catch {
+      // An absent/removed DOI cannot validate a detailed record's identity.
+    }
+    if (hit.data.some((row) => row.d && row.d !== doi)) return null;
+  }
+  return hit.data;
 }
 
 // --------------------------------------------------------- normalisation

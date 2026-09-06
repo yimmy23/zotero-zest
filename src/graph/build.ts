@@ -445,12 +445,25 @@ function finalizeGraph(
     edges: keptEdges,
     truncated,
   } = truncateToBudget(connected, edges, Math.max(0, opts.maxNodes));
+  // A budget can remove a node's last neighbour. Recompute visible degree
+  // after choosing the budget (the original degree still drives priority),
+  // then discard those new isolates while retaining an isolated centre.
+  if (truncated) applyDegreeWeights(kept, keptEdges);
+  const visible = truncated
+    ? kept.filter((n) => n.kind === "center" || n.weight > 0)
+    : kept;
+  // The footer counts omitted library items, not category nodes.
+  const totalIsolated =
+    isolated +
+    (truncated
+      ? kept.filter((n) => n.kind === "item" && n.weight === 0).length
+      : 0);
   return {
-    nodes: kept,
+    nodes: visible,
     edges: keptEdges,
     mode,
     truncated,
-    isolated: isolated || undefined,
+    isolated: totalIsolated || undefined,
   };
 }
 
