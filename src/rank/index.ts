@@ -1,4 +1,5 @@
 import { cache } from "../core/storage";
+import { http } from "../core/http";
 import { getPref, getNumPref } from "../utils/prefs";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import {
@@ -17,6 +18,7 @@ import {
   fetchOpenAlexByISSN,
   fetchOpenAlexByDOI,
   fetchOpenAlexByName,
+  type OpenAlexJournal,
 } from "./sources/openalex";
 
 /**
@@ -28,7 +30,8 @@ import {
  * key, only source for the Chinese systems) → OpenAlex (keyless, citation
  * average labelled as such).
  *
- * Everything is cached in zest-cache.json under the normalised name, so a
+ * Everything is cached in zest-cache.json under the ISSN (or exact normalised
+ * name when an ISSN is absent), so a
  * library with 400 papers in 60 journals does 60 lookups, not 400 — and none
  * at all on the next launch. Column dataProviders only ever read the memory
  * cache; a miss queues a background fetch and repaints those rows when it
@@ -47,19 +50,25 @@ const failures = new Map<string, number>();
 const queue = new Map<string, Set<number>>();
 let queueTimer: number | undefined;
 let fetching = false;
+let serviceEpoch = 0;
+let stopped = false;
 
 export function startRankService(refresh: (itemIDs: number[]) => void) {
+  stopped = false;
   onReady = refresh;
   cache.configure(NS, 4000);
 }
 
 export function stopRankService() {
+  stopped = true;
+  serviceEpoch++;
   onReady = undefined;
   if (queueTimer) {
     clearTimeout(queueTimer);
     queueTimer = undefined;
   }
   queue.clear();
+  refreshPartial.clear();
 }
 
 function ttlMs(): number {
@@ -90,6 +99,18 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
     key: r.key,
     name: typeof r.name === "string" ? r.name : r.key,
     issn: typeof r.issn === "string" ? r.issn : undefined,
+    issns: Array.isArray(r.issns)
+      ? ([
+          ...new Set(
+            r.issns
+              .slice(0, 20)
+              .map((id: unknown) =>
+                typeof id === "string" ? normalizeISSN(id) : "",
+              )
+              .filter(Boolean),
+          ),
+        ] as string[])
+      : undefined,
     values,
     updated: Number(r.updated) || 0,
     misses: Array.isArray(r.misses) ? r.misses.slice(0, 4) : undefined,
@@ -100,6 +121,7 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
 /** identity of an item's journal, computed synchronously from its fields */
 export function journalKeyOf(item: Zotero.Item): {
   key: string;
+  nameKey: string;
   name: string;
   /** conservative name sent to external journal services */
   queryName: string;
@@ -121,8 +143,10 @@ export function journalKeyOf(item: Zotero.Item): {
     // unloaded item
   }
   const queryName = journalLookupName(name);
+  const nameKey = normalizeJournal(queryName);
   return {
-    key: normalizeJournal(queryName),
+    key: issn ? `issn:${issn}` : nameKey ? `name:${nameKey}` : "",
+    nameKey,
     name,
     queryName,
     issn,
@@ -130,14 +154,31 @@ export function journalKeyOf(item: Zotero.Item): {
   };
 }
 
+function cachedRecord(identity: ReturnType<typeof journalKeyOf>) {
+  const { key, nameKey, issn } = identity;
+  if (!key) return undefined;
+  const accepts = (raw: unknown) => {
+    const record = sanitizeRecord(raw);
+    if (!record) return null;
+    // Legacy records and aliases can have come from the old name-first cache.
+    // Reuse them only when their stored identity proves they are this journal.
+    if (issn)
+      return normalizeISSN(record.issn) === issn || record.issns?.includes(issn)
+        ? record
+        : null;
+    return normalizeJournal(record.name) === nameKey ? record : null;
+  };
+  return (
+    cache.get<JournalRecord>(NS, key, accepts, ttlMs()) ||
+    (nameKey
+      ? cache.get<JournalRecord>(NS, nameKey, accepts, ttlMs())
+      : undefined)
+  );
+}
+
 /** synchronous cache read — safe in dataProvider/renderCell */
 export function getJournalRecord(item: Zotero.Item): JournalRecord | undefined {
-  const { key, issn } = journalKeyOf(item);
-  if (!key && !issn) return undefined;
-  const hit =
-    (key && cache.get<JournalRecord>(NS, key, sanitizeRecord, ttlMs())) ||
-    (issn &&
-      cache.get<JournalRecord>(NS, `issn:${issn}`, sanitizeRecord, ttlMs()));
+  const hit = cachedRecord(journalKeyOf(item));
   return hit ? hit.data : undefined;
 }
 
@@ -149,16 +190,21 @@ export function getJournalRecord(item: Zotero.Item): JournalRecord | undefined {
 export function requestJournalRecord(
   item: Zotero.Item,
 ): JournalRecord | undefined {
-  const hit = getJournalRecord(item);
+  const identity = journalKeyOf(item);
+  const cached = cachedRecord(identity);
+  const hit = cached?.data;
   if (!getPref("rank.autoFetch")) return hit;
-  const { key, issn } = journalKeyOf(item);
-  if (!key && !issn) return hit;
-  const cacheKey = key || `issn:${issn}`;
-  const age = cache.ageOf(NS, cacheKey);
+  const cacheKey = identity.key;
+  if (!cacheKey) return hit;
+  const age = cached?.age;
   if (hit) {
     // a record built while one source was throttled or offline is shown as
     // it is, and re-asked once the back-off is over — not after 30 days
-    if (hit.partial && age !== undefined && age > FAILURE_TTL) {
+    if (
+      age !== undefined &&
+      ((hit.partial && age > FAILURE_TTL) ||
+        (!hit.values.length && age > MISS_TTL))
+    ) {
       const failedAt = failures.get(cacheKey);
       if (failedAt === undefined || Date.now() - failedAt >= FAILURE_TTL) {
         refreshPartial.add(cacheKey);
@@ -171,7 +217,7 @@ export function requestJournalRecord(
   if (failedAt !== undefined && Date.now() - failedAt < FAILURE_TTL) {
     return undefined; // the last attempt could not reach anything
   }
-  if (age !== undefined && age < MISS_TTL) return undefined; // asked recently
+  if (stopped) return undefined;
   enqueue(cacheKey, item.id);
   return undefined;
 }
@@ -200,12 +246,15 @@ function scheduleDrain() {
 async function drain() {
   if (fetching) return;
   fetching = true;
+  const epoch = serviceEpoch;
+  const valid = () =>
+    !stopped && epoch === serviceEpoch && !!getPref("rank.autoFetch");
   try {
     // a local dataset is the highest-priority source and loads asynchronously
     // at startup; fetching before it lands would cache "no Chinese ranking"
     // for 30 days on journals the user's own file answers
     await datasetsLoaded();
-    while (queue.size) {
+    while (queue.size && valid()) {
       const [cacheKey, itemIDs] = queue.entries().next().value as [
         string,
         Set<number>,
@@ -215,16 +264,26 @@ async function drain() {
       if (!first) continue;
       try {
         const again = refreshPartial.delete(cacheKey);
-        const rec = await lookupJournal(first, again);
-        if (rec) onReady?.([...itemIDs]);
+        const rec = await lookupJournal(first, again, valid);
+        if (rec && valid()) onReady?.([...itemIDs]);
       } catch (e) {
         ztoolkit.log("[rank] lookup failed", e);
       }
-      // be gentle with the APIs: one journal at a time, small gap
-      await Zotero.Promise.delay(250);
+      // Local datasets stay available during an outage. Only remote lookups
+      // need the pacing gap; a zero delay still yields for large local lists.
+      const online =
+        getPref("rank.useEasyScholar") || getPref("rank.useOpenAlex");
+      await Zotero.Promise.delay(online && !rankSourceThrottled() ? 250 : 0);
     }
   } finally {
     fetching = false;
+    // Rendering will enqueue the current selection again when it is wanted.
+    // Stale or throttled work must not accumulate behind the user's next action.
+    if (epoch === serviceEpoch && !valid()) {
+      queue.clear();
+      refreshPartial.clear();
+    }
+    if (queue.size && !stopped && getPref("rank.autoFetch")) scheduleDrain();
   }
 }
 
@@ -232,12 +291,16 @@ async function drain() {
 export async function lookupJournal(
   item: Zotero.Item,
   force = false,
+  shouldContinue: () => boolean = () => true,
 ): Promise<JournalRecord | null> {
-  const { key, name, queryName, issn, doi } = journalKeyOf(item);
-  if (!key && !issn && !doi) return null;
-  const cacheKey = key || `issn:${issn}`;
+  const epoch = serviceEpoch;
+  const valid = () => !stopped && epoch === serviceEpoch && shouldContinue();
+  if (!valid()) return null;
+  const identity = journalKeyOf(item);
+  const { key: cacheKey, nameKey, name, queryName, issn, doi } = identity;
+  if (!cacheKey) return null;
   if (!force) {
-    const hit = cache.get<JournalRecord>(NS, cacheKey, sanitizeRecord, ttlMs());
+    const hit = cachedRecord(identity);
     if (hit) return hit.data;
   }
 
@@ -258,17 +321,20 @@ export async function lookupJournal(
   };
 
   // 1. the user's own dataset always wins
-  push(lookupDataset(key, issn));
+  await datasetsLoaded();
+  if (!valid()) return null;
+  push(lookupDataset(nameKey, issn));
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
   if (getPref("rank.useEasyScholar") && queryName) {
-    if (easyScholarBlocked()) {
+    if (rankSourceThrottled()) {
       // we did not even ask: the record must not be cached for 30 days as
       // "this journal has no Chinese ranking"
       misses.push("easyscholar");
       unreachable = true;
     } else {
-      const es = await fetchEasyScholar(queryName, force);
+      const es = await fetchEasyScholar(queryName, valid);
+      if (!valid()) return null;
       if (es.values.length) push(es.values);
       else if (es.error) {
         misses.push("easyscholar");
@@ -279,30 +345,44 @@ export async function lookupJournal(
 
   // 3. OpenAlex, but only through the free singleton endpoints
   let resolvedISSN = issn;
+  const verifiedISSNs = new Set(issn ? [issn] : []);
   if (getPref("rank.useOpenAlex")) {
-    let oa: { values: RankValue[]; name?: string; issn?: string } | null = null;
-    if (issn) oa = await fetchOpenAlexByISSN(issn);
-    if (!oa && doi) {
-      const byDoi = await fetchOpenAlexByDOI(doi);
+    let oa: OpenAlexJournal | null = null;
+    const matches = (result: OpenAlexJournal) =>
+      !issn || result.issns.includes(issn);
+    const networkWanted = () => valid() && !rankSourceThrottled();
+    const options = { noCache: force, shouldContinue: networkWanted };
+    if (issn && networkWanted()) oa = await fetchOpenAlexByISSN(issn, options);
+    if (!valid()) return null;
+    if (!oa && doi && networkWanted()) {
+      const byDoi = await fetchOpenAlexByDOI(doi, options);
+      if (!valid()) return null;
       if (byDoi) {
-        oa = byDoi;
-        resolvedISSN = byDoi.issn || resolvedISSN;
+        // An explicit ISSN outranks a DOI pointing at a different venue.
+        if (matches(byDoi)) {
+          oa = byDoi;
+          resolvedISSN = issn || byDoi.issn || "";
+        }
       }
     }
-    if (!oa && queryName) {
+    if (!oa && queryName && networkWanted()) {
       // last resort, still free: exact-name autocomplete → ISSN → singleton
-      const byName = await fetchOpenAlexByName(queryName);
+      const byName = await fetchOpenAlexByName(queryName, options);
+      if (!valid()) return null;
       if (byName) {
-        oa = byName;
-        resolvedISSN = byName.issn || resolvedISSN;
+        if (matches(byName)) {
+          oa = byName;
+          resolvedISSN = issn || byName.issn || "";
+        }
       }
     }
+    if (oa) for (const id of oa.issns) verifiedISSNs.add(id);
     if (oa?.values.length) push(oa.values);
     else {
       misses.push("openalex");
       // a keyless OpenAlex miss can equally mean "offline"; only treat it as a
       // real miss when something else already answered
-      if (!values.length) unreachable = true;
+      if (!values.length || rankSourceThrottled()) unreachable = true;
     }
   }
 
@@ -310,6 +390,7 @@ export async function lookupJournal(
     key: cacheKey,
     name,
     issn: resolvedISSN || undefined,
+    issns: verifiedISSNs.size ? [...verifiedISSNs] : undefined,
     values,
     updated: Date.now(),
     misses: misses.length ? misses : undefined,
@@ -318,6 +399,7 @@ export async function lookupJournal(
     // the back-off instead of standing for 30 days as "no Chinese ranking"
     partial: values.length && unreachable ? true : undefined,
   };
+  if (!valid()) return null;
   if (!values.length && unreachable) {
     // remember the failure in memory only: nothing is written to the cache, so
     // the next launch (or the next ten minutes) tries again
@@ -327,8 +409,8 @@ export async function lookupJournal(
   if (rec.partial) failures.set(cacheKey, Date.now());
   else failures.delete(cacheKey);
   cache.set(NS, cacheKey, rec);
-  if (resolvedISSN && cacheKey !== `issn:${resolvedISSN}`) {
-    cache.set(NS, `issn:${resolvedISSN}`, rec);
+  for (const id of verifiedISSNs) {
+    if (cacheKey !== `issn:${id}`) cache.set(NS, `issn:${id}`, rec);
   }
   return rec;
 }
@@ -340,9 +422,16 @@ export async function refreshJournal(item: Zotero.Item) {
   return rec;
 }
 
-/** true when easyScholar has told us to stop — batch callers should give up */
+/** Manual network batches stop on refusals from enabled rank sources only. */
 export function rankSourceThrottled(): boolean {
-  return easyScholarBlocked();
+  return (
+    (!!getPref("rank.useEasyScholar") &&
+      (easyScholarBlocked() ||
+        http.recentlyUnreachable("https://www.easyscholar.cc/"))) ||
+    (!!getPref("rank.useOpenAlex") &&
+      (http.recentlyUnreachable("https://api.openalex.org/") ||
+        http.throttledFor("https://api.openalex.org/") > 0))
+  );
 }
 
 export function clearRankCache() {

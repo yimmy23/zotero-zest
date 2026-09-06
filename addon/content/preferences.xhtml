@@ -9,6 +9,14 @@
   id="zest-prefs"
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
+  <html:header class="zest-pref-intro">
+    <html:p data-l10n-id="pref-intro"></html:p>
+    <html:nav
+      id="zest-pref-navigation"
+      class="zest-pref-navigation"
+      data-l10n-id="pref-navigation"
+    ></html:nav>
+  </html:header>
   <groupbox>
     <label><html:h2 data-l10n-id="pref-group-columns"></html:h2></label>
     <checkbox
@@ -887,6 +895,15 @@
       data-l10n-id="pref-info-abstract"
       native="true"
     />
+    <checkbox
+      preference="info.affiliations.autoFetch"
+      data-l10n-id="pref-info-affiliations-auto"
+      native="true"
+    />
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-info-affiliations-hint"
+    ></description>
     <checkbox
       preference="column.remark.enable"
       data-l10n-id="pref-column-remark"

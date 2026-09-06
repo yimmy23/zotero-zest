@@ -24,6 +24,7 @@ import { resolveTagStyle } from "./rules";
 import { setItemFilter, refreshItemView, canFilter } from "../views/itemFilter";
 import { showTagContextMenu } from "./menu";
 import { iconButton, type IconName } from "../ui/icons";
+import { createDOMOwnership } from "../utils/domOwnership";
 
 /**
  * Nested tag tree — our own view of the tag selector.
@@ -44,6 +45,7 @@ import { iconButton, type IconName } from "../ui/icons";
 interface TreeState {
   win: Window;
   root: HTMLElement;
+  native: HTMLElement;
   body: HTMLElement;
   /** display path → real tag names in that branch */
   selection: Map<string, Set<string>>;
@@ -65,6 +67,8 @@ interface TreeState {
 }
 
 const states = new Map<Window, TreeState>();
+const ownership = createDOMOwnership();
+const NATIVE_VISIBILITY = "hidden:zest-native-tags";
 let notifierID: string | undefined;
 
 export function linkSymbol(): string {
@@ -171,10 +175,19 @@ export function installTagTree(win: Window) {
     return;
   }
   pendingInstalls.delete(win);
+  const nativeElement = native as HTMLElement;
+  const previousTree = doc.getElementById(`${config.addonRef}-tag-tree`);
+  // A pre-ownership tree hid this selector itself; its native hand-back
+  // state was visible. Modern claims already carry the true original value.
+  const wasHidden = previousTree ? false : nativeElement.hidden;
+  ownership.claim(nativeElement, NATIVE_VISIBILITY, () => {
+    nativeElement.hidden = wasHidden;
+    if (!wasHidden) remeasureNativeTags(win);
+  });
 
   // leftover from an in-place upgrade: the outgoing copy's tree may still be
   // mounted here until its own shutdown runs
-  doc.getElementById(`${config.addonRef}-tag-tree`)?.remove();
+  previousTree?.remove();
 
   const root = doc.createElement("div");
   root.id = `${config.addonRef}-tag-tree`;
@@ -294,6 +307,7 @@ export function installTagTree(win: Window) {
   const state: TreeState = {
     win,
     root,
+    native: nativeElement,
     body,
     selection: new Map(),
     collapsed: new Map(),
@@ -338,15 +352,13 @@ export function uninstallTagTree(win: Window) {
   }
   try {
     // our context menu lives in the window's popupset, not in our subtree
-    win.document.getElementById(`${config.addonRef}-tag-menu`)?.remove();
+    if (ownership.owns(state.native, NATIVE_VISIBILITY))
+      win.document.getElementById(`${config.addonRef}-tag-menu`)?.remove();
   } catch {
     // window closing
   }
   try {
-    const native = win.document.getElementById(
-      "zotero-tag-selector",
-    ) as HTMLElement | null;
-    if (native) native.hidden = false;
+    ownership.release(state.native, NATIVE_VISIBILITY);
   } catch {
     // window closing
   }
@@ -397,6 +409,11 @@ function remeasureNativeTags(win: Window) {
   // before Zotero reads clientWidth out of it
   win.setTimeout(() => {
     try {
+      // A new copy may have taken over and hidden the native selector again.
+      const native = win.document.getElementById(
+        "zotero-tag-selector",
+      ) as HTMLElement | null;
+      if (native?.hidden) return;
       if (typeof selector.handleUIPropertiesChange === "function") {
         selector.handleUIPropertiesChange({});
       }
@@ -409,7 +426,7 @@ function remeasureNativeTags(win: Window) {
 
 function applyVisibility(win: Window) {
   const state = states.get(win);
-  if (!state) return;
+  if (!state || !ownership.owns(state.native, NATIVE_VISIBILITY)) return;
   const on = isTreeShown();
   const tree = on && tagPaneMode() === "tree";
   const native = win.document.getElementById(
@@ -452,6 +469,7 @@ function applyVisibility(win: Window) {
 const OPTIONS_MENU_ID = "tag-selector-view-settings-menu";
 const TOGGLE_ITEM_ID = `${config.addonRef}-tagtree-toggle`;
 const optionsListeners = new Map<Window, (ev: Event) => void>();
+const optionsItems = new WeakMap<Window, Element>();
 
 export function installTagOptionsMenu(win: Window) {
   if (optionsListeners.has(win)) return;
@@ -460,9 +478,14 @@ export function installTagOptionsMenu(win: Window) {
     if (popup?.id !== OPTIONS_MENU_ID) return;
     const doc = win.document;
     let item = doc.getElementById(TOGGLE_ITEM_ID);
+    if (item && item !== optionsItems.get(win)) {
+      item.remove();
+      item = null;
+    }
     if (!item) {
       item = doc.createXULElement("menuitem");
       item.id = TOGGLE_ITEM_ID;
+      optionsItems.set(win, item);
       item.setAttribute("type", "checkbox");
       item.setAttribute("label", getString("tags-tree-toggle", "label"));
       item.addEventListener(
@@ -489,7 +512,8 @@ export function uninstallTagOptionsMenu(win: Window) {
   optionsListeners.delete(win);
   try {
     if (handler) win.document.removeEventListener("popupshowing", handler);
-    win.document.getElementById(TOGGLE_ITEM_ID)?.remove();
+    optionsItems.get(win)?.remove();
+    optionsItems.delete(win);
   } catch {
     // window gone
   }
@@ -505,7 +529,7 @@ export function uninstallAllTagOptionsMenus() {
 
 function scheduleRefresh(win: Window, delay = 300) {
   const state = states.get(win);
-  if (!state) return;
+  if (!state || !ownership.owns(state.native, NATIVE_VISIBILITY)) return;
   if (state.refreshTimer) clearTimeout(state.refreshTimer);
   state.refreshTimer = undefined;
   if (!treeActive()) return;
@@ -545,7 +569,12 @@ export async function refreshTagTree(win: Window): Promise<void> {
 
 async function runTagTreeRefresh(win: Window) {
   const state = states.get(win);
-  if (!state || !treeActive()) return;
+  if (
+    !state ||
+    !treeActive() ||
+    !ownership.owns(state.native, NATIVE_VISIBILITY)
+  )
+    return;
   try {
     const zp = (win as any).ZoteroPane;
     const libraryID = selectedLibraryID(win);
@@ -555,6 +584,12 @@ async function runTagTreeRefresh(win: Window) {
       (i) => i instanceof Zotero.Item && !i.isAnnotation?.(),
     );
     const scope = await collectTagScope(libraryID, viewItems);
+    if (
+      states.get(win) !== state ||
+      !treeActive() ||
+      !ownership.owns(state.native, NATIVE_VISIBILITY)
+    )
+      return;
     const { mode, descending } = sortMode();
     state.libraryID = libraryID;
     state.inView = scope.inView;

@@ -106,6 +106,10 @@ These are not style preferences. Breaking one is a bug even if everything still 
 
 - Zotero CSS variables only in the main window (`--fill-*`, `--accent-*`, `--zotero-font-size`); the
   two dialog windows carry their own palette because they do not inherit Zotero's stylesheet.
+- `--material-border-*` is a complete border shorthand, not a colour; use `--fill-*` in
+  `border-color` or after `1px solid`. Scope preference rows to `#zest-prefs > groupbox > hbox`:
+  native XUL buttons and checkboxes contain their own light-DOM hboxes. Custom HTML controls
+  also need explicit margins so Zotero's negative native-button margins do not collapse their gaps.
 - The accent is one preference (`ui.accent`) written onto the root as `--zest-accent`;
   `--zest-accent-strong` and `--zest-accent-wash*` derive from it in `ui/styles.ts`. Do not hardcode a
   hue anywhere else.
@@ -131,10 +135,12 @@ These are not style preferences. Breaking one is a bug even if everything still 
 
 ## Verifying a change
 
-There is no unit-test harness; the plugin is verified against a running Zotero 10 dev instance.
+Node regression tests execute real source modules with isolated Zotero/transport substitutes.
+They complement, but do not replace, verification against a running Zotero 10 dev instance.
 
 ```bash
 npm start                                   # dev instance with an isolated profile
+npm run test:unit                            # persistence, lifecycle, cache and UI regressions
 npx tsc --noEmit -p . && npx eslint src --max-warnings=0
 npm run build                               # .scaffold/build/zest.xpi
 
@@ -143,6 +149,7 @@ scripts/dev-eval.sh -f scripts/phase-c-probe.js   # tags · ranks · views · gr
 scripts/dev-eval.sh -f scripts/phase-d-probe.js   # authors · citations · panels · stats · matrix · tabs
 scripts/dev-eval.sh -f scripts/phase-e-probe.js   # the audit regression suite
 scripts/dev-eval.sh -f scripts/phase-f-probe.js   # read-status derivation + picker, IF heat, removals
+scripts/dev-eval.sh -f scripts/preferences-probe.js # native controls, card spacing, narrow layout
 scripts/dev-eval.sh -f scripts/upgrade-probe.js   # DESTRUCTIVE: shuts the plugin down; restart after
 scripts/dev-shot.py out.png [selector] [--dark|--light|--prefs|--stats|--matrix]
 ```

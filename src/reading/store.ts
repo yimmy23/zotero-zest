@@ -109,6 +109,32 @@ function newAtt(): AttReading {
   return { pages: 0, page: new Map(), total: 0 };
 }
 
+function newItem(libraryID: number, itemKey: string): ItemReading {
+  return {
+    libraryID,
+    itemKey,
+    atts: new Map(),
+    days: new Map(),
+    total: 0,
+    firstRead: 0,
+    lastRead: 0,
+    pages: 0,
+    page: new Map(),
+    primaryAtt: "",
+  };
+}
+
+function copyItem(it: ItemReading): ItemReading {
+  return {
+    ...it,
+    atts: new Map(
+      [...it.atts].map(([key, a]) => [key, { ...a, page: new Map(a.page) }]),
+    ),
+    days: new Map(it.days),
+    page: new Map(it.page),
+  };
+}
+
 /** Recompute derived fields (total, primary page map) after any change. */
 function recompute(it: ItemReading) {
   let total = 0;
@@ -159,7 +185,9 @@ class ReadingStore {
   private loadPromise?: Promise<void>;
   private pending = new Map<ReadingKey, Pending>();
   private flushTimer?: number;
-  private flushing: Promise<void> | null = null;
+  /** All DB operations share one queue; live samples remain synchronous. */
+  private writes: Promise<unknown> = Promise.resolve();
+  private stopped = false;
   private listeners = new Set<Listener>();
   private lastFlushError = 0;
 
@@ -180,41 +208,63 @@ class ReadingStore {
   }
 
   load(): Promise<void> {
-    if (!this.loadPromise) this.loadPromise = this._load();
+    if (this.loaded || this.stopped) return Promise.resolve();
+    this.startFlushTimer();
+    if (!this.loadPromise) {
+      this.loadPromise = this.enqueue(() => this.loadIndex())
+        .catch(warnDBUnavailable)
+        .finally(() => {
+          this.loadPromise = undefined;
+        });
+    }
     return this.loadPromise;
   }
 
-  private async _load() {
-    try {
-      const { pages, atts, days, meta } = await zestDB.loadAll();
-      for (const r of pages) {
-        const it = this.ensure(r.libraryID, r.itemKey);
-        this.att(it, r.attKey).page.set(r.pageIndex, r.seconds);
-      }
-      for (const r of atts) {
-        const it = this.ensure(r.libraryID, r.itemKey);
-        this.att(it, r.attKey).pages = r.pages || 0;
-      }
-      for (const r of days) {
-        this.ensure(r.libraryID, r.itemKey).days.set(r.day, r.seconds);
-      }
-      for (const r of meta) {
-        const it = this.ensure(r.libraryID, r.itemKey);
-        it.firstRead = r.firstRead || 0;
-        it.lastRead = r.lastRead || 0;
-      }
-      for (const it of this.items.values()) recompute(it);
-    } catch (e) {
-      warnDBUnavailable(e);
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.writes.then(fn);
+    // A rejected operation must not poison later retries.
+    this.writes = next.catch(() => undefined);
+    return next;
+  }
+
+  private async loadIndex() {
+    if (this.loaded) return;
+    const { pages, atts, days, meta } = await zestDB.loadAll();
+    const restored = new Map<ReadingKey, ItemReading>();
+    const ensure = (lib: number, key: string) => {
+      const id = readingKey(lib, key);
+      let it = restored.get(id);
+      if (!it) restored.set(id, (it = newItem(lib, key)));
+      return it;
+    };
+    for (const r of pages) {
+      const it = ensure(r.libraryID, r.itemKey);
+      this.att(it, r.attKey).page.set(r.pageIndex, r.seconds);
+    }
+    for (const r of atts) {
+      const it = ensure(r.libraryID, r.itemKey);
+      this.att(it, r.attKey).pages = r.pages || 0;
+    }
+    for (const r of days) {
+      ensure(r.libraryID, r.itemKey).days.set(r.day, r.seconds);
+    }
+    for (const r of meta) {
+      const it = ensure(r.libraryID, r.itemKey);
+      it.firstRead = r.firstRead || 0;
+      it.lastRead = r.lastRead || 0;
+    }
+    // Samples may arrive before or during the read. They are not in the DB
+    // yet; add them once to the fresh index, rather than overwriting them.
+    for (const [key, pending] of this.pending) {
+      const [lib, itemKey] = splitKey(key);
+      this.applyPending(ensure(lib, itemKey), pending);
+    }
+    this.items.clear();
+    for (const [key, it] of restored) {
+      recompute(it);
+      this.items.set(key, it);
     }
     this.loaded = true;
-    // a load that outlived shutdown (fast disable) must not re-arm the timer
-    try {
-      if (!(addon as any)?.data?.alive) return;
-    } catch {
-      return;
-    }
-    this.startFlushTimer();
     this.emit([...this.items.keys()]);
   }
 
@@ -222,18 +272,7 @@ class ReadingStore {
     const key = readingKey(libraryID, itemKey);
     let it = this.items.get(key);
     if (!it) {
-      it = {
-        libraryID,
-        itemKey,
-        atts: new Map(),
-        days: new Map(),
-        total: 0,
-        firstRead: 0,
-        lastRead: 0,
-        pages: 0,
-        page: new Map(),
-        primaryAtt: "",
-      };
+      it = newItem(libraryID, itemKey);
       this.items.set(key, it);
     }
     return it;
@@ -246,6 +285,19 @@ class ReadingStore {
       it.atts.set(attKey || "", a);
     }
     return a;
+  }
+
+  private applyPending(it: ItemReading, p: Pending) {
+    for (const [ak, pm] of p.page) {
+      const a = this.att(it, ak);
+      for (const [i, s] of pm) a.page.set(i, (a.page.get(i) || 0) + s);
+    }
+    for (const [ak, pages] of p.attPages) this.att(it, ak).pages = pages;
+    for (const [day, sec] of p.days)
+      it.days.set(day, (it.days.get(day) || 0) + sec);
+    if (p.firstRead && (!it.firstRead || p.firstRead < it.firstRead))
+      it.firstRead = p.firstRead;
+    it.lastRead = Math.max(it.lastRead, p.lastRead);
   }
 
   get(libraryID: number, itemKey: string): ItemReading | undefined {
@@ -269,7 +321,7 @@ class ReadingStore {
     pagesCount: number,
     now = Date.now(),
   ) {
-    if (!(seconds > 0)) return;
+    if (this.stopped || !Number.isFinite(seconds) || !(seconds > 0)) return;
     const idx = pageIndex >= 0 ? pageIndex : -1;
     const ak = attKey || "";
     const it = this.ensure(libraryID, itemKey);
@@ -303,7 +355,7 @@ class ReadingStore {
     pm.set(idx, (pm.get(idx) || 0) + seconds);
     if (pagesCount > 0) p.attPages.set(ak, pagesCount);
     p.days.set(day, (p.days.get(day) || 0) + seconds);
-    if (!p.firstRead) p.firstRead = it.firstRead;
+    if (!p.firstRead) p.firstRead = nowSec;
     p.lastRead = nowSec;
     this.emit([key]);
   }
@@ -311,7 +363,8 @@ class ReadingStore {
   /**
    * Merge an imported / migrated record. mode "max" keeps the larger of
    * existing vs incoming per page/day (idempotent re-import); "sum" adds.
-   * Pending live deltas are drained first so memory == DB during the merge.
+   * Snapshot the visible record before draining live deltas. Publish the
+   * merged snapshot only after commit, plus samples received during the write.
    * Written to the DB immediately (throws when the DB is unavailable).
    */
   async mergeRecord(
@@ -331,134 +384,185 @@ class ReadingStore {
     },
     mode: "max" | "sum",
   ): Promise<void> {
-    await this.drain();
-    const it = this.ensure(rec.libraryID, rec.itemKey);
-    const pageRows: PageRow[] = [];
-    const attRows: AttRow[] = [];
-    const dayRows: DayRow[] = [];
-    const toEntries = (
-      m: Map<number, number> | Record<string, number> | undefined,
-    ): Array<[number, number]> =>
-      !m
-        ? []
-        : m instanceof Map
-          ? [...m.entries()]
-          : Object.entries(m).map(([k, v]) => [Number(k), Number(v)]);
-    const attInputs: Array<
-      [
-        string,
-        { pages?: number; page?: Map<number, number> | Record<string, number> },
-      ]
-    > = rec.atts
-      ? Object.entries(rec.atts)
-      : [["", { pages: rec.pages, page: rec.page }]];
-    for (const [ak, input] of attInputs) {
-      const a = this.att(it, ak);
-      for (const [idx, sec] of toEntries(input.page)) {
-        if (!Number.isInteger(idx) || idx < -1 || !(sec > 0)) continue;
-        const cur = a.page.get(idx) || 0;
-        const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
-        if (next !== cur) {
-          a.page.set(idx, next);
-          pageRows.push({
+    if (this.stopped) throw new Error("reading store stopped");
+    return this.enqueue(async () => {
+      await this.loadIndex();
+      const key = readingKey(rec.libraryID, rec.itemKey);
+      const current = this.items.get(key);
+      const it = current
+        ? copyItem(current)
+        : newItem(rec.libraryID, rec.itemKey);
+      await this.flushPending();
+      const pageRows: PageRow[] = [];
+      const attRows: AttRow[] = [];
+      const dayRows: DayRow[] = [];
+      const toEntries = (
+        m: Map<number, number> | Record<string, number> | undefined,
+      ): Array<[number, number]> =>
+        !m
+          ? []
+          : m instanceof Map
+            ? [...m.entries()]
+            : Object.entries(m).map(([k, v]) => [Number(k), Number(v)]);
+      const attInputs: Array<
+        [
+          string,
+          {
+            pages?: number;
+            page?: Map<number, number> | Record<string, number>;
+          },
+        ]
+      > = rec.atts
+        ? Object.entries(rec.atts)
+        : [["", { pages: rec.pages, page: rec.page }]];
+      for (const [ak, input] of attInputs) {
+        const a = this.att(it, ak);
+        for (const [idx, sec] of toEntries(input.page)) {
+          if (
+            !Number.isInteger(idx) ||
+            idx < -1 ||
+            !Number.isFinite(sec) ||
+            !(sec > 0)
+          )
+            continue;
+          const cur = a.page.get(idx) || 0;
+          const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
+          if (next !== cur) {
+            a.page.set(idx, next);
+            pageRows.push({
+              libraryID: rec.libraryID,
+              itemKey: rec.itemKey,
+              attKey: ak,
+              pageIndex: idx,
+              seconds: mode === "sum" ? sec : next,
+            });
+          }
+        }
+        if (input.pages && input.pages > a.pages) {
+          a.pages = input.pages;
+          attRows.push({
             libraryID: rec.libraryID,
             itemKey: rec.itemKey,
             attKey: ak,
-            pageIndex: idx,
+            pages: a.pages,
+          });
+        }
+      }
+      const dayEntries: Array<[string, number]> = rec.days
+        ? rec.days instanceof Map
+          ? [...rec.days.entries()]
+          : Object.entries(rec.days).map(([k, v]) => [k, Number(v)])
+        : [];
+      for (const [day, sec] of dayEntries) {
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+          !Number.isFinite(sec) ||
+          !(sec > 0)
+        )
+          continue;
+        const cur = it.days.get(day) || 0;
+        const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
+        if (next !== cur) {
+          it.days.set(day, next);
+          dayRows.push({
+            libraryID: rec.libraryID,
+            itemKey: rec.itemKey,
+            day,
             seconds: mode === "sum" ? sec : next,
           });
         }
       }
-      if (input.pages && input.pages > a.pages) {
-        a.pages = input.pages;
-        attRows.push({
+      if (rec.firstRead && (!it.firstRead || rec.firstRead < it.firstRead)) {
+        it.firstRead = rec.firstRead;
+      }
+      if (rec.lastRead && rec.lastRead > it.lastRead)
+        it.lastRead = rec.lastRead;
+      const metaRows: MetaRow[] = [
+        {
           libraryID: rec.libraryID,
           itemKey: rec.itemKey,
-          attKey: ak,
-          pages: a.pages,
-        });
-      }
-    }
-    const dayEntries: Array<[string, number]> = rec.days
-      ? rec.days instanceof Map
-        ? [...rec.days.entries()]
-        : Object.entries(rec.days).map(([k, v]) => [k, Number(v)])
-      : [];
-    for (const [day, sec] of dayEntries) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !(sec > 0)) continue;
-      const cur = it.days.get(day) || 0;
-      const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
-      if (next !== cur) {
-        it.days.set(day, next);
-        dayRows.push({
-          libraryID: rec.libraryID,
-          itemKey: rec.itemKey,
-          day,
-          seconds: mode === "sum" ? sec : next,
-        });
-      }
-    }
-    if (rec.firstRead && (!it.firstRead || rec.firstRead < it.firstRead)) {
-      it.firstRead = rec.firstRead;
-    }
-    if (rec.lastRead && rec.lastRead > it.lastRead) it.lastRead = rec.lastRead;
-    recompute(it);
-    const metaRows: MetaRow[] = [
-      {
-        libraryID: rec.libraryID,
-        itemKey: rec.itemKey,
-        firstRead: it.firstRead,
-        lastRead: it.lastRead,
-      },
-    ];
-    await zestDB.writeBatch(
-      { pages: pageRows, atts: attRows, days: dayRows, meta: metaRows },
-      mode === "sum" ? "add" : "max",
-    );
-    this.emit([readingKey(rec.libraryID, rec.itemKey)]);
+          firstRead: it.firstRead,
+          lastRead: it.lastRead,
+        },
+      ];
+      await zestDB.writeBatch(
+        { pages: pageRows, atts: attRows, days: dayRows, meta: metaRows },
+        mode === "sum" ? "add" : "max",
+      );
+      const pending = this.pending.get(key);
+      if (pending) this.applyPending(it, pending);
+      recompute(it);
+      this.items.set(key, it);
+      this.emit([key]);
+    });
   }
 
   async clearItem(libraryID: number, itemKey: string): Promise<void> {
-    await this.drain();
-    const key = readingKey(libraryID, itemKey);
-    this.items.delete(key);
-    this.pending.delete(key);
-    await zestDB.deleteItem(libraryID, itemKey);
-    this.emit([key]);
+    if (this.stopped) throw new Error("reading store stopped");
+    return this.enqueue(async () => {
+      await this.loadIndex();
+      await this.flushPending();
+      const key = readingKey(libraryID, itemKey);
+      await zestDB.deleteItem(libraryID, itemKey);
+      this.items.delete(key);
+      const pending = this.pending.get(key);
+      if (pending) {
+        const it = this.ensure(libraryID, itemKey);
+        this.applyPending(it, pending);
+        recompute(it);
+      }
+      this.emit([key]);
+    });
   }
 
   async clearAll(): Promise<void> {
-    await this.drain();
-    const keys = [...this.items.keys()];
-    this.items.clear();
-    this.pending.clear();
-    await zestDB.deleteAll();
-    this.emit(keys);
-  }
-
-  /** wait for an in-flight write, then push whatever is still pending (bounded) */
-  private async drain() {
-    try {
-      if (this.flushing) await this.flushing;
-      if (this.pending.size) await this.flush();
-    } catch {
-      // a failing flush re-queues; the merge proceeds against memory
-    }
+    if (this.stopped) throw new Error("reading store stopped");
+    return this.enqueue(async () => {
+      await this.loadIndex();
+      await this.flushPending();
+      const keys = new Set(this.items.keys());
+      await zestDB.deleteAll();
+      this.items.clear();
+      for (const [key, pending] of this.pending) {
+        const [lib, itemKey] = splitKey(key);
+        const it = this.ensure(lib, itemKey);
+        this.applyPending(it, pending);
+        recompute(it);
+        keys.add(key);
+      }
+      this.emit([...keys]);
+    });
   }
 
   private startFlushTimer() {
-    clearInterval(this.flushTimer);
+    if (this.flushTimer !== undefined || this.stopped) return;
+    try {
+      if (!(addon as any)?.data?.alive) return;
+    } catch {
+      return;
+    }
     const sec = Math.max(5, getNumPref("tracker.flushSeconds", 15));
     this.flushTimer = setInterval(() => void this.flush(), sec * 1000);
   }
 
   /**
-   * Persist pending deltas. Concurrent calls coalesce; a call made while a
-   * write is in flight drains what accumulated after that write's snapshot.
+   * Background callers can safely ignore the result. Mutations use the
+   * throwing flushPending barrier instead, so a failed drain stops imports.
    */
-  flush(): Promise<void> {
-    if (this.flushing) return this.flushing.then(() => this.flush());
-    if (!this.pending.size) return Promise.resolve();
+  flush(): Promise<boolean> {
+    if (this.stopped) return Promise.resolve(false);
+    return this.enqueue(async () => {
+      await this.loadIndex();
+      await this.flushPending();
+      return true;
+    }).catch((e) => {
+      warnDBUnavailable(e);
+      return false;
+    });
+  }
+
+  private async flushPending(): Promise<void> {
+    if (!this.pending.size) return;
     const batch = this.pending;
     this.pending = new Map();
     const pages: PageRow[] = [];
@@ -491,50 +595,55 @@ class ReadingStore {
         lastRead: p.lastRead,
       });
     }
-    this.flushing = zestDB
-      .writeBatch({ pages, atts, days, meta }, "add")
-      .catch((e) => {
-        const now = Date.now();
-        if (now - this.lastFlushError > 60_000) {
-          this.lastFlushError = now;
-          ztoolkit.log("[store] flush failed; keeping deltas queued", e);
-          warnDBUnavailable(e);
+    await zestDB.writeBatch({ pages, atts, days, meta }, "add").catch((e) => {
+      const now = Date.now();
+      if (now - this.lastFlushError > 60_000) {
+        this.lastFlushError = now;
+        ztoolkit.log("[store] flush failed; keeping deltas queued", e);
+        warnDBUnavailable(e);
+      }
+      // put the deltas back so nothing is lost on a transient error
+      for (const [key, p] of batch) {
+        const cur = this.pending.get(key);
+        if (!cur) {
+          this.pending.set(key, p);
+          continue;
         }
-        // put the deltas back so nothing is lost on a transient error
-        for (const [key, p] of batch) {
-          const cur = this.pending.get(key);
-          if (!cur) {
-            this.pending.set(key, p);
-            continue;
+        for (const [ak, pm] of p.page) {
+          let cm = cur.page.get(ak);
+          if (!cm) {
+            cm = new Map();
+            cur.page.set(ak, cm);
           }
-          for (const [ak, pm] of p.page) {
-            let cm = cur.page.get(ak);
-            if (!cm) {
-              cm = new Map();
-              cur.page.set(ak, cm);
-            }
-            for (const [i, s] of pm) cm.set(i, (cm.get(i) || 0) + s);
-          }
-          for (const [ak, n] of p.attPages) {
-            if (!cur.attPages.has(ak)) cur.attPages.set(ak, n);
-          }
-          for (const [d, s] of p.days)
-            cur.days.set(d, (cur.days.get(d) || 0) + s);
-          cur.firstRead = cur.firstRead || p.firstRead;
-          cur.lastRead = Math.max(cur.lastRead, p.lastRead);
+          for (const [i, s] of pm) cm.set(i, (cm.get(i) || 0) + s);
         }
-      })
-      .finally(() => {
-        this.flushing = null;
-      });
-    return this.flushing;
+        for (const [ak, n] of p.attPages) {
+          if (!cur.attPages.has(ak)) cur.attPages.set(ak, n);
+        }
+        for (const [d, s] of p.days)
+          cur.days.set(d, (cur.days.get(d) || 0) + s);
+        if (p.firstRead && (!cur.firstRead || p.firstRead < cur.firstRead))
+          cur.firstRead = p.firstRead;
+        cur.lastRead = Math.max(cur.lastRead, p.lastRead);
+      }
+      throw e;
+    });
   }
 
   async shutdown() {
+    this.stopped = true;
     clearInterval(this.flushTimer);
     this.flushTimer = undefined;
-    await this.flush();
-    this.listeners.clear();
+    try {
+      await this.enqueue(async () => {
+        if (this.pending.size) {
+          await this.loadIndex();
+          await this.flushPending();
+        }
+      });
+    } finally {
+      this.listeners.clear();
+    }
   }
 
   /** every tracked item, for the statistics panel */

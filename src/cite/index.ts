@@ -1,5 +1,4 @@
 import { cache } from "../core/storage";
-import { http } from "../core/http";
 import { getPref, getNumPref } from "../utils/prefs";
 import {
   readCitations,
@@ -14,6 +13,7 @@ import {
   fetchSemanticScholar,
   hasIdentifier,
   type CiteResult,
+  type CiteFailure,
 } from "./sources";
 
 /**
@@ -58,6 +58,7 @@ export function isStale(item: Zotero.Item): boolean {
 type CiteSource = (
   item: Zotero.Item,
   force?: boolean,
+  onFailure?: CiteFailure,
 ) => Promise<CiteResult | null>;
 
 function sourceChain(): CiteSource[] {
@@ -85,12 +86,20 @@ export async function updateCitations(
     }
   }
   let result: CiteResult | null = null;
+  let failed = false;
+  let throttled = false;
+  const onFailure: CiteFailure = (failure) => {
+    failed = true;
+    if (failure.kind === "throttled" || failure.kind === "unreachable")
+      throttled = true;
+  };
   for (const fetchOne of sourceChain()) {
     try {
-      result = await fetchOne(item, force);
+      result = await fetchOne(item, force, onFailure);
     } catch (e) {
       ztoolkit.log("[cite] source failed", e);
       result = null;
+      failed = true;
     }
     if (result) break;
   }
@@ -99,7 +108,8 @@ export async function updateCitations(
     // answers: a throttled or unreachable source must not be remembered as a
     // miss for six hours, and a batch should stop on it instead of spending
     // the rest of the selection on refusals
-    if (sourcesThrottled()) return { item, status: "throttled" };
+    if (throttled) return { item, status: "throttled" };
+    if (failed) return { item, status: "failed" };
     cache.set(NS, failKey(item), { t: Date.now() });
     return { item, status: "not-found" };
   }
@@ -143,14 +153,4 @@ export function citableItems(
       return false;
     }
   });
-}
-
-/** true when a citation source has just told us to back off, or the network is down */
-export function sourcesThrottled(): boolean {
-  return (
-    http.recentlyUnreachable() ||
-    http.throttledFor("https://api.crossref.org/") > 0 ||
-    http.throttledFor("https://api.openalex.org/") > 0 ||
-    http.throttledFor("https://api.semanticscholar.org/") > 0
-  );
 }

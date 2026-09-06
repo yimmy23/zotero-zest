@@ -24,6 +24,20 @@ const check = (n, c, note) => {
 
 const outgoing = Zotero.Zest;
 check("global.presentBeforeShutdown", !!outgoing?.api);
+const win = Zotero.getMainWindow();
+const doc = win.document;
+const prefNames = ["nestedTags.show", "tabs.sidebar", "tabs.hideNative"];
+const prefs = prefNames.map((name) => [
+  name,
+  Zotero.Prefs.get(`extensions.zotero.zest.${name}`, true),
+]);
+for (const name of prefNames)
+  Zotero.Prefs.set(`extensions.zotero.zest.${name}`, true, true);
+await Zotero.Promise.delay(600);
+check(
+  "teardown.replacementsMounted",
+  !!doc.getElementById("zest-tag-tree") && !!doc.getElementById("zest-tabbar"),
+);
 
 // the incoming copy claims the name while the old copy is still alive
 const incoming = { __incomingCopy: true, api: { marker: 1 } };
@@ -37,6 +51,22 @@ check(
   `Zotero.Zest is ${typeof Zotero.Zest}`,
 );
 check("global.apiStillReachableAfterUpgrade", Zotero.Zest?.api?.marker === 1);
+await Zotero.Promise.delay(800);
+check("teardown.stylesRemoved", !doc.getElementById("zest-styles"));
+check(
+  "teardown.nativeTagsRestored",
+  !doc.getElementById("zotero-tag-selector")?.hidden,
+);
+check(
+  "teardown.nativeTabsRestored",
+  !doc.documentElement.classList.contains("zest-hide-native-tabs"),
+);
+check("teardown.noDelayedBadges", !doc.querySelector(".zest-count"));
+for (const [name, value] of prefs) {
+  const key = `extensions.zotero.zest.${name}`;
+  if (value === undefined) Zotero.Prefs.clear(key, true);
+  else Zotero.Prefs.set(key, value, true);
+}
 
 out.notes.push("the plugin is now shut down — restart the dev instance");
 out.summary = `${out.ok.length} passed, ${out.fail.length} failed`;

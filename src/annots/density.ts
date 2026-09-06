@@ -42,10 +42,15 @@ const summaries = new Map<number, AnnotSummary>();
  * the mapping has to be remembered while the annotation still exists.
  */
 const annotOwner = new Map<number, number>();
+const attachmentOwner = new Map<number, number>();
+const pageSpans = new Map<string, { itemID: number; pages: number }>();
 const queue = new Set<number>();
 let queueTimer: number | undefined;
 let notifierID: string | undefined;
 let onReady: ((ids: number[]) => void) | undefined;
+let unsubscribeReading: (() => void) | undefined;
+let generation = 0;
+let draining = false;
 
 /** synchronous cache read — safe inside dataProvider/renderCell */
 export function getSummary(itemID: number): AnnotSummary | undefined {
@@ -62,7 +67,7 @@ export function requestSummary(item: Zotero.Item): AnnotSummary | undefined {
 
 function enqueue(itemID: number) {
   queue.add(itemID);
-  if (queueTimer) return;
+  if (queueTimer !== undefined || draining) return;
   queueTimer = setTimeout(() => {
     queueTimer = undefined;
     void drain();
@@ -70,10 +75,13 @@ function enqueue(itemID: number) {
 }
 
 async function drain() {
+  const run = generation;
+  draining = true;
   const ids = [...queue];
   queue.clear();
   const done: number[] = [];
   for (let i = 0; i < ids.length; i++) {
+    if (run !== generation) return;
     try {
       const item = Zotero.Items.get(ids[i]) as Zotero.Item | false;
       if (item && (item as any).isRegularItem?.()) {
@@ -89,7 +97,10 @@ async function drain() {
     // yield every 25 items so a big sort does not block the UI thread
     if (i % 25 === 24) await Zotero.Promise.delay(0);
   }
+  if (run !== generation) return;
+  draining = false;
   if (done.length) onReady?.(done);
+  if (queue.size) enqueue(queue.values().next().value!);
 }
 
 /** page count the reader reported for this item, 0 when never opened */
@@ -120,6 +131,7 @@ export function computeSummary(item: Zotero.Item): AnnotSummary {
     try {
       const att = Zotero.Items.get(attID) as Zotero.Item;
       if (!att || typeof (att as any).getAnnotations !== "function") continue;
+      attachmentOwner.set(attID, owner);
       anns = (att as any).getAnnotations() as Zotero.Item[];
     } catch {
       continue;
@@ -145,13 +157,17 @@ export function computeSummary(item: Zotero.Item): AnnotSummary {
     }
   }
   const histogram = new Array<number>(BUCKETS).fill(0);
+  const known = pagesOfItem(item);
+  pageSpans.set(`${item.libraryID}/${item.key}`, {
+    itemID: item.id,
+    pages: known,
+  });
   if (pages.length && maxPage >= 0) {
     // scale to the DOCUMENT, not to the last annotated page: six highlights in
     // the first ten pages of a 400-page book otherwise fill the whole bar and
     // read as "annotated throughout". The reading tracker already records the
     // real page count per attachment; fall back to the last annotated page for
     // EPUBs and snapshots, which have no page count.
-    const known = pagesOfItem(item);
     const span = Math.max(maxPage + 1, known);
     for (const page of pages) {
       const b = Math.min(BUCKETS - 1, Math.floor((page / span) * BUCKETS));
@@ -185,9 +201,38 @@ export function pageIndexOf(annotation: Zotero.Item): number {
 export function startAnnotationWatch(refresh: (ids: number[]) => void) {
   onReady = refresh;
   if (notifierID) return;
+  unsubscribeReading = readingStore.onChange((keys) => {
+    const changed: number[] = [];
+    for (const key of keys) {
+      const previous = pageSpans.get(key);
+      if (!previous) continue;
+      const pages = readingStore.items.get(key)?.pages || 0;
+      if (pages === previous.pages) continue;
+      previous.pages = pages;
+      summaries.delete(previous.itemID);
+      changed.push(previous.itemID);
+    }
+    // Seconds change on every tick; only a new document span needs a redraw.
+    if (changed.length) onReady?.(changed);
+  });
   notifierID = Zotero.Notifier.registerObserver(
     {
-      notify: (event: string, type: string, ids: any[], extraData: any) => {
+      notify: (event: string, type: string, ids: any[]) => {
+        // Restoring from Trash refreshes the library, not its individual
+        // attachment items. This infrequent event only invalidates known rows.
+        if (type === "trash" && event === "refresh") {
+          const libraries = new Set(ids.map(Number));
+          const changed = new Set<number>();
+          for (const [key, span] of pageSpans) {
+            const libraryID = Number(key.slice(0, key.indexOf("/")));
+            if (!libraries.size || libraries.has(libraryID)) {
+              summaries.delete(span.itemID);
+              changed.add(span.itemID);
+            }
+          }
+          if (changed.size) onReady?.([...changed]);
+          return;
+        }
         if (type !== "item") return;
         if (!["add", "modify", "delete", "trash"].includes(event)) return;
         const parents = new Set<number>();
@@ -196,9 +241,28 @@ export function startAnnotationWatch(refresh: (ids: number[]) => void) {
           try {
             const it = Zotero.Items.get(id) as Zotero.Item | false;
             if (it && (it as any).isAnnotation?.()) {
+              const previous = annotOwner.get(id);
+              if (previous) parents.add(previous);
               const parent = parentRegularItemID(it as Zotero.Item);
-              if (parent) parents.add(parent);
+              if (parent) {
+                parents.add(parent);
+                annotOwner.set(id, parent);
+              }
               continue;
+            }
+            const oldParent = attachmentOwner.get(id);
+            if (it && (it as any).isAttachment?.()) {
+              const parent = it.parentItemID || id;
+              if (event !== "modify" || parent !== oldParent) {
+                if (oldParent) parents.add(oldParent);
+                parents.add(parent);
+              }
+              attachmentOwner.set(id, parent);
+              continue;
+            }
+            if (oldParent) {
+              parents.add(oldParent);
+              attachmentOwner.delete(id);
             }
             // a deleted annotation is already unloaded and Zotero's payload
             // only has {libraryID, key} — use the owner we remembered while
@@ -208,6 +272,7 @@ export function startAnnotationWatch(refresh: (ids: number[]) => void) {
               parents.add(owner);
               annotOwner.delete(id);
             }
+            if (event === "delete") summaries.delete(id);
           } catch {
             // ignore individual ids
           }
@@ -218,13 +283,17 @@ export function startAnnotationWatch(refresh: (ids: number[]) => void) {
         refresh(list);
       },
     },
-    ["item"],
+    ["item", "trash"],
     `${config.addonRef}-annots`,
     60,
   );
 }
 
 export function stopAnnotationWatch() {
+  generation++;
+  draining = false;
+  unsubscribeReading?.();
+  unsubscribeReading = undefined;
   if (queueTimer) {
     clearTimeout(queueTimer);
     queueTimer = undefined;
@@ -232,6 +301,8 @@ export function stopAnnotationWatch() {
   queue.clear();
   summaries.clear();
   annotOwner.clear();
+  attachmentOwner.clear();
+  pageSpans.clear();
   onReady = undefined;
   if (notifierID) {
     try {

@@ -20,6 +20,7 @@ import {
   type TabGroup,
 } from "./model";
 import { iconButton } from "../ui/icons";
+import { createDOMOwnership } from "../utils/domOwnership";
 
 /**
  * Vertical tab manager.
@@ -45,6 +46,7 @@ interface SidebarState {
   list: HTMLElement;
   search: HTMLInputElement;
   query: string;
+  nativeRoot: HTMLElement;
   observer?: MutationObserver;
   notifierID?: string;
   refreshTimer?: number;
@@ -53,6 +55,8 @@ interface SidebarState {
 type XULish = Element & { setAttribute(name: string, value: string): void };
 
 const bars = new Map<Window, SidebarState>();
+const ownership = createDOMOwnership();
+const NATIVE_VISIBILITY = "class:zest-hide-native-tabs";
 
 /* ------------------------------------------------------------------ */
 /* probe                                                               */
@@ -107,7 +111,17 @@ export function showSidebar(win: Window) {
 
   // leftover from an in-place upgrade (the outgoing copy removes its own
   // bar only when its shutdown finally runs)
-  doc.getElementById(`${config.addonRef}-tabbar`)?.remove();
+  const previousBar = doc.getElementById(`${config.addonRef}-tabbar`);
+  previousBar?.remove();
+  doc.getElementById(`${config.addonRef}-tabbar-splitter`)?.remove();
+  const nativeRoot = doc.documentElement as HTMLElement;
+  // Legacy copies owned the hiding class but had no saved baseline. Their
+  // teardown removed it; never preserve it as the native tab bar's state.
+  const wasHidden =
+    !previousBar && nativeRoot.classList.contains("zest-hide-native-tabs");
+  ownership.claim(nativeRoot, NATIVE_VISIBILITY, () => {
+    nativeRoot.classList.toggle("zest-hide-native-tabs", wasHidden);
+  });
 
   const box = doc.createXULElement("vbox") as unknown as XULish;
   box.id = `${config.addonRef}-tabbar`;
@@ -171,6 +185,7 @@ export function showSidebar(win: Window) {
     list,
     search,
     query: "",
+    nativeRoot,
   };
   bars.set(win, state);
 
@@ -212,12 +227,13 @@ export function hideSidebar(win: Window, persist = true) {
   try {
     (state.box as unknown as HTMLElement).remove();
     (state.splitter as unknown as HTMLElement).remove();
-    win.document.getElementById(`${config.addonRef}-tabs-menu`)?.remove();
+    if (ownership.owns(state.nativeRoot, NATIVE_VISIBILITY))
+      win.document.getElementById(`${config.addonRef}-tabs-menu`)?.remove();
   } catch {
     // window closing
   }
-  applyNativeBarVisibility(win, false);
-  if (persist) setPref("tabs.sidebar", false);
+  const released = ownership.release(state.nativeRoot, NATIVE_VISIBILITY);
+  if (persist && released) setPref("tabs.sidebar", false);
 }
 
 export function uninstallSidebars() {
@@ -232,10 +248,9 @@ export function syncNativeBarVisibility() {
 
 function applyNativeBarVisibility(win: Window, hide: boolean) {
   try {
-    win.document.documentElement?.classList.toggle(
-      "zest-hide-native-tabs",
-      hide,
-    );
+    const root = bars.get(win)?.nativeRoot;
+    if (root && ownership.owns(root, NATIVE_VISIBILITY))
+      root.classList.toggle("zest-hide-native-tabs", hide);
   } catch {
     // window closing
   }
@@ -311,7 +326,7 @@ function scheduleRender(win: Window, delay = 120) {
 
 export function renderList(win: Window) {
   const state = bars.get(win);
-  if (!state) return;
+  if (!state || !ownership.owns(state.nativeRoot, NATIVE_VISIBILITY)) return;
   const doc = win.document;
   const list = state.list;
   list.textContent = "";

@@ -1,5 +1,11 @@
 import { config } from "../../package.json";
 import { getPref } from "../utils/prefs";
+import { createDOMOwnership } from "../utils/domOwnership";
+
+const ownership = createDOMOwnership();
+const styles = new WeakMap<Window, { node: HTMLElement; root: HTMLElement }>();
+const ACCENT_KEY = "style:--zest-accent";
+const FLAGS_KEY = "class:zest-hide-title-swatches";
 
 /**
  * One stylesheet for all plugin UI, injected per main window.
@@ -24,10 +30,9 @@ export function accentColor(): string {
 
 /** write the accent onto the root element; the stylesheet derives the rest */
 export function applyAccent(win: Window) {
-  (win.document.documentElement as HTMLElement | null)?.style.setProperty(
-    "--zest-accent",
-    accentColor(),
-  );
+  const root = styles.get(win)?.root;
+  if (root && ownership.owns(root, ACCENT_KEY))
+    root.style.setProperty("--zest-accent", accentColor());
 }
 
 /** re-read the preference into every open main window */
@@ -44,7 +49,30 @@ export function syncAccent() {
 export function registerStyles(win: Window) {
   const doc = win.document;
   const id = `${config.addonRef}-styles`;
-  if (doc.getElementById(id)) return;
+  const existing = styles.get(win);
+  if (existing && doc.getElementById(id) === existing.node) return;
+  if (existing && !ownership.owns(existing.root, ACCENT_KEY)) return;
+  const root = doc.documentElement as HTMLElement | null;
+  if (!root) return;
+  // Replace the old node; its owner retains that exact reference for teardown.
+  const previousNode = doc.getElementById(id);
+  previousNode?.remove();
+  // Before ownership tracking (1.0.10), these values belonged to the old
+  // stylesheet. Its teardown removed them; they are not Zotero's baseline.
+  // Modern copies pass their original baseline through ownership.claim().
+  const accent = previousNode
+    ? ""
+    : root.style.getPropertyValue("--zest-accent");
+  const priority = root.style.getPropertyPriority("--zest-accent");
+  ownership.claim(root, ACCENT_KEY, () => {
+    if (accent) root.style.setProperty("--zest-accent", accent, priority);
+    else root.style.removeProperty("--zest-accent");
+  });
+  const hideSwatches =
+    !previousNode && root.classList.contains("zest-hide-title-swatches");
+  ownership.claim(root, FLAGS_KEY, () => {
+    root.classList.toggle("zest-hide-title-swatches", hideSwatches);
+  });
   const style = doc.createElement("style");
   style.id = id;
   style.textContent = `
@@ -216,8 +244,8 @@ export function registerStyles(win: Window) {
       outline: 2px solid var(--zest-accent); outline-offset: -2px;
     }
     .zest-tagtree-bar {
-      display: flex; align-items: center; gap: 2px; padding: 3px 6px; flex-wrap: nowrap;
-      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      display: flex; align-items: center; gap: 4px; padding: 6px; flex-wrap: nowrap;
+      border-bottom: 1px solid var(--fill-quinary);
     }
     .zest-tagtree-btn {
       appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
@@ -226,15 +254,15 @@ export function registerStyles(win: Window) {
     }
     .zest-tagtree-btn:hover { background-color: var(--fill-quinary); }
     .zest-tagtree-search {
-      flex: 1 1 auto; min-width: 0; margin: 0 4px; padding: 1px 6px;
-      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      flex: 1 1 auto; min-width: 0; margin: 0 2px; padding: 4px 7px;
+      border: 1px solid var(--fill-quinary);
       border-radius: 4px; background-color: var(--material-background, transparent);
       color: var(--fill-primary); font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
     .zest-tagtree-count { color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); }
-    .zest-tagtree-body { flex: 1 1 auto; overflow: auto; padding: 2px 0 6px; }
+    .zest-tagtree-body { flex: 1 1 auto; overflow: auto; padding: 4px 3px 8px; }
     .zest-tagtree-row {
-      display: flex; align-items: center; gap: 4px; padding: 1px 6px 1px 0;
+      display: flex; align-items: center; gap: 5px; padding: 3px 7px 3px 0;
       cursor: pointer; border-radius: 4px; white-space: nowrap;
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
@@ -280,43 +308,67 @@ export function registerStyles(win: Window) {
     .zest-info-btn:disabled:hover { background-color: var(--fill-quinary); }
     .zest-info-stars.disabled .zest-info-star { cursor: default; }
     .zest-info-stars.disabled { opacity: .7; }
-    .zest-info { display: flex; flex-direction: column; gap: 5px; padding: 4px 12px 12px; }
-    .zest-info-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .zest-info { display: flex; flex-direction: column; gap: 5px; padding: 4px 10px 10px; line-height: 1.4; }
+    .zest-info-row { display: grid; grid-template-columns: minmax(0, 5em) minmax(0, 1fr);
+      align-items: start; gap: 3px 7px; min-width: 0; }
+    .zest-info-heading { display: block; padding-bottom: 2px; }
+    .zest-info-heading > .zest-info-key { display: block; margin-bottom: 2px; padding-top: 0; }
+    .zest-info-divider { border-top: 1px solid var(--fill-quinary); padding-top: 6px; margin-top: 1px; }
     .zest-info-key {
-      flex: 0 0 auto; min-width: 5.5em; color: var(--fill-secondary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      min-width: 0; padding-top: 2px; color: var(--fill-secondary);
+      font-size: calc(var(--zotero-font-size, 13px) * .923); overflow-wrap: anywhere;
     }
-    .zest-info-value { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-    .zest-info-btn, .zest-info-link {
-      appearance: none; border: 0; border-radius: 4px; padding: 1px 7px; cursor: pointer;
+    .zest-info-value { min-width: 0; overflow-wrap: anywhere; }
+    .zest-info-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; }
+    .zest-info-controls > .zest-info-value { flex: 1 1 8em; }
+    .zest-info-venue { display: flex; flex-direction: column; gap: 3px; }
+    .zest-info-ranks { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; min-width: 0; }
+    .zest-info-ranks > .zest-rank-badge { flex: 0 0 auto; max-width: 100%; }
+    .zest-info-btn, .zest-info-link, .zest-affiliations-fetch {
+      appearance: none; margin: 0; border: 1px solid transparent; border-radius: 5px; padding: 2px 6px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      font: inherit; font-size: calc(var(--zotero-font-size, 13px) * .923); line-height: 1.4;
     }
-    .zest-info-btn:hover, .zest-info-link:hover { background-color: var(--fill-quarternary, var(--fill-quinary)); }
-    .zest-info-stars { display: inline-flex; gap: 1px; }
+    .zest-info-btn:not(:disabled):hover, .zest-info-link:hover, .zest-affiliations-fetch:not(:disabled):hover { background-color: var(--fill-quarternary, var(--fill-quinary)); border-color: var(--fill-quarternary); }
+    .zest-affiliations-fetch:disabled { cursor: default; color: var(--fill-secondary); }
+    .zest-info-feedback { display: block; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-info-feedback:empty { display: none; }
+    .zest-info :is(button, input, summary):focus-visible,
+    .zest-annot-copy:focus-visible,
+    .zest-tabbar :is(button, input):focus-visible,
+    .zest-tagtree :is(button, input):focus-visible {
+      outline: 2px solid var(--zest-accent-strong); outline-offset: 2px;
+    }
+    .zest-info-stars { display: inline-flex; flex: 0 0 auto; gap: 1px; white-space: nowrap; }
     .zest-info-star { cursor: pointer; color: var(--fill-quinary); }
     .zest-info-star.on { color: var(--zest-star-color, var(--accent-yellow)); }
     .zest-info-input {
-      flex: 1 1 auto; min-width: 6em; padding: 1px 6px; border-radius: 4px;
-      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      width: 100%; box-sizing: border-box; min-width: 0; margin: 0; padding: 3px 6px; border-radius: 5px; font: inherit;
+      border: 1px solid var(--fill-quarternary);
       background-color: var(--material-background, transparent); color: var(--fill-primary);
     }
-    .zest-info-heat { display: flex; height: 12px; gap: 1px; border-radius: 3px; overflow: hidden; }
+    .zest-info-heat { display: flex; height: 14px; gap: 1px; border-radius: 4px; overflow: hidden; }
     .zest-info-heat-seg { flex: 1 1 auto; cursor: pointer; background-color: transparent; }
     .zest-info-heat-seg:hover { outline: 1px solid var(--zest-accent-strong); outline-offset: -1px; }
+    .zest-info-status { max-width: 100%; text-align: start; }
     .zest-info-status.zest-status-auto-text { color: var(--fill-secondary); }
+    .zest-info-open { display: block; }
+    .zest-info-open > .zest-info-key { display: block; margin-bottom: 4px; }
+    .zest-info-links { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+    .zest-info-link { background-color: transparent; border-color: var(--fill-quarternary);
+      white-space: nowrap; max-width: 100%; }
     .zest-info-authors .zest-author-self { font-weight: 600; }
     .zest-info-authors .zest-author-mark { color: var(--fill-secondary); }
-    .zest-info-title { font-weight: 600; line-height: 1.4; }
-    .zest-info-title .zest-info-original { font-weight: 400; color: var(--fill-secondary); margin-top: 2px; }
+    .zest-info-title { font-weight: 600; line-height: 1.5; font-size: 1.05em; }
+    .zest-info-title .zest-info-original { font-weight: 400; color: var(--fill-secondary); margin-top: 6px; font-size: .95em; }
     .zest-info-abstract { font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    .zest-info-abstract > summary, .zest-info-abstract-original > summary { cursor: pointer; color: var(--fill-secondary); }
-    .zest-info-abstract-text { margin-top: 4px; white-space: pre-wrap; line-height: 1.5; }
+    .zest-info-abstract > summary, .zest-info-abstract-original > summary { cursor: pointer; color: var(--fill-secondary); padding-block: 4px; }
+    .zest-info-abstract-text { margin-top: 6px; white-space: pre-wrap; line-height: 1.65; }
     .zest-info-abstract-original { margin-top: 4px; }
     .zest-info-abstract-original .zest-info-abstract-text { color: var(--fill-secondary); }
 
     /* ---------- annotation locator cards ---------- */
-    .zest-annot-cards { display: flex; flex-direction: column; gap: 6px; padding: 4px 12px 12px; }
+    .zest-annot-cards { display: flex; flex-direction: column; gap: 8px; padding: 6px 12px 14px; }
     .zest-annot-filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
     .zest-annot-chip {
       padding: 0 6px; border-radius: 4px; background-color: var(--fill-quinary);
@@ -324,7 +376,7 @@ export function registerStyles(win: Window) {
     }
     .zest-annot-card {
       border-inline-start: 3px solid var(--zest-annot-line, var(--zest-accent));
-      border-radius: 4px; padding: 5px 8px;
+      border-radius: 6px; padding: 8px 10px;
       background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .13);
       cursor: default;
     }
@@ -339,7 +391,7 @@ export function registerStyles(win: Window) {
       background-color: transparent; color: var(--fill-secondary);
     }
     .zest-annot-copy:hover { background-color: var(--fill-quinary); }
-    .zest-annot-text { white-space: pre-wrap; }
+    .zest-annot-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
     .zest-annot-comment {
       margin-top: 3px; padding-inline-start: 6px; color: var(--fill-secondary);
       border-inline-start: 2px solid var(--fill-quinary);
@@ -355,82 +407,106 @@ export function registerStyles(win: Window) {
     /* ---------- vertical tab manager ---------- */
     .zest-tabbar { display: flex; flex-direction: column; min-width: 160px; overflow: hidden;
       background-color: var(--material-sidepane, var(--material-background, transparent));
-      border-inline-end: 1px solid var(--material-border-quinary, var(--fill-quinary)); }
-    .zest-tabbar-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-width: 1px; }
-    .zest-tabbar-head { display: flex; gap: 4px; padding: 5px 6px; align-items: center; flex-wrap: nowrap;
-      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary)); }
-    .zest-tabbar-search { flex: 1 1 auto; min-width: 0; padding: 2px 6px; border-radius: 4px;
-      border: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      border-inline-end: 1px solid var(--fill-quinary); }
+    .zest-tabbar-splitter { border: 0; background-color: var(--fill-quinary); min-width: 1px; }
+    .zest-tabbar-head { display: flex; gap: 4px; padding: 7px 6px; align-items: center; flex-wrap: nowrap;
+      border-bottom: 1px solid var(--fill-quinary); }
+    .zest-tabbar-search { flex: 1 1 auto; min-width: 0; padding: 4px 7px; border-radius: 5px;
+      border: 1px solid var(--fill-quinary);
       background-color: var(--material-background, transparent); color: var(--fill-primary);
       font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-tabbar-btn { appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
       background-color: transparent; color: var(--fill-secondary); }
     .zest-tabbar-btn:hover { background-color: var(--fill-quinary); }
     .zest-tabbar-list { flex: 1 1 auto; overflow: auto; padding: 3px 0 8px; }
-    .zest-tabbar-group { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
+    .zest-tabbar-group { display: flex; align-items: center; gap: 4px; padding: 7px 8px 4px; cursor: pointer;
       color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); text-transform: uppercase; letter-spacing: .04em; }
     .zest-tabbar-group:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-row { display: flex; align-items: center; gap: 4px; padding: 3px 8px; cursor: pointer;
+    .zest-tabbar-row { display: flex; align-items: center; gap: 5px; padding: 5px 8px; cursor: pointer;
       border-radius: 4px; margin: 0 4px; font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-tabbar-row:hover { background-color: var(--fill-quinary); }
     .zest-tabbar-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
     .zest-tabbar-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .zest-tabbar-close { appearance: none; border: 0; background: transparent; cursor: pointer;
       color: inherit; opacity: 0; padding: 0 2px; }
-    .zest-tabbar-row:hover .zest-tabbar-close { opacity: .7; }
+    .zest-tabbar-row:hover .zest-tabbar-close, .zest-tabbar-row:focus-within .zest-tabbar-close { opacity: .7; }
     .zest-tabbar-close:hover { opacity: 1; }
     .zest-tabbar-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
     :root.zest-hide-native-tabs #tab-bar-container > div { display: none !important; }
 
     /* ---------- graph pane ---------- */
-    .zest-graph-splitter { border: 0; background-color: var(--material-border-quinary, var(--fill-quinary)); min-height: 1px; }
+    .zest-graph-splitter { border: 0; background-color: var(--fill-quinary); min-height: 3px; }
+    .zest-graph-splitter:hover { background-color: var(--zest-accent-wash-strong); }
     .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }
     .zest-graph-header {
-      display: flex; align-items: center; gap: 8px; padding: 4px 12px;
-      flex-wrap: nowrap; overflow: hidden;
-      border-bottom: 1px solid var(--material-border-quinary, var(--fill-quinary));
+      display: flex; align-items: center; gap: 6px 10px; padding: 8px 12px;
+      flex-wrap: wrap; flex: 0 0 auto;
+      border-bottom: 1px solid var(--fill-quinary);
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
-    .zest-graph-title { font-weight: 600; }
-    .zest-graph-modes { display: inline-flex; gap: 2px; }
+    .zest-graph-title { font-weight: 600; flex: 0 0 auto; white-space: nowrap; gap: 6px; color: var(--fill-primary); }
+    .zest-graph-modes { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px;
+      max-width: 100%; border: 1px solid var(--fill-quinary);
+      border-radius: 7px; background-color: var(--fill-quinary); }
     .zest-graph-mode {
-      appearance: none; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer;
-      background-color: transparent; color: var(--fill-secondary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      appearance: none; margin: 0; border: 1px solid transparent; border-radius: 5px; padding: 3px 8px; cursor: pointer;
+      background-color: transparent; color: var(--fill-primary);
+      font-size: inherit; line-height: 1.35; white-space: nowrap; min-height: 25px;
     }
     .zest-graph-mode:hover { background-color: var(--fill-quinary); }
-    .zest-graph-mode.active { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); }
-    .zest-graph-status { flex: 1 1 auto; min-width: 0; color: var(--fill-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .zest-graph-modes { flex: 0 0 auto; }
-    .zest-graph-title { flex: 0 0 auto; white-space: nowrap; }
+    .zest-graph-mode:is(.active, [aria-pressed="true"]) {
+      background-color: var(--material-button, var(--material-background));
+      border-color: var(--fill-quarternary); box-shadow: 0 1px 2px var(--fill-quinary); }
+    .zest-graph-actions { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; flex: 0 0 auto; }
     .zest-graph-btn {
-      appearance: none; border: 0; border-radius: 4px; padding: 2px 8px; cursor: pointer;
+      appearance: none; margin: 0; border: 1px solid var(--fill-quinary); border-radius: 6px; padding: 4px 8px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      font-size: inherit; line-height: 1.35; min-height: 29px; white-space: nowrap;
     }
     .zest-graph-btn:hover { background-color: var(--fill-quarternary, var(--fill-quinary)); }
-    .zest-graph-close { background-color: transparent; }
-    .zest-graph-canvas { flex: 1 1 auto; min-height: 0; position: relative; }
+    .zest-graph-btn:disabled { opacity: .55; cursor: default; }
+    .zest-graph-mode:focus-visible, .zest-graph-btn:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 2px; }
+    .zest-graph-close { background-color: transparent; border-color: transparent; padding-inline: 6px; }
+    .zest-graph-canvas { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
+      background-color: var(--material-background, transparent); }
+    .zest-graph-canvas > svg { position: absolute; inset: 0; }
+    .zest-graph-canvas[aria-busy="true"] > svg { opacity: .35; }
+    .zest-graph-message { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 7px; padding: 20px 28px;
+      color: var(--fill-secondary); text-align: center; pointer-events: none;
+      font-size: calc(var(--zotero-font-size, 13px) * .923); line-height: 1.5; }
+    .zest-graph-message[hidden] { display: none; }
+    .zest-graph-message strong { color: var(--fill-primary); font-weight: 500; }
+    .zest-graph-message span { max-width: 38em; }
+    .zest-graph-footer { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 16px;
+      flex: 0 0 auto; padding: 6px 12px; border-top: 1px solid var(--fill-quinary);
+      font-size: calc(var(--zotero-font-size, 13px) * .846); line-height: 1.4; color: var(--fill-secondary); }
+    .zest-graph-status { flex: 1 1 180px; min-width: 0; }
+    .zest-graph-help { flex: 0 1 auto; color: var(--fill-secondary); }
+    .zest-graph-node:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 4px; }
+    .zest-graph-node.is-selected { stroke: var(--zest-accent); stroke-opacity: .9; stroke-width: 2; }
+    .zest-graph-label { font-size: calc(var(--zotero-font-size, 13px) * .846); }
 
     /* Optional: hide swatches in the Title cell when the Tags column shows them */
     :root.zest-hide-title-swatches #zotero-items-tree .cell.primary .tag-swatch,
     :root.zest-hide-title-swatches #zotero-items-tree .cell.primary .colored-tag-swatches { display: none !important; }
   `;
-  doc.documentElement?.appendChild(style);
+  root.appendChild(style);
+  styles.set(win, { node: style, root });
   applyAccent(win);
 }
 
 export function unregisterStyles(win: Window) {
-  win.document.getElementById(`${config.addonRef}-styles`)?.remove();
-  (win.document.documentElement as HTMLElement | null)?.style.removeProperty(
-    "--zest-accent",
-  );
-  win.document.documentElement?.classList.remove("zest-hide-title-swatches");
+  const state = styles.get(win);
+  if (!state) return;
+  styles.delete(win);
+  state.node.remove();
+  ownership.release(state.root, ACCENT_KEY);
+  ownership.release(state.root, FLAGS_KEY);
 }
 
 export function applyRootFlags(win: Window, hideTitleSwatches: boolean) {
-  win.document.documentElement?.classList.toggle(
-    "zest-hide-title-swatches",
-    hideTitleSwatches,
-  );
+  const root = styles.get(win)?.root;
+  if (root && ownership.owns(root, FLAGS_KEY))
+    root.classList.toggle("zest-hide-title-swatches", hideTitleSwatches);
 }

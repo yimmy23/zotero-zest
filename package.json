@@ -1,7 +1,7 @@
 {
   "name": "zotero-zest",
   "type": "module",
-  "version": "1.0.10",
+  "version": "1.1.0",
   "description": "Zest — columns, tags, reading records, view groups, graph and vertical tabs for Zotero",
   "config": {
     "addonName": "Zest",
@@ -27,6 +27,7 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "test": "zotero-plugin test",
+    "test:unit": "node --test tests/*.test.cjs",
     "update-deps": "npm update --save"
   },
   "dependencies": {

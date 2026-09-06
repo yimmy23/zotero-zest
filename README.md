@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.0.10 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.1.0 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -14,6 +14,15 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 1. 从 [最新 Release](https://github.com/yimmy23/zotero-zest/releases/latest) 下载 `zest.xpi`。
 2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
+
+## 1.1.0 更新
+
+- 设置页、信息面板和文献关联图更紧凑，改进换行、明暗主题和键盘操作；保留现有图标。
+- 阅读数据写入、导入和关闭时保存更可靠，跨设备导入会按稳定文库身份匹配，并报告未匹配记录。
+- 期刊缓存优先按 ISSN 区分，改进联网请求的限流退避、取消和错误重试。
+- 机构信息改为手动获取，自动获取需主动开启；优化标注刷新、窗口独立状态和插件升级后的界面恢复。
+
+升级后请重启 Zotero。阅读时长仍保存在本机；跨设备转移使用阅读数据导出/导入，不会自动随 Zotero 同步。
 
 ## 第一步：套用推荐布局
 
@@ -78,6 +87,8 @@ ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等�
 中科院文献情报中心[已声明自 2026 年起不再更新和发布期刊分区表](https://las.cas.cn/news/tzgg/202603/t20260327_8178738.html)，因此 `sciUp` 应视为历史口径。
 `xr*` 是 2026 年启动的独立“新锐学术”体系，不是新版中科院分区，不会自动替换 `sciUp`。
 若 Zotero 出版物标题末尾带有 `: Official Journal/Publication/Organ of …` 机构说明，查询时会自动使用冒号前的主刊名，界面仍保留原始题名。
+期刊身份和缓存优先使用 ISSN，缺少 ISSN 时才使用规范化刊名；刊名中有区分意义的括号内容会保留，
+例如 `Medicine (Baltimore)` 不会被合并为 `Medicine`。
 
 **被引数**——右键条目 ▸ Zest ▸ 更新被引数（可批量、可随时取消）。数值写进 `Extra` 的
 `Citations: 12 (Crossref) [2026-08-18]`，来源依次 Crossref → OpenAlex →（可选）Semantic Scholar。
@@ -96,6 +107,10 @@ ISSN 或 DOI，结果按期刊缓存 30 天。中科院分区、北大核心等�
 OpenAlex、Connected Papers），以及**摘要**：装了 zotero-pdf-translate 并翻译过的，先显示译文（多段完整
 显示），原文折叠在下面；没翻译的只显示原文（默认折叠）。译文读的是翻译插件写进 Extra 的 `titleTranslation`
 / `abstractTranslation`，Zest 自己不翻译、不改写这两行。Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
+
+作者机构信息优先读取 OpenAlex 缓存。缺少信息时，可点击面板里的「获取机构信息」，将当前条目的 DOI
+发送到 OpenAlex，无需密钥。**自动查询默认关闭**；可在设置 ▸ Zest ▸ 条目面板中开启，只有在当前可见面板中
+停留片刻才会查询。切换条目或隐藏面板会取消尚未执行的查询。
 
 **Annotation Finder**——这条文献的全部标注，按标签树里选中的标签过滤，双击直接跳进阅读器里那条标注。
 
@@ -124,7 +139,11 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 | 分区 / 被引查询缓存                      | `zest-cache.json`（派生数据，删了会重新查）                           |
 | API 密钥                                 | 系统登录管理器（钥匙串 / 凭据管理器）——不进 prefs、不进导出、不进日志 |
 
-- **阅读数据导入导出**：设置 ▸ Zest ▸ 阅读数据 → JSON / CSV，换机器直接搬。
+- **阅读数据导入导出**：设置 ▸ Zest ▸ 阅读数据 → JSON / CSV。新的 JSON v2 和 CSV 都带文库身份：
+  个人文库按 Zotero 账号、群组文库按群组 ID 匹配，不依赖每台机器上的本地文库编号。换机器时先同步相同
+  账号和群组的文献，再导入阅读数据；未登录账号的本地库备份只在原配置环境中恢复。旧文件没有文库身份时，
+  仅在条目 key 在现有文库中唯一匹配时导入；找不到或存在歧义的记录会跳过，并在完成提示中显示数量。
+  **阅读时长仍不随 Zotero 自动同步**，跨设备搬运需要手动导出、导入。
 - **整套配置导入导出**：设置 ▸ Zest ▸ 配置 → 一个 JSON 文件（**刻意不含任何密钥**）。
 - **所有密钥都是可选的**：不填 easyScholar 也有 OpenAlex 的期刊指标，被引数用 Crossref 就够。只有你主动
   触发（或打开自动获取）时才会联网。
@@ -192,9 +211,16 @@ Zotero **10.x**。不支持 Zotero 7 / 8。
 
 ```bash
 npm install
-npm start      # 启动隔离的开发 profile 并加载插件
-npm run build  # 生成 .scaffold/build/zest.xpi
+npm run test:unit  # 执行真实源码的隔离行为测试
+npm run lint:check
+npm run build      # 生成 .scaffold/build/zest.xpi，并检查 TypeScript
+npm start          # 启动隔离的开发 profile 并加载插件
 ```
+
+`test:unit` 使用替代的 Zotero 宿主、存储和网络接口，检查错误重试、导入匹配、请求取消及多实例生命周期等
+行为；不会启动 Zotero，也不能替代实际界面验证。开发实例运行后，还需通过 `scripts/dev-eval.sh -f`
+依次运行 `scripts/phase-c-probe.js`、`phase-d-probe.js`、`phase-e-probe.js` 和 `phase-f-probe.js`，
+验证真实 Zotero API 与插件行为。界面改动还需检查明暗主题；开发验证只使用 `.scaffold/dev-profile`。
 
 ---
 
@@ -208,6 +234,15 @@ with a graph, a reading-statistics window and an annotation matrix on top.
 
 Download `zest.xpi` from the [latest release](https://github.com/yimmy23/zotero-zest/releases/latest),
 then Zotero → **Tools ▸ Plugins** → gear icon → **Install Plugin From File…** → restart when prompted.
+
+## What's new in 1.1.0
+
+- More compact settings, item panels and relationship graphs, with improved wrapping, light/dark themes and keyboard navigation. Existing icons are unchanged.
+- More reliable reading-data writes, imports and shutdown saves. Cross-device imports match stable library identities and report unmatched records.
+- ISSN-first journal caches and better rate-limit backoff, cancellation and retry handling.
+- Manual affiliation lookup by default, with automatic lookup available as an opt-in; fewer unnecessary annotation refreshes and better per-window state and upgrade recovery.
+
+Restart Zotero after upgrading. Reading time remains local; use reading-data export/import to transfer it between devices. It does not automatically sync through Zotero.
 
 ## Start here
 
@@ -267,7 +302,10 @@ IDs merge spelling variants, and hovering a node shows the institution when know
   so `sciUp` is now a historical scheme. XinRui is not a successor CAS ranking and is never
   substituted for `sciUp`. When a Zotero publication title ends in an institutional descriptor such
   as `: Official Journal/Publication/Organ of …`, lookups use the main title before the colon while
-  the original title remains unchanged in the UI. **Venue** merges publication title, proceedings,
+  the original title remains unchanged in the UI. Journal identity and caching prefer the ISSN,
+  falling back to a normalized title only when no ISSN is available. Meaningful parenthetical
+  text is preserved: `Medicine (Baltimore)` is not merged with `Medicine`.
+  **Venue** merges publication title, proceedings,
   book title and publisher into one column by item type — Zotero's own Publication column is journal
   titles only.
 - **Citations** — right-click ▸ Zest ▸ update (batchable, cancellable). Written to `Extra` as
@@ -288,6 +326,12 @@ zotero-pdf-translate's translation first (every paragraph) with the original fol
 the original alone (folded) when nothing was translated. The translations are read from the
 `titleTranslation` / `abstractTranslation` lines that plugin writes into Extra; Zest neither
 translates nor rewrites them. Zotero shows the same section in a reader tab's context pane.
+
+Author affiliations are read from the OpenAlex cache first. When they are missing, click
+**Fetch affiliations** in the panel to send the current item's DOI to OpenAlex; no key is needed.
+**Automatic lookup is off by default** and can be enabled in **Settings ▸ Zest ▸ Item pane**.
+It runs only after you pause on an item in a visible panel. Changing items or hiding the panel
+cancels lookups that have not yet started.
 
 **Annotation Finder** — every annotation of the item, filtered by whatever you selected in the tag
 tree; double-click jumps into the reader at that annotation.
@@ -316,9 +360,18 @@ Zotero's own column settings, so your columns stay put if you disable the plugin
 | Rank / citation lookup cache                      | `zest-cache.json` (derived, safe to delete)                                            |
 | API keys                                          | the OS login manager (Keychain / Credential Manager) — never in prefs, exports or logs |
 
-Reading data exports and re-imports as JSON or CSV; the whole configuration exports as one JSON file
-that deliberately contains no secrets. **No key is required** — journal ranks work from OpenAlex or
-your own dataset, citations from Crossref. Nothing is fetched unless you ask for it.
+Reading data exports and re-imports as JSON or CSV. New JSON v2 and CSV exports carry library identity:
+personal libraries match by Zotero account and group libraries by group ID, independent of each
+computer's local library number. Sync the same account and group items on the destination computer
+before importing reading data. Backups from a local library without a signed-in account restore only
+within the original profile identity. Older files without library identity import only when the item
+key matches uniquely across the current libraries; missing or ambiguous records are skipped and
+reported in the completion message. **Reading time still does not sync automatically through Zotero**;
+moving it between devices requires a manual export and import.
+
+The whole configuration exports as one JSON file that deliberately contains no secrets.
+**No key is required** — journal ranks work from OpenAlex or your own dataset, citations from Crossref.
+Nothing is fetched unless you ask for it or enable automatic lookup.
 
 ## Also included
 
@@ -374,9 +427,18 @@ Zotero **10.x**. Zotero 7 and 8 are not supported.
 
 ```bash
 npm install
-npm start      # isolated dev profile with the plugin loaded
-npm run build  # .scaffold/build/zest.xpi
+npm run test:unit  # isolated behavioral tests of the actual source modules
+npm run lint:check
+npm run build      # .scaffold/build/zest.xpi and TypeScript checks
+npm start          # isolated dev profile with the plugin loaded
 ```
+
+`test:unit` substitutes Zotero host, storage and network interfaces to check failure recovery,
+import matching, request cancellation and overlapping plugin lifecycles. It does not launch Zotero
+or replace live UI validation. With the dev instance running, also use `scripts/dev-eval.sh -f` to run
+`scripts/phase-c-probe.js`, `phase-d-probe.js`, `phase-e-probe.js` and `phase-f-probe.js` in sequence,
+covering the real Zotero APIs and plugin behavior. Check visual changes in both light and dark themes;
+development validation uses only `.scaffold/dev-profile`.
 
 ---
 

@@ -5,7 +5,7 @@ import {
   ConfigStore,
   type DatasetMeta,
 } from "../../core/config";
-import { normalizeJournal, normalizeISSN } from "../normalize";
+import { normalizeJournal, normalizeISSN, allISSNs } from "../normalize";
 import type { RankValue } from "../types";
 
 /**
@@ -32,12 +32,11 @@ export interface DatasetRow {
 
 interface LoadedDataset {
   id: string;
-  byName: Map<string, DatasetRow>;
+  byName: Map<string, DatasetRow | null>;
   byISSN: Map<string, DatasetRow>;
 }
 
 const loaded = new Map<string, LoadedDataset>();
-let ready = false;
 
 function dirPath(): string {
   return PathUtils.join(
@@ -79,7 +78,6 @@ async function loadDatasetsInner() {
       ztoolkit.log(`[rank] dataset ${meta.id} failed to load`, e);
     }
   }
-  ready = true;
 }
 
 /** parse a file written by saveDataset (with a tolerant fallback) */
@@ -110,16 +108,31 @@ function readStoredRows(raw: string): DatasetRow[] {
 }
 
 function index(id: string, rows: DatasetRow[]) {
-  const byName = new Map<string, DatasetRow>();
+  const byName = new Map<string, DatasetRow | null>();
   const byISSN = new Map<string, DatasetRow>();
   for (const row of rows) {
     if (row.name) {
       const key = normalizeJournal(row.name);
       if (key && !byName.has(key)) byName.set(key, row);
+      else if (key) {
+        const previous = byName.get(key);
+        // Same title with conflicting identifiers is ambiguous without an
+        // ISSN. Never let file order decide which journal's metric is shown.
+        const ids = allISSNs(row.issn);
+        const previousIDs = allISSNs(previous?.issn);
+        if (
+          !previous ||
+          !ids.length ||
+          !previousIDs.some((id) => ids.includes(id))
+        ) {
+          byName.set(key, null);
+        }
+      }
     }
     if (row.issn) {
-      const key = normalizeISSN(row.issn);
-      if (key && !byISSN.has(key)) byISSN.set(key, row);
+      for (const key of allISSNs(row.issn)) {
+        if (!byISSN.has(key)) byISSN.set(key, row);
+      }
     }
   }
   loaded.set(id, { id, byName, byISSN });
@@ -133,9 +146,16 @@ export function lookupDataset(
   const out: RankValue[] = [];
   const seen = new Set<string>();
   for (const ds of loaded.values()) {
+    const cleanISSN = normalizeISSN(issn);
+    const named = ds.byName.get(normalizedName);
+    const nameMatches =
+      named &&
+      (!cleanISSN ||
+        !allISSNs(named.issn).length ||
+        allISSNs(named.issn).includes(cleanISSN));
     const row =
-      (issn ? ds.byISSN.get(normalizeISSN(issn)) : undefined) ||
-      ds.byName.get(normalizedName);
+      (cleanISSN ? ds.byISSN.get(cleanISSN) : undefined) ||
+      (nameMatches ? named : undefined);
     if (!row) continue;
     for (const [field, value] of Object.entries(row.fields)) {
       if (!value || seen.has(field.toLowerCase())) continue;

@@ -215,6 +215,9 @@ export class GraphView {
   private labelBase = LABEL_MIN;
   /** hovered node while a neighbourhood focus is dimming the rest */
   private focusedId: string | null = null;
+  private selectedId: string | null = null;
+  /** One tab stop for the canvas; arrow keys move between nodes. */
+  private tabStopId: string | null = null;
   /** scale the labels were last laid out for — panning skips the rewrite */
   private lastLabelScale = -1;
   /** hover-intent timer: focus only after a short dwell, not on fly-over */
@@ -229,6 +232,11 @@ export class GraphView {
     this.svg = this.createSVG<SVGSVGElement>("svg");
     this.svg.setAttribute("width", "100%");
     this.svg.setAttribute("height", "100%");
+    this.svg.setAttribute("role", "group");
+    for (const name of ["aria-labelledby", "aria-describedby"]) {
+      const value = container.getAttribute(name);
+      if (value) this.svg.setAttribute(name, value);
+    }
     this.svg.style.display = "block";
     this.svg.style.cursor = "grab";
     this.root = this.createG(this.svg);
@@ -271,11 +279,12 @@ export class GraphView {
 
   setData(data: ZGraphData | null): void {
     this.clearScene();
-    if (!data) return;
+    if (!data?.nodes.length) return;
     this.data = data;
 
     // the center node (if any) is pinned at the simulation origin
     const centerNodes = data.nodes.filter((n) => n.kind === "center");
+    this.tabStopId = centerNodes[0]?.id || data.nodes[0].id;
     for (const c of centerNodes) {
       c.fx = 0;
       c.fy = 0;
@@ -307,6 +316,10 @@ export class GraphView {
 
     for (const node of data.nodes) {
       const c = this.createSVG<SVGCircleElement>("circle");
+      c.setAttribute("class", "zest-graph-node");
+      c.setAttribute("role", "button");
+      c.setAttribute("tabindex", node.id === this.tabStopId ? "0" : "-1");
+      c.setAttribute("aria-pressed", "false");
       c.setAttribute("r", String(nodeRadius(node)));
       c.style.cursor = "pointer";
       c.style.transition = "opacity 0.15s";
@@ -315,7 +328,8 @@ export class GraphView {
       const tip =
         node.kind === "author"
           ? [node.label, node.hint].filter(Boolean).join("\n")
-          : node.title || "";
+          : node.title || node.label;
+      c.setAttribute("aria-label", tip || node.label);
       if (tip) {
         const tt = this.createSVG<SVGElement>("title");
         tt.textContent = tip;
@@ -346,6 +360,8 @@ export class GraphView {
     );
     for (const node of data.nodes) {
       const t = this.createSVG<SVGTextElement>("text");
+      t.setAttribute("class", "zest-graph-label");
+      t.setAttribute("aria-hidden", "true");
       t.textContent = node.label;
       t.setAttribute("text-anchor", "middle");
       t.setAttribute("font-size", "10.5");
@@ -484,6 +500,8 @@ export class GraphView {
     this.edgeEls = [];
     this.labelRank.clear();
     this.focusedId = null;
+    this.selectedId = null;
+    this.tabStopId = null;
     this.data = null;
   }
 
@@ -523,11 +541,20 @@ export class GraphView {
   private handleResize() {
     try {
       const r = this.container.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
+      if (
+        r.width > 0 &&
+        r.height > 0 &&
+        (r.width !== this.width || r.height !== this.height)
+      ) {
         this.width = r.width;
         this.height = r.height;
+        this.labelBase = Math.max(
+          LABEL_MIN,
+          Math.min(LABEL_MAX, Math.round(this.width / PX_PER_LABEL)),
+        );
         this.updateViewBox();
         this.applyTransform();
+        this.updateLabelVisibility(true);
       }
     } catch {
       // ignore: container may already be detached
@@ -890,6 +917,60 @@ export class GraphView {
     // true when the last press turned into a drag; suppresses the click
     let dragOccurred = false;
 
+    circle.addEventListener("focus", () => {
+      if (this.hoverTimer) {
+        clearTimeout(this.hoverTimer);
+        this.hoverTimer = 0;
+      }
+      this.moveTabStop(node.id);
+      this.focusNeighborhood(node);
+    });
+    circle.addEventListener("blur", () => {
+      if (this.focusedId === node.id) this.clearFocus();
+    });
+    circle.addEventListener("keydown", (ev: KeyboardEvent) => {
+      if (ev.altKey || ev.ctrlKey || ev.metaKey) return;
+      if (
+        [
+          "ArrowLeft",
+          "ArrowUp",
+          "ArrowRight",
+          "ArrowDown",
+          "Home",
+          "End",
+        ].includes(ev.key)
+      ) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const ids = [...this.nodeEls.keys()];
+        const current = ids.indexOf(node.id);
+        const delta = ev.key === "ArrowLeft" || ev.key === "ArrowUp" ? -1 : 1;
+        const index =
+          ev.key === "Home"
+            ? 0
+            : ev.key === "End"
+              ? ids.length - 1
+              : (current + delta + ids.length) % ids.length;
+        (this.nodeEls.get(ids[index]) as unknown as HTMLElement)?.focus({
+          preventScroll: true,
+        });
+      } else if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this.select(node);
+        const rect = circle.getBoundingClientRect();
+        try {
+          this.handlers.onSelect?.(
+            node,
+            this.win.screenX + rect.left + rect.width / 2,
+            this.win.screenY + rect.top + rect.height / 2,
+          );
+        } catch (e) {
+          ztoolkit.log("[graph] keyboard select failed", e);
+        }
+      }
+    });
+
     circle.addEventListener("pointerdown", (ev: PointerEvent) => {
       ev.stopPropagation();
       ev.preventDefault();
@@ -950,6 +1031,7 @@ export class GraphView {
     circle.addEventListener("click", (ev: MouseEvent) => {
       ev.stopPropagation();
       if (dragOccurred) return;
+      this.select(node);
       try {
         this.handlers.onSelect?.(node, ev.screenX, ev.screenY);
       } catch (e) {
@@ -1007,8 +1089,30 @@ export class GraphView {
         clearTimeout(this.hoverTimer);
         this.hoverTimer = 0;
       }
-      if (this.focusedId) this.clearFocus();
+      if (this.focusedId && (this.doc.activeElement as unknown) !== circle)
+        this.clearFocus();
     });
+  }
+
+  private moveTabStop(id: string) {
+    if (this.tabStopId === id) return;
+    if (this.tabStopId)
+      this.nodeEls.get(this.tabStopId)?.setAttribute("tabindex", "-1");
+    this.nodeEls.get(id)?.setAttribute("tabindex", "0");
+    this.tabStopId = id;
+  }
+
+  private select(node: ZNode) {
+    if (this.selectedId) {
+      const previous = this.nodeEls.get(this.selectedId);
+      previous?.classList.remove("is-selected");
+      previous?.setAttribute("aria-pressed", "false");
+    }
+    const circle = this.nodeEls.get(node.id);
+    circle?.classList.add("is-selected");
+    circle?.setAttribute("aria-pressed", "true");
+    this.selectedId = node.id;
+    this.moveTabStop(node.id);
   }
 
   /** hover: keep the node and its direct neighbours crisp, fade the rest */

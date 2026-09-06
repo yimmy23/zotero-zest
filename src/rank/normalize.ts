@@ -1,12 +1,9 @@
 /**
- * Journal-name normalisation — the cache key for every rank source.
+ * Journal-name normalisation — fallback identity when an ISSN is absent.
  *
- * Bibliographic data is messy: "The Lancet Oncology", "Lancet Oncol.",
- * "LANCET ONCOLOGY", "Journal of Clinical Oncology (JCO)" and the same names
- * with full-width punctuation pasted from Chinese PDFs must all hit one entry.
- * The rules below are deliberately conservative — they only remove noise, they
- * never expand abbreviations (that would need a title list and would silently
- * mis-attribute ranks).
+ * Case, whitespace and full-width punctuation may vary without changing a
+ * title. Abbreviations and parenthetical locations cannot safely be discarded:
+ * they need a matching identifier or an authoritative title list.
  */
 
 const FULLWIDTH = /[！-～]/g;
@@ -18,11 +15,6 @@ export function toHalfWidth(s: string): string {
     .replace(/\u3000/g, " ")
     .replace(/[，、]/g, ",")
     .replace(/[：]/g, ":");
-}
-
-/** strip a trailing parenthetical: "Nature Medicine (London)" → "Nature Medicine" */
-export function stripTrailingParenthetical(s: string): string {
-  return s.replace(/\s*[([{][^)\]}]*[)\]}]\s*$/u, "").trim();
 }
 
 /**
@@ -51,7 +43,8 @@ export function journalLookupName(raw: string | undefined | null): string {
 export function normalizeJournal(raw: string | undefined | null): string {
   if (!raw) return "";
   let s = toHalfWidth(journalLookupName(raw)).trim();
-  s = stripTrailingParenthetical(s);
+  // A location or edition in parentheses can distinguish separate journals.
+  // Keep its words in identity keys; punctuation itself is normalised below.
   s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "");
   s = s.toLowerCase();
   s = s.replace(/&/g, " and ");

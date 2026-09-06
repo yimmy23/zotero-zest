@@ -1,4 +1,9 @@
-import { http, politeParam } from "../core/http";
+import {
+  http,
+  politeParam,
+  type HttpResult,
+  type RequestOptions,
+} from "../core/http";
 import { cache } from "../core/storage";
 import {
   OA_AUTHORS_NS,
@@ -24,6 +29,18 @@ export type CiteSource = "Crossref" | "OpenAlex" | "Semantic Scholar";
 export interface CiteResult {
   count: number;
   source: CiteSource;
+}
+
+export type CiteFailure = (result: HttpResult) => void;
+
+async function requestBody(
+  url: string,
+  options: RequestOptions,
+  onFailure?: CiteFailure,
+) {
+  const result = await http.requestResult("GET", url, options);
+  if (result.kind !== "ok" && result.kind !== "not-found") onFailure?.(result);
+  return result.kind === "ok" ? result.value : null;
 }
 
 export function cleanDOI(item: Zotero.Item): string {
@@ -56,16 +73,21 @@ function pmidOf(item: Zotero.Item): string {
 export async function fetchCrossref(
   item: Zotero.Item,
   force = false,
+  onFailure?: CiteFailure,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
   // NB: the /works/{doi} route rejects `select` with a 400 — only the search
   // route supports it, so ask for the whole record
   const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}${politeParam("?")}`;
-  const res = await http.request<any>("GET", url, {
-    responseType: "json",
-    noCache: force,
-  });
+  const res = await requestBody(
+    url,
+    {
+      responseType: "json",
+      noCache: force,
+    },
+    onFailure,
+  );
   const n = res?.message?.["is-referenced-by-count"];
   return typeof n === "number" ? { count: n, source: "Crossref" } : null;
 }
@@ -73,14 +95,19 @@ export async function fetchCrossref(
 export async function fetchOpenAlexCitations(
   item: Zotero.Item,
   force = false,
+  onFailure?: CiteFailure,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
   const url = `https://api.openalex.org/works/doi:${encodeURIComponent(doi)}?select=cited_by_count,authorships${politeParam("&")}`;
-  const res = await http.request<any>("GET", url, {
-    responseType: "json",
-    noCache: force,
-  });
+  const res = await requestBody(
+    url,
+    {
+      responseType: "json",
+      noCache: force,
+    },
+    onFailure,
+  );
   // free ride for the author graph: same request, remember who wrote it
   const rows = compactAuthorships(res?.authorships);
   if (rows) cache.set(OA_AUTHORS_NS, authorshipsKey(item), rows);
@@ -91,6 +118,7 @@ export async function fetchOpenAlexCitations(
 export async function fetchSemanticScholar(
   item: Zotero.Item,
   force = false,
+  onFailure?: CiteFailure,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   const pmid = pmidOf(item);
@@ -98,15 +126,19 @@ export async function fetchSemanticScholar(
   if (!id) return null;
   const key = await getSecret("semanticscholar");
   const url = `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(id)}?fields=citationCount`;
-  const res = await http.request<any>("GET", url, {
-    responseType: "json",
-    headers: key ? { "x-api-key": key } : undefined,
-    // the key goes in a header, not the URL, but the request must still stay
-    // out of the shared URL cache when it is personalised
-    secret: !!key,
-    displayURL: key ? `${url} (with key)` : undefined,
-    noCache: force,
-  });
+  const res = await requestBody(
+    url,
+    {
+      responseType: "json",
+      headers: key ? { "x-api-key": key } : undefined,
+      // the key goes in a header, not the URL, but the request must still stay
+      // out of the shared URL cache when it is personalised
+      secret: !!key,
+      displayURL: key ? `${url} (with key)` : undefined,
+      noCache: force,
+    },
+    onFailure,
+  );
   const n = res?.citationCount;
   return typeof n === "number"
     ? { count: n, source: "Semantic Scholar" }

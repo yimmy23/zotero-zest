@@ -1,3 +1,7 @@
+pref-intro = Customize reading, item details and your workspace.
+pref-navigation =
+    .aria-label = Jump to a settings section
+
 pref-group-columns = Item List Columns
 pref-column-reading =
     .label = Reading — time read with a per-page heat strip
@@ -234,13 +238,16 @@ pref-cite-s2 =
 pref-s2key-label = Semantic Scholar key
 pref-s2key-hint = Optional: lookups work without one, but share a global rate limit (~1 request/second) that batch updates run into. Free keys at semanticscholar.org/product/api; stored in the system login manager like the easyScholar key — never in prefs, never synced.
 pref-cite-stale = Consider a count out of date after this many days
-pref-cite-hint = Counts are only fetched when you ask for them, from the item context menu (Zest ▸ Update citation counts). Existing GSCC / ZSCC / openalex lines from other plugins are read and replaced, never duplicated.
+pref-cite-hint = Counts are only fetched when you ask for them, from the item context menu (Zest ▸ Update citation counts). Existing GSCC / ZSCC / openalex lines from other plugins are read and preserved; Zest updates only its own Citations line.
 
 pref-group-panel = Item panel
 pref-info-enable =
     .label = Show the Zest panel (title, all authors on one line, venue and ranks, citations, reading, status, rating, remark, links out, abstract)
 pref-info-abstract =
     .label = Include the abstract — when zotero-pdf-translate has written a translation (titleTranslation / abstractTranslation in Extra) it comes first, the original folded underneath
+pref-info-affiliations-auto =
+    .label = Automatically fetch author affiliations when viewing an item
+pref-info-affiliations-hint = Off by default. When enabled, the visible panel sends the item's DOI to OpenAlex after you pause on it. You can also fetch affiliations manually in the panel; no key is needed.
 pref-column-remark =
     .label = Remark column — a one-line note kept in Extra
 pref-panel-hint = The reading strip in the panel is clickable: each segment opens the reader at that page.

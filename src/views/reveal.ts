@@ -1,6 +1,11 @@
-import { activeItemFilters, refreshItemView } from "./itemFilter";
+import {
+  activeItemFilters,
+  clearWindowFilters,
+  refreshItemView,
+} from "./itemFilter";
 import { createWrapGuard } from "../utils/wrap";
 import { clearSelection as clearTagSelection } from "../tags/nestedTree";
+import { clearAuthorFilter } from "../authors/authorMenu";
 
 /**
  * "Show Item in Library" must win over a Zest filter.
@@ -73,6 +78,12 @@ export async function clearZestFilters(win: Window) {
   } catch (e) {
     ztoolkit.log("[reveal] clearing the tag selection failed", e);
   }
+  try {
+    clearAuthorFilter(win);
+  } catch (e) {
+    ztoolkit.log("[reveal] clearing the author filter failed", e);
+  }
+  clearWindowFilters(win);
   await refreshItemView(win);
 }
 

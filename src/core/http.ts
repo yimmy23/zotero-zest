@@ -1,4 +1,5 @@
 import { getNumPref, getPref } from "../utils/prefs";
+import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
  * HTTP layer shared by all metadata sources.
@@ -6,11 +7,11 @@ import { getNumPref, getPref } from "../utils/prefs";
  * - de-duplicates identical in-flight requests
  * - memory cache with TTL (bounded, LRU eviction)
  * - per-host concurrency limit so no API gets hammered
- * - retry with backoff on 429 / 5xx (honors Retry-After)
- * - never throws: resolves null on failure (logged)
+ * - host-wide backoff on 429, bounded retries for 5xx / transport failures
+ * - body/null compatibility API plus explicit failure outcomes for batch callers
  */
 
-interface RequestOptions {
+export interface RequestOptions {
   headers?: Record<string, string>;
   body?: string;
   responseType?: "json" | "text";
@@ -31,6 +32,39 @@ interface RequestOptions {
    * request URL to the debug console and its redaction only covers `key=`.
    */
   secret?: boolean;
+  /** Rechecked when a queued request is about to run and after every await. */
+  shouldContinue?: () => boolean;
+  /** Record service-wide signals even when this consumer was cancelled. */
+  observeResponse?: (status: number, value: any) => void;
+}
+
+export interface HttpResult<T = any> {
+  kind:
+    "ok" | "not-found" | "throttled" | "unreachable" | "error" | "cancelled";
+  value: T | null;
+  status: number;
+}
+
+interface TransportResult {
+  status: number;
+  value: any;
+  retryAfter?: string | null;
+}
+
+function permitted(options: RequestOptions): boolean {
+  try {
+    return options.shouldContinue?.() !== false;
+  } catch {
+    return false;
+  }
+}
+
+function retryAfterMs(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(raw);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : 0;
 }
 
 interface CacheEntry {
@@ -72,20 +106,17 @@ class HostGate {
       return;
     }
     await new Promise<void>((resolve) => this.queue.push(resolve));
-    this.active++;
   }
 
   release() {
-    this.active--;
-    // LIFO: wake the most recently queued waiter first, so the newest
-    // user action (e.g. the currently hovered popup) jumps the queue
-    const next = this.queue.pop();
+    // Transfer the occupied slot directly. Decrementing before a waiter wakes
+    // lets a new request steal that slot and exceed the concurrency limit.
+    const next = this.queue.shift();
     if (next) next();
+    else this.active--;
   }
 }
 
-/** cached marker for "this lookup failed recently" */
-const NULL_SENTINEL = Object.freeze({ __refsNull: true });
 const NULL_TTL = 10 * 60 * 1000;
 
 /** hide credentials in anything we log or use as a cache key */
@@ -146,6 +177,11 @@ class Http {
       bytes = 0;
     }
     if (bytes > MAX_ENTRY_BYTES) return;
+    const previous = this.cache.get(key);
+    if (previous) {
+      this.cacheBytes -= previous.bytes;
+      this.cache.delete(key);
+    }
     while (
       this.cache.size >= MAX_CACHE_ENTRIES ||
       this.cacheBytes + bytes > MAX_CACHE_BYTES
@@ -167,6 +203,12 @@ class Http {
    */
   private throttledUntil = new Map<string, number>();
   private lastTransportFailure = 0;
+  private transportFailures = new Map<string, number>();
+
+  private noteTransportFailure(url: string) {
+    this.lastTransportFailure = Date.now();
+    this.transportFailures.set(hostOf(url), this.lastTransportFailure);
+  }
 
   /** ms until `url`'s host may be asked again; 0 when it is fine */
   throttledFor(url: string): number {
@@ -175,8 +217,11 @@ class Http {
   }
 
   /** true when a request failed at the transport level in the last minute */
-  recentlyUnreachable(): boolean {
-    return Date.now() - this.lastTransportFailure < 60_000;
+  recentlyUnreachable(url?: string): boolean {
+    const last = url
+      ? this.transportFailures.get(hostOf(url))
+      : this.lastTransportFailure;
+    return last !== undefined && Date.now() - last < 60_000;
   }
 
   /**
@@ -212,6 +257,18 @@ class Http {
     url: string,
     options: RequestOptions = {},
   ): Promise<T | null> {
+    const result = await this.requestResult<T>(method, url, options);
+    return result.kind === "ok" ? result.value : null;
+  }
+
+  /** Keep transport failures distinct from a source's genuine missing record. */
+  async requestResult<T = any>(
+    method: "GET" | "POST",
+    url: string,
+    options: RequestOptions = {},
+  ): Promise<HttpResult<T>> {
+    if (!permitted(options))
+      return { kind: "cancelled", value: null, status: 0 };
     const key = `${method} ${redactURL(url)} ${options.body || ""}`;
     // a secret-bearing response must never sit in the shared cache — today's
     // call sites also pass noCache, but the flag alone has to be enough
@@ -219,25 +276,25 @@ class Http {
       return this.doRequest(method, url, options);
     }
     const cached = this.cacheGet(key);
-    if (cached === NULL_SENTINEL) return null;
     if (cached !== undefined) return cached;
-    const pending = this.inflight.get(key);
+    // A caller-specific lifetime must not cancel another caller's request.
+    // It can still reuse/cache completed public responses safely.
+    const pending = !options.shouldContinue && this.inflight.get(key);
     if (pending) return pending;
     const promise = this.doRequest(method, url, options)
       .then((result) => {
-        if (result !== null) {
+        if (result.kind === "ok") {
           this.cacheSet(key, result, options.ttl ?? this.defaultTTL());
-        } else if (options.ttl !== 0) {
-          // negative cache: a 404 / failed lookup is not retried on every
-          // re-hover; short TTL so a transient outage heals itself
-          this.cacheSet(key, NULL_SENTINEL, NULL_TTL);
+        } else if (result.kind === "not-found" && options.ttl !== 0) {
+          // Only a genuine missing record is a negative-cache candidate.
+          this.cacheSet(key, result, NULL_TTL);
         }
         return result;
       })
       .finally(() => {
         if (this.inflight.get(key) === promise) this.inflight.delete(key);
       });
-    this.inflight.set(key, promise);
+    if (!options.shouldContinue) this.inflight.set(key, promise);
     return promise;
   }
 
@@ -245,42 +302,62 @@ class Http {
     method: "GET" | "POST",
     url: string,
     options: RequestOptions,
-  ): Promise<any> {
+  ): Promise<HttpResult> {
     const gate = this.gateFor(url);
     const maxRetries = options.retries ?? 2;
     for (let attempt = 0; ; attempt++) {
+      if (!permitted(options))
+        return { kind: "cancelled", value: null, status: 0 };
+      if (this.throttledFor(url))
+        return { kind: "throttled", value: null, status: 429 };
       await gate.acquire();
       // every path that falls through to the delay assigns retryWait first
       let retryWait!: number;
       try {
-        if (options.secret) {
-          const out = await rawRequest(method, url, options);
-          return out;
+        if (!permitted(options))
+          return { kind: "cancelled", value: null, status: 0 };
+        if (this.throttledFor(url))
+          return { kind: "throttled", value: null, status: 429 };
+        const out = options.secret
+          ? await rawRequest(method, url, options)
+          : await publicRequest(method, url, options);
+        const status = out.status;
+        const asked = retryAfterMs(out.retryAfter) || 1000 * 2 ** attempt;
+        const cancelled = !permitted(options);
+        // Cancellation belongs to a consumer. Server back-off still applies
+        // to every queued consumer and must survive discarding this body.
+        if (
+          status === 429 ||
+          (status >= 500 &&
+            (cancelled || attempt >= maxRetries || asked > MAX_RETRY_WAIT))
+        ) {
+          this.throttledUntil.set(
+            hostOf(url),
+            Date.now() + Math.max(asked, 30_000),
+          );
         }
-        const xhr = await Zotero.HTTP.request(method, url, {
-          headers: options.headers,
-          body: options.body,
-          responseType: options.responseType ?? "json",
-          timeout: options.timeout ?? DEFAULT_TIMEOUT,
-          successCodes: false,
-        });
-        const status = xhr.status;
+        if (status === 0) this.noteTransportFailure(url);
+        try {
+          options.observeResponse?.(status, out.value);
+        } catch {
+          // A source observer must not change transport classification.
+        }
+        if (cancelled) return { kind: "cancelled", value: null, status };
         if (status >= 200 && status < 300) {
-          // `responseText` throws (InvalidStateError) once responseType is
-          // "json"; an empty or non-JSON 2xx body simply has no value
-          return (options.responseType ?? "json") === "json"
-            ? (xhr.response ?? null)
-            : (xhr.response ?? xhr.responseText ?? null);
+          return {
+            kind: out.value === null ? "error" : "ok",
+            value: out.value,
+            status,
+          };
         }
-        if (status === 0) {
-          // Zotero resolves the xhr with status 0 on a transport failure
-          this.lastTransportFailure = Date.now();
-        }
-        if (status === 429 || status >= 500) {
-          const retryAfter = Number(xhr.getResponseHeader?.("Retry-After"));
-          const asked =
-            retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt;
-          if (attempt < maxRetries && asked <= MAX_RETRY_WAIT) {
+        if (status === 429 || status >= 500 || status === 0) {
+          // A rate limit applies to the whole host, not just this DOI. Return
+          // immediately so the batch stops and queued requests see the block.
+          if (
+            status !== 429 &&
+            attempt < maxRetries &&
+            asked <= MAX_RETRY_WAIT
+          ) {
             retryWait = asked;
             ztoolkit.log(
               `[http] ${status} ${options.displayURL ?? redactURL(url)}, retry in ${retryWait}ms`,
@@ -288,31 +365,36 @@ class Http {
           } else {
             // retries exhausted, or a server asking us to wait an hour: back
             // off from this host and tell callers so a batch can stop
-            this.throttledUntil.set(
-              hostOf(url),
-              Date.now() + Math.min(Math.max(asked, 30_000), MAX_RETRY_WAIT),
-            );
             ztoolkit.log(
               `[http] ${status} ${options.displayURL ?? redactURL(url)} — backing off`,
             );
-            return null;
+            return {
+              kind: status === 0 ? "unreachable" : "throttled",
+              value: null,
+              status,
+            };
           }
         } else {
           ztoolkit.log(
             `[http] ${method} ${options.displayURL ?? redactURL(url)} -> ${status}`,
           );
-          return null;
+          return {
+            kind: status === 404 || status === 410 ? "not-found" : "error",
+            value: null,
+            status,
+          };
         }
-      } catch (e) {
-        this.lastTransportFailure = Date.now();
+      } catch {
+        this.noteTransportFailure(url);
+        if (!permitted(options))
+          return { kind: "cancelled", value: null, status: 0 };
         if (attempt < maxRetries) {
           retryWait = 1000 * 2 ** attempt;
         } else {
           ztoolkit.log(
             `[http] ${method} ${options.displayURL ?? redactURL(url)} failed`,
-            e,
           );
-          return null;
+          return { kind: "unreachable", value: null, status: 0 };
         }
       } finally {
         gate.release();
@@ -323,14 +405,37 @@ class Http {
 }
 
 /**
- * Minimal XHR for credential-bearing requests: same contract as the Zotero
- * helper (resolve the parsed body, or null), but nothing is logged.
+ * Both transports return status and body so credentials never change error
+ * classification. Only the non-secret transport uses Zotero's logging helper.
  */
+async function publicRequest(
+  method: "GET" | "POST",
+  url: string,
+  options: RequestOptions,
+): Promise<TransportResult> {
+  const xhr = await Zotero.HTTP.request(method, url, {
+    headers: options.headers,
+    body: options.body,
+    responseType: options.responseType ?? "json",
+    timeout: options.timeout ?? DEFAULT_TIMEOUT,
+    successCodes: false,
+  });
+  return {
+    status: xhr.status,
+    retryAfter: xhr.getResponseHeader?.("Retry-After"),
+    // responseText throws once responseType is "json".
+    value:
+      (options.responseType ?? "json") === "json"
+        ? (xhr.response ?? null)
+        : (xhr.response ?? xhr.responseText ?? null),
+  };
+}
+
 async function rawRequest(
   method: "GET" | "POST",
   url: string,
   options: RequestOptions,
-): Promise<any> {
+): Promise<TransportResult> {
   const parse = (text: string) => {
     if ((options.responseType ?? "json") !== "json") return text;
     try {
@@ -353,32 +458,45 @@ async function rawRequest(
           xhr.setRequestHeader(k, v);
         }
         xhr.onload = () => {
-          resolve(
-            xhr.status >= 200 && xhr.status < 300
-              ? parse(xhr.responseText)
-              : null,
-          );
+          resolve({
+            status: xhr.status,
+            value: parse(xhr.responseText),
+            retryAfter: xhr.getResponseHeader?.("Retry-After"),
+          });
         };
-        xhr.onerror = () => resolve(null);
-        xhr.ontimeout = () => resolve(null);
+        xhr.onerror =
+          xhr.ontimeout =
+          xhr.onabort =
+            () => resolve({ status: 0, value: null });
         xhr.send(options.body ?? undefined);
       } catch {
-        resolve(null);
+        resolve({ status: 0, value: null });
       }
     });
   }
 
   // 2. no window (headless startup): fetch, which the plugin sandbox provides
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    options.timeout ?? DEFAULT_TIMEOUT,
+  );
   try {
     const res = await fetch(url, {
       method,
       headers: options.headers,
       body: options.body,
+      signal: controller.signal,
     });
-    if (!res.ok) return null;
-    return parse(await res.text());
+    return {
+      status: res.status,
+      retryAfter: res.headers.get("Retry-After"),
+      value: parse(await res.text()),
+    };
   } catch {
-    return null;
+    return { status: 0, value: null };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

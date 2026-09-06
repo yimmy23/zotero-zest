@@ -1,3 +1,7 @@
+pref-intro = 按你的使用习惯调整阅读、文献信息和工作区。
+pref-navigation =
+    .aria-label = 跳转到设置分组
+
 pref-group-columns = 条目列表列
 pref-column-reading =
     .label = 阅读——阅读时长 + 每页热力条
@@ -234,13 +238,16 @@ pref-cite-s2 =
 pref-s2key-label = Semantic Scholar 密钥
 pref-s2key-hint = 可留空：不带密钥也能查，只是共享限流（约每秒 1 次），批量更新容易被拒。密钥在 semanticscholar.org/product/api 免费申请，和 easyScholar 密钥一样存在系统登录管理器里，不进偏好设置、不随同步走。
 pref-cite-stale = 超过多少天视为过期
-pref-cite-hint = 只有你主动触发时才会联网获取（条目右键 → Zest ▸ 更新被引数）。其它插件写下的 GSCC / ZSCC / openalex 行会被读取并替换，不会重复堆积。
+pref-cite-hint = 只有你主动触发时才会联网获取（条目右键 → Zest ▸ 更新被引数）。其它插件写下的 GSCC / ZSCC / openalex 行会被读取并保留，Zest 只更新自己的 Citations 行。
 
 pref-group-panel = 条目面板
 pref-info-enable =
     .label = 显示 Zest 面板（标题、全部作者一行、期刊与分区、被引、阅读、状态、评级、简记、外部链接、摘要）
 pref-info-abstract =
     .label = 面板中包含摘要——有 zotero-pdf-translate 写下的译文（Extra 里的 titleTranslation / abstractTranslation）时先显示译文，原文折叠在下
+pref-info-affiliations-auto =
+    .label = 浏览条目时自动获取作者机构
+pref-info-affiliations-hint = 默认关闭。开启后，在可见面板中停留片刻会将该条目的 DOI 发送到 OpenAlex。也可在面板中手动获取机构信息，无需密钥。
 pref-column-remark =
     .label = 简记列——一行备注，保存在 Extra 字段
 pref-panel-hint = 面板里的阅读热力条可以点击：点哪一段就在阅读器里打开对应页码。

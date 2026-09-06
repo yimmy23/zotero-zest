@@ -135,6 +135,7 @@ pref("secret.semanticscholar", "");
 // Remark column and the literature info panel
 pref("column.remark.enable", false);
 pref("info.enable", true);
+pref("info.affiliations.autoFetch", false);
 // abstract in the Zest panel, translation (pdf-translate's Extra line) first
 pref("info.abstract", true);
 

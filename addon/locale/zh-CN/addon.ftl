@@ -83,7 +83,8 @@ import-mode-max = 合并（取较大值）
 import-mode-sum = 累加
 import-parse-failed = 无法读取文件：{ $error }
 import-nothing = 该文件中没有阅读记录
-import-done = 已导入 { $count } 个条目 · 共 { $hours } 小时
+import-result = 已导入 { $count } 个条目 · 共 { $hours } 小时 · 跳过 { $skipped } 项（其中 { $ambiguous } 项有多个匹配）
+import-write-failed = 阅读数据未能保存。已完成的条目会保留；请检查数据目录后，使用“取较大值”重试。{ $error }
 
 migrate-title = 导入旧插件的阅读数据
 migrate-scanning = 正在扫描各文库中的“Addon Item”/“ZoteroStyle”笔记与 JSON 文件…
@@ -296,6 +297,10 @@ info-title = 标题
 info-abstract = 摘要
 info-original = 原文
 info-affiliations = 机构
+info-affiliations-fetch = 获取机构信息
+info-affiliations-fetch-tip = 将此条目的 DOI 发送到 OpenAlex，查询作者机构
+info-affiliations-loading = 正在获取…
+info-affiliations-unavailable = 暂未获取到机构信息，可稍后重试。
 info-affiliations-sep = {"；"}
 info-affiliations-more = { $list } 等 { $count } 家
 info-venue = 期刊 / 来源
@@ -395,6 +400,12 @@ author-filter-toast = 已筛选：{ $name } 共 { $count } 篇（切换分类即
 author-filter-none = 未能在文库中定位 { $name }
 
 # ---- graph author roles ----
+graph-empty = 当前范围没有可显示的关联
+graph-empty-hint = 可切换关联方式、降低共享阈值，或显示更多文献。
+graph-canvas-help = 拖动节点或空白处 · Ctrl/⌘ + 滚轮缩放
+graph-filter-modes = 关联方式
+graph-filter-roles = 作者范围
+graph-filter-shared = 共享条目阈值
 graph-roles-firstlast = 一作+通讯
 graph-roles-firstlast-tip = 只看第一作者与末位作者（通讯位惯例）——中间作者不进入图谱
 graph-roles-all = 全部作者

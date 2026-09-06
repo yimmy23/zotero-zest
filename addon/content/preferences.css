@@ -1,67 +1,194 @@
-/* Settings pane styling.
-   The pane is injected into Zotero's own preferences window, so it inherits
-   that window's fonts and colours; everything here is layout and de-emphasis
-   only, expressed in Zotero's CSS variables so light and dark both work. */
-
-/* Zotero's own settings window packs XUL boxes with no gap, so a row of four
-   buttons reads as one long slab. Scoped to our own pane root — this sheet is
-   loaded into the shared preferences window, so an unscoped rule would relayout
-   Zotero's panes too. */
-#zest-prefs hbox {
-  gap: 8px;
+/* Shared preferences window: scope every rule to our pane and inherit
+   Zotero's colours, fonts and native control appearance in both themes. */
+#zest-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding-block-end: 24px;
+  color: var(--fill-primary);
 }
 
-#zest-prefs hbox > button {
+#zest-prefs .zest-pref-intro {
+  padding: 4px 2px 2px;
+}
+#zest-prefs .zest-pref-intro p {
+  margin: 7px 0 14px;
+  color: var(--fill-secondary);
+  line-height: 1.5;
+}
+#zest-prefs .zest-pref-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+#zest-prefs .zest-pref-jump {
+  appearance: none;
+  margin: 0;
+  padding: 5px 9px;
+  min-height: 28px;
+  border: 1px solid var(--fill-quinary);
+  border-radius: 6px;
+  background: var(--material-background);
+  color: var(--fill-secondary);
+  font: inherit;
+  font-size: 0.9em;
+  line-height: 1.3;
+  cursor: pointer;
+}
+#zest-prefs .zest-pref-jump:hover {
+  background: var(--fill-quinary);
+  color: var(--fill-primary);
+}
+#zest-prefs .zest-pref-jump:focus-visible,
+#zest-prefs .zest-pref-swatch:focus-visible {
+  outline: 2px solid var(--accent-color, var(--fill-primary));
+  outline-offset: 2px;
+}
+#zest-prefs > groupbox {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--fill-quinary);
+  border-radius: 10px;
+  background: var(--material-background);
+  scroll-margin-block-start: 18px;
+}
+#zest-prefs > groupbox > label {
+  display: block;
+  margin: 0 0 8px;
+}
+#zest-prefs h2 {
+  /* Zotero adds a 2em !important top margin between unboxed groups.
+     Our cards already provide that separation; do not stack both. */
+  margin: 0 !important;
+  color: var(--fill-primary);
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.4;
+  scroll-margin-block-start: 28px;
+}
+#zest-prefs h2:focus-visible {
+  outline: 2px solid var(--accent-color, var(--fill-primary));
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+/* Only authored setting rows: native buttons and checkboxes contain their
+   own light-DOM hboxes whose sizing and alignment belong to Zotero. */
+#zest-prefs > groupbox > hbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+  max-width: 100%;
+  margin-block: 6px;
+}
+
+#zest-prefs > groupbox > hbox > button {
   margin-inline: 0;
 }
 
-.zest-pref-hint {
-  font-size: 0.85em;
-  opacity: 0.7;
-  margin: 2px 0 6px 0;
+#zest-prefs > groupbox > hbox > label {
+  min-width: 0;
+  white-space: normal;
+}
+#zest-prefs > groupbox > hbox > label[style*="margin-inline-start"] {
+  margin-inline-start: 0 !important;
+}
+#zest-prefs input,
+#zest-prefs menulist {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+#zest-prefs input:not([type="color"]) {
+  min-height: 28px;
+}
+#zest-prefs input[type="number"] {
+  width: 6.5em;
+}
+#zest-prefs input[style*="flex: 1"] {
+  flex-basis: 12rem !important;
+}
+#zest-prefs checkbox {
+  margin-block: 5px;
+  max-width: 100%;
+}
+#zest-prefs description {
+  max-width: 100%;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+#zest-prefs .zest-pref-hint {
+  font-size: 0.91em;
+  color: var(--fill-secondary);
+  margin: 5px 0 8px;
   white-space: pre-wrap;
 }
-
-.zest-pref-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  border-bottom: 1px solid var(--fill-quinary, rgba(128, 128, 128, 0.18));
+#zest-prefs .zest-pref-hint:empty {
+  display: none;
 }
 
-.zest-pref-row:last-child {
+#zest-prefs .zest-pref-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--fill-quinary);
+}
+
+#zest-prefs .zest-pref-row:last-child {
   border-bottom: 0;
 }
 
-.zest-pref-row > span {
-  flex: 1 1 auto;
+#zest-prefs .zest-pref-row > span {
+  flex: 1 1 12rem;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.zest-pref-list {
+#zest-prefs .zest-pref-list {
   max-height: 180px;
   overflow-y: auto;
+  margin-block: 6px;
 }
 
-.zest-pref-swatches {
+#zest-prefs .zest-pref-swatches {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-inline-start: 10px;
+  margin-inline-start: 4px;
 }
 
-.zest-pref-swatch {
+#zest-prefs .zest-pref-swatch {
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid var(--fill-quinary, rgba(128, 128, 128, 0.35));
+  border: 1px solid var(--fill-quinary);
   border-radius: 5px;
   cursor: pointer;
 }
 
-.zest-pref-swatch:hover {
-  border-color: var(--fill-secondary, rgba(128, 128, 128, 0.7));
+#zest-prefs .zest-pref-swatch:hover {
+  border-color: var(--fill-secondary);
+}
+#zest-prefs #zest-pref-build {
+  margin-block-start: 8px;
+  color: var(--fill-secondary);
+  font-size: 0.9em;
+}
+@media (max-width: 640px) {
+  #zest-prefs > groupbox {
+    padding: 12px;
+  }
+  #zest-prefs > groupbox > hbox {
+    gap: 7px 8px;
+  }
 }

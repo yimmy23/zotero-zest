@@ -1,6 +1,6 @@
 name: CI
 
-# Lint + build on every push / PR. Releases are cut locally with the gh CLI
+# Lint, behavioral regressions and build on every push / PR. Releases are cut locally with the gh CLI
 # (see AGENTS.md → Releasing) — no release workflow here on purpose: the
 # template's release-plugin workflow would re-run `npm run release` on tag
 # push and collide with the manually created release + update manifest.
@@ -22,6 +22,8 @@ jobs:
         run: npm run lint:check
       - name: Build
         run: npm run build
+      - name: Behavioral regressions
+        run: npm run test:unit
       - name: Upload build result
         uses: actions/upload-artifact@v4
         with:

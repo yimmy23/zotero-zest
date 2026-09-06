@@ -62,7 +62,39 @@ import { iconButton } from "../ui/icons";
  */
 
 let sectionID: string | false = false;
-const refreshers = new Map<Element, () => void>();
+interface SectionState {
+  refresh: () => void;
+  setEnabled?: (enabled: boolean) => void;
+  item?: Zotero.Item;
+  itemID?: number;
+  timer?: number;
+}
+const sections = new Map<HTMLElement, SectionState>();
+
+function cancelTopUp(state: SectionState) {
+  if (state.timer !== undefined) clearTimeout(state.timer);
+  state.timer = undefined;
+}
+
+function sectionState(props: any): SectionState | undefined {
+  const body = props?.body as HTMLElement | undefined;
+  if (!body) return;
+  let state = sections.get(body);
+  if (!state && typeof props.refresh === "function") {
+    state = { refresh: props.refresh };
+    sections.set(body, state);
+  }
+  if (state && state.itemID !== props.item?.id) {
+    cancelTopUp(state);
+    state.itemID = props.item?.id;
+  }
+  if (state) {
+    state.item = props.item;
+    if (typeof props.setEnabled === "function")
+      state.setEnabled = props.setEnabled;
+  }
+  return state;
+}
 
 export function registerInfoSection() {
   if (sectionID) return;
@@ -83,16 +115,16 @@ export function registerInfoSection() {
     },
     onInit: (props: any) => {
       try {
-        if (props?.body && typeof props.refresh === "function") {
-          refreshers.set(props.body, props.refresh);
-        }
+        sectionState(props);
       } catch (e) {
         ztoolkit.log("[info] onInit failed", e);
       }
     },
     onDestroy: (props: any) => {
       try {
-        if (props?.body) refreshers.delete(props.body);
+        const state = sections.get(props?.body);
+        if (state) cancelTopUp(state);
+        sections.delete(props?.body);
       } catch {
         // window gone
       }
@@ -102,6 +134,7 @@ export function registerInfoSection() {
     // again; visibility has to be decided here, where every item change lands
     onItemChange: (props: any) => {
       try {
+        sectionState(props);
         props.setEnabled?.(wantsSection(props?.item));
       } catch (e) {
         ztoolkit.log("[info] item change failed", e);
@@ -119,11 +152,8 @@ export function registerInfoSection() {
 }
 
 export function unregisterInfoSection() {
-  if (affilTimer) {
-    clearTimeout(affilTimer);
-    affilTimer = undefined;
-  }
-  refreshers.clear();
+  for (const state of sections.values()) cancelTopUp(state);
+  sections.clear();
   if (!sectionID) return;
   try {
     (Zotero as any).ItemPaneManager?.unregisterSection?.(sectionID);
@@ -133,22 +163,49 @@ export function unregisterInfoSection() {
   sectionID = false;
 }
 
-let affilTimer: ReturnType<typeof setTimeout> | undefined;
+function sectionVisible(
+  body: HTMLElement,
+  state: SectionState,
+  item: Zotero.Item,
+): boolean {
+  return (
+    addon.data.alive &&
+    sections.get(body) === state &&
+    state.itemID === item.id &&
+    wantsSection(item) &&
+    body.isConnected &&
+    body.getClientRects().length > 0
+  );
+}
 
-function queueAuthorshipTopUp(item: Zotero.Item) {
-  if (affilTimer) clearTimeout(affilTimer);
-  affilTimer = setTimeout(() => {
-    affilTimer = undefined;
-    void ensureAuthorships([item]).then((changed) => {
-      if (changed) refreshInfoSections();
-    });
+function queueAuthorshipTopUp(
+  item: Zotero.Item,
+  body: HTMLElement,
+  state: SectionState,
+) {
+  cancelTopUp(state);
+  state.timer = setTimeout(() => {
+    state.timer = undefined;
+    const shouldContinue = () => sectionVisible(body, state, item);
+    if (!shouldContinue()) return;
+    void ensureAuthorships([item], { automatic: true, shouldContinue })
+      .then((changed) => {
+        if (changed && shouldContinue()) refreshInfoSections(item.id);
+      })
+      .catch((e) => ztoolkit.log("[info] affiliation lookup failed", e));
   }, 400);
 }
 
-export function refreshInfoSections() {
-  for (const refresh of refreshers.values()) {
+export function refreshInfoSections(itemID?: number) {
+  for (const [body, state] of sections) {
+    if (itemID !== undefined && state.itemID !== itemID) continue;
+    cancelTopUp(state);
+    if (itemID !== undefined && !body.getClientRects().length) continue;
     try {
-      refresh();
+      // Hidden sections defer refresh until visible. Preference changes must
+      // restore visibility first, even if the selected item has not changed.
+      if (itemID === undefined) state.setEnabled?.(wantsSection(state.item));
+      state.refresh();
     } catch {
       // stale container
     }
@@ -177,6 +234,8 @@ function render(props: any) {
   const body: HTMLElement = props.body;
   const doc: Document = props.doc || body.ownerDocument;
   const item: Zotero.Item | undefined = props.item;
+  const state = sectionState(props);
+  if (state) cancelTopUp(state);
   body.textContent = "";
   body.classList.add("zest-info");
 
@@ -200,6 +259,7 @@ function render(props: any) {
     const translation = getExtraBlock(item, TITLE_TRANSLATION_KEYS)?.value;
     if (title || translation) {
       const r = row(doc, getString("info-title"));
+      r.classList.add("zest-info-heading");
       const value = doc.createElement("span");
       value.className = "zest-info-value zest-info-title";
       if (translation) {
@@ -293,11 +353,48 @@ function render(props: any) {
         .join("\n");
       r.appendChild(value);
       body.appendChild(r);
-    } else if (getPref("cite.useOpenAlex") !== false) {
-      // never fetch from a render: arrowing through the list must not fire
-      // one request per selection. Only the item the user settles on for
-      // 400 ms gets the one bounded top-up (same idea as the rank queue).
-      queueAuthorshipTopUp(item);
+    } else if (state && item.getField("DOI")) {
+      const r = row(doc, getString("info-affiliations"));
+      const value = doc.createElement("span");
+      value.className = "zest-info-value";
+      const button = doc.createElement("button");
+      button.type = "button";
+      button.className = "zest-affiliations-fetch";
+      button.textContent = getString("info-affiliations-fetch");
+      button.title = getString("info-affiliations-fetch-tip");
+      const message = doc.createElement("span");
+      message.className = "zest-info-feedback";
+      message.setAttribute("role", "status");
+      button.addEventListener("click", async () => {
+        cancelTopUp(state);
+        const shouldContinue = () =>
+          sectionVisible(body, state, item) && button.isConnected;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+        message.textContent = getString("info-affiliations-loading");
+        try {
+          const changed = await ensureAuthorships([item], { shouldContinue });
+          if (!shouldContinue()) return;
+          if (changed) refreshInfoSections(item.id);
+          else message.textContent = getString("info-affiliations-unavailable");
+        } catch (e) {
+          ztoolkit.log("[info] affiliation lookup failed", e);
+          if (shouldContinue()) {
+            message.textContent = getString("info-affiliations-unavailable");
+          }
+        } finally {
+          if (button.isConnected) {
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+          }
+        }
+      });
+      value.append(button, message);
+      r.appendChild(value);
+      body.appendChild(r);
+      if (!oaRows && getPref("info.affiliations.autoFetch") === true) {
+        queueAuthorshipTopUp(item, body, state);
+      }
     }
   }
 
@@ -305,13 +402,18 @@ function render(props: any) {
   const venue = venueOf(item);
   if (venue) {
     const r = row(doc, getString("info-venue"));
-    const value = doc.createElement("span");
-    value.className = "zest-info-value";
-    value.textContent = venue;
+    const value = doc.createElement("div");
+    value.className = "zest-info-value zest-info-venue";
+    const name = doc.createElement("span");
+    name.className = "zest-info-venue-name";
+    name.textContent = venue;
+    value.appendChild(name);
     r.appendChild(value);
     // rank badges, if we already know them (never fetched during a render)
     requestJournalRecord(item);
     const rec = getJournalRecord(item);
+    const badges = doc.createElement("div");
+    badges.className = "zest-info-ranks";
     for (const v of displayValuesForUI(
       rec,
       rankFieldsForDisplay(displayFields()),
@@ -331,20 +433,24 @@ function render(props: any) {
       if (rgb) {
         badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.15)`;
       }
-      r.appendChild(badge);
+      badges.appendChild(badge);
     }
+    if (badges.children.length) value.appendChild(badges);
     body.appendChild(r);
   }
 
   /* ---------- citations ---------- */
   const cites = citationOf(item);
   const citeRow = row(doc, getString("info-citations"));
+  citeRow.classList.add("zest-info-divider");
+  const citeControls = doc.createElement("div");
+  citeControls.className = "zest-info-value zest-info-controls";
   const citeValue = doc.createElement("span");
   citeValue.className = "zest-info-value";
   citeValue.textContent = cites
     ? `${cites.count} · ${cites.source ?? "?"} · ${cites.date ?? "—"}`
     : getString("info-citations-none");
-  citeRow.appendChild(citeValue);
+  citeControls.appendChild(citeValue);
   const refresh = iconButton(
     doc,
     "refresh",
@@ -355,15 +461,17 @@ function render(props: any) {
   refresh.addEventListener(
     "click",
     guard("info citations", () => {
-      void updateCitations(item, true).then(() => refreshInfoSections());
+      void updateCitations(item, true).then(() => refreshInfoSections(item.id));
     }),
   );
-  citeRow.appendChild(refresh);
+  citeControls.appendChild(refresh);
+  citeRow.appendChild(citeControls);
   body.appendChild(citeRow);
 
   /* ---------- reading ---------- */
   const rec = readingStore.getForItem(item);
   const readRow = row(doc, getString("info-reading"));
+  readRow.classList.add("zest-info-divider");
   const readValue = doc.createElement("span");
   readValue.className = "zest-info-value";
   readValue.textContent = rec
@@ -385,6 +493,8 @@ function render(props: any) {
 
   /* ---------- status / rating / remark ---------- */
   const stateRow = row(doc, getString("info-status"));
+  const stateControls = doc.createElement("div");
+  stateControls.className = "zest-info-value zest-info-controls";
   const eff = effectiveStatus(item);
   const statusBtn = doc.createElement("button");
   statusBtn.className = `zest-info-btn zest-info-status${
@@ -409,11 +519,11 @@ function render(props: any) {
         win,
         items: [item],
         anchor: statusBtn,
-        onDone: () => refreshInfoSections(),
+        onDone: () => refreshInfoSections(item.id),
       });
     }),
   );
-  stateRow.appendChild(statusBtn);
+  stateControls.appendChild(statusBtn);
 
   const stars = doc.createElement("span");
   stars.className = editable ? "zest-info-stars" : "zest-info-stars disabled";
@@ -433,13 +543,14 @@ function render(props: any) {
       guard("info rating", () => {
         if (!editable) return;
         void setRating(item, i === rating ? i - 1 : i).then(() =>
-          refreshInfoSections(),
+          refreshInfoSections(item.id),
         );
       }),
     );
     stars.appendChild(star);
   }
-  stateRow.appendChild(stars);
+  stateControls.appendChild(stars);
+  stateRow.appendChild(stateControls);
   body.appendChild(stateRow);
 
   const remarkRow = row(doc, getString("column-remark"));
@@ -462,8 +573,12 @@ function render(props: any) {
   const links = openLinks(item);
   if (links.length) {
     const r = row(doc, getString("info-open"));
+    r.classList.add("zest-info-open");
+    const group = doc.createElement("div");
+    group.className = "zest-info-links";
     for (const link of links) {
       const a = doc.createElement("button");
+      a.type = "button";
       a.className = "zest-info-link";
       a.textContent = link.label;
       a.addEventListener(
@@ -476,8 +591,9 @@ function render(props: any) {
           }
         }),
       );
-      r.appendChild(a);
+      group.appendChild(a);
     }
+    r.appendChild(group);
     body.appendChild(r);
   }
 

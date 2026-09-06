@@ -171,10 +171,10 @@ export function moveView(id: string, delta: number) {
 }
 
 /** the layout the user had before the last apply, so it can be restored */
-let previous: ViewGroup | null = null;
+const previous = new WeakMap<Window, ViewGroup>();
 
-export function hasPreviousLayout(): boolean {
-  return !!previous;
+export function hasPreviousLayout(win: Window): boolean {
+  return previous.has(win);
 }
 
 export async function applyView(
@@ -187,7 +187,8 @@ export async function applyView(
     return false;
   }
   // remember where we came from (one level of undo)
-  previous = captureView(win, getString("views-previous"));
+  const snapshot = captureView(win, getString("views-previous"));
+  if (snapshot) previous.set(win, snapshot);
 
   try {
     const wanted = new Map(view.columns.map((c) => [c.dataKey, c]));
@@ -315,8 +316,8 @@ export async function applyRecommendedLayout(win: Window): Promise<boolean> {
 }
 
 export async function restorePreviousLayout(win: Window): Promise<boolean> {
-  if (!previous) return false;
-  const layout = previous;
+  const layout = previous.get(win);
+  if (!layout) return false;
   const ok = await applyView(win, layout);
   // applyView overwrote `previous` with the layout we just left
   return ok;
@@ -331,6 +332,7 @@ export function views(): ViewGroup[] {
 /* ------------------------------------------------------------------ */
 
 const listeners = new Map<Window, (ev: Event) => void>();
+const menuNodes = new Map<Window, Set<Element>>();
 
 /**
  * Add a "Zest views" submenu to both column pickers (header right-click and
@@ -346,8 +348,19 @@ export function installViewMenu(win: Window) {
     const isPicker = target.id === "zotero-column-picker";
     const isMenubar = target.parentElement?.id === "column-picker-submenu";
     if (!isPicker && !isMenubar) return;
-    if (target.querySelector?.(`#${config.addonRef}-views-menu`)) return;
-    target.appendChild(buildMenu(win));
+    let nodes = menuNodes.get(win);
+    if (!nodes) {
+      nodes = new Set();
+      menuNodes.set(win, nodes);
+    }
+    const existing = target.querySelector?.(`#${config.addonRef}-views-menu`);
+    if (existing && nodes.has(existing)) return;
+    existing?.remove();
+    // Zotero recreates these popups; retain only currently mounted menus.
+    for (const node of nodes) if (!node.isConnected) nodes.delete(node);
+    const menu = buildMenu(win);
+    target.appendChild(menu);
+    nodes.add(menu);
   });
   win.document.addEventListener("popupshowing", handler);
   listeners.set(win, handler);
@@ -355,9 +368,10 @@ export function installViewMenu(win: Window) {
 
 export function uninstallViewMenu(win: Window) {
   const handler = listeners.get(win);
-  if (!handler) return;
   try {
-    win.document.removeEventListener("popupshowing", handler);
+    if (handler) win.document.removeEventListener("popupshowing", handler);
+    for (const menu of menuNodes.get(win) ?? []) menu.remove();
+    menuNodes.delete(win);
   } catch {
     // window gone
   }
@@ -453,7 +467,7 @@ function buildMenu(win: Window): Element {
     popup.appendChild(del);
   }
 
-  if (hasPreviousLayout()) {
+  if (hasPreviousLayout(win)) {
     popup.appendChild(doc.createXULElement("menuseparator"));
     const undo = doc.createXULElement("menuitem");
     undo.setAttribute("label", getString("views-restore"));

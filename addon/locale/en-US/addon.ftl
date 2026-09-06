@@ -83,7 +83,8 @@ import-mode-max = Merge (keep larger)
 import-mode-sum = Add up
 import-parse-failed = Could not read the file: { $error }
 import-nothing = No reading records found in that file
-import-done = Imported { $count } items · { $hours } h of reading
+import-result = Imported { $count } items · { $hours } h of reading · skipped { $skipped } (ambiguous matches: { $ambiguous })
+import-write-failed = Could not save the reading data. Any completed items are retained; retry using “Keep the larger value” after checking the data folder. { $error }
 
 migrate-title = Import reading data from the old plugin
 migrate-scanning = Scanning libraries for “Addon Item” / “ZoteroStyle” notes and JSON files…
@@ -296,6 +297,10 @@ info-title = Title
 info-abstract = Abstract
 info-original = Original
 info-affiliations = Affiliations
+info-affiliations-fetch = Fetch affiliations
+info-affiliations-fetch-tip = Send this item's DOI to OpenAlex to look up author affiliations
+info-affiliations-loading = Fetching…
+info-affiliations-unavailable = No affiliations available yet. Try again later.
 info-affiliations-sep = {"; "}
 info-affiliations-more = { $list } and { $count } more
 info-venue = Venue
@@ -395,6 +400,12 @@ author-filter-toast = Showing { $count } items by { $name } — switch collectio
 author-filter-none = Could not locate { $name } in this library
 
 # ---- graph author roles ----
+graph-empty = No connections to display in this view
+graph-empty-hint = Try another relationship, lower the shared-item threshold, or show more items.
+graph-canvas-help = Drag nodes or the background · Ctrl/⌘ + scroll to zoom
+graph-filter-modes = Relationship
+graph-filter-roles = Author scope
+graph-filter-shared = Shared-item threshold
 graph-roles-firstlast = First + corresponding
 graph-roles-firstlast-tip = Only first and last authors (the corresponding slot) — middle authors stay out
 graph-roles-all = All authors

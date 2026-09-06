@@ -1,6 +1,7 @@
 import { getPref, getNumPref } from "../utils/prefs";
 import { createWrapGuard } from "../utils/wrap";
 import { setTimeout, clearTimeout } from "../utils/timers";
+import { createDOMOwnership } from "../utils/domOwnership";
 
 /**
  * Item counts next to collection names.
@@ -25,9 +26,13 @@ interface Patched {
   original: (...args: any[]) => any;
   /** this copy's wrapper — uninstall restores only over ITS OWN function */
   wrapped: (...args: any[]) => any;
+  badgeMount: symbol;
 }
 
 const wrapGuard = createWrapGuard("__zestCountsAlive");
+const BADGE_OWNER = Symbol("zest-count-badge");
+const ownership = createDOMOwnership();
+const RENDER_OWNER = "zest-count-renderer";
 
 const patched = new Map<Window, Patched>();
 const counts = new Map<number, { direct: number; total: number }>();
@@ -136,10 +141,14 @@ function label(collectionID: number): string {
 }
 
 /** take our badges out of ONE window's DOM (rows are reused, not rebuilt) */
-export function sweepBadgesIn(win: Window) {
+export function sweepBadgesIn(win: Window, mount?: symbol) {
   try {
     for (const badge of win.document.querySelectorAll(".zest-count")) {
-      badge.remove();
+      if (
+        (badge as any).__zestCountOwner === BADGE_OWNER &&
+        (!mount || (badge as any).__zestCountMount === mount)
+      )
+        badge.remove();
     }
   } catch {
     // window closing
@@ -178,9 +187,19 @@ export function installCollectionCounts(win: Window) {
   const base = wrapGuard.stripStale(tree.renderItem);
   tree.renderItem = base;
   const original = base.bind(tree);
-  const wrapped = (...args: any[]) => {
+  const badgeMount = Symbol("zest-count-mount");
+  // Even a queued React callback belonging to the outgoing copy must stop
+  // painting as soon as this copy takes over the same tree.
+  ownership.claim(tree, RENDER_OWNER, () => {});
+  const wrapped = (...args: any[]): any => {
     const row = original(...args);
     try {
+      // React or an incoming plugin copy may retain our function after teardown.
+      if (
+        patched.get(win)?.wrapped !== wrapped ||
+        !ownership.owns(tree, RENDER_OWNER)
+      )
+        return row;
       const index = args[0] as number;
       const treeRow = tree.getRow?.(index);
       const collectionID = treeRow?.ref?.id;
@@ -188,11 +207,15 @@ export function installCollectionCounts(win: Window) {
         const text = label(collectionID);
         if (text && row?.querySelector) {
           const cell = row.querySelector(".cell.primary");
-          if (cell && !cell.querySelector(".zest-count")) {
-            const badge = row.ownerDocument.createElement("span");
+          if (cell) {
+            const badge =
+              cell.querySelector(".zest-count") ||
+              row.ownerDocument.createElement("span");
             badge.className = "zest-count";
+            (badge as any).__zestCountOwner = BADGE_OWNER;
+            (badge as any).__zestCountMount = badgeMount;
             badge.textContent = text;
-            cell.appendChild(badge);
+            if (!badge.parentElement) cell.appendChild(badge);
           }
         }
       }
@@ -203,7 +226,7 @@ export function installCollectionCounts(win: Window) {
   };
   wrapGuard.mark(wrapped, base);
   tree.renderItem = wrapped;
-  patched.set(win, { win, tree, original: base, wrapped });
+  patched.set(win, { win, tree, original: base, wrapped, badgeMount });
   startWatch();
   invalidateCounts();
   redraw(tree);
@@ -219,6 +242,7 @@ export function uninstallCollectionCounts(win: Window) {
     return;
   }
   patched.delete(win);
+  ownership.release(entry.tree, RENDER_OWNER);
   try {
     // restore only over our own wrapper; anything else (another plugin, the
     // incoming copy of an upgrade) owns the slot now
@@ -227,11 +251,11 @@ export function uninstallCollectionCounts(win: Window) {
     }
     // The virtualized table reuses row nodes, so restoring renderItem does not
     // remove badges that are already in the DOM — take them out ourselves.
-    sweepBadgesIn(entry.win);
+    sweepBadgesIn(entry.win, entry.badgeMount);
     redraw(entry.tree);
     // The virtualized table received `renderItem` as a React prop, so a render
     // that was already queued still paints badges; sweep once more after it.
-    setTimeout(() => sweepBadgesIn(entry.win), 600);
+    setTimeout(() => sweepBadgesIn(entry.win, entry.badgeMount), 600);
   } catch {
     // window gone
   }

@@ -1,4 +1,4 @@
-import { http, politeParam } from "../../core/http";
+import { http, politeParam, type RequestOptions } from "../../core/http";
 import { normalizeISSN, normalizeJournal } from "../normalize";
 import type { RankValue } from "../types";
 
@@ -34,6 +34,24 @@ interface OaSource {
   works_count?: number;
 }
 
+export interface OpenAlexJournal {
+  values: RankValue[];
+  name?: string;
+  issn?: string;
+  /** All identifiers verified on the resolved source, including eISSNs. */
+  issns: string[];
+}
+
+function sourceISSNs(src: OaSource): string[] {
+  return [
+    ...new Set(
+      [src.issn_l, ...(src.issn || [])]
+        .map((id) => normalizeISSN(id))
+        .filter(Boolean),
+    ),
+  ];
+}
+
 function valuesFrom(src: OaSource): RankValue[] {
   const out: RankValue[] = [];
   const two = src.summary_stats?.["2yr_mean_citedness"];
@@ -50,20 +68,25 @@ function valuesFrom(src: OaSource): RankValue[] {
 /** free singleton lookup by ISSN; validates that the answer is that journal */
 export async function fetchOpenAlexByISSN(
   issn: string,
-): Promise<{ values: RankValue[]; name?: string; issnL?: string } | null> {
+  options: RequestOptions = {},
+): Promise<OpenAlexJournal | null> {
   const clean = normalizeISSN(issn);
   if (!clean) return null;
   const url = `${BASE}/sources/issn:${clean}${politeParam("?")}`;
   const src = await http.request<OaSource>("GET", url, {
+    ...options,
     responseType: "json",
   });
   if (!src || typeof src !== "object") return null;
   // a wrong ISSN still answers 200 with a junk record — check it is ours
-  const known = new Set(
-    [src.issn_l, ...(src.issn || [])].map((i) => normalizeISSN(i || "")),
-  );
-  if (!known.has(clean)) return null;
-  return { values: valuesFrom(src), name: src.display_name, issnL: src.issn_l };
+  const known = sourceISSNs(src);
+  if (!known.includes(clean)) return null;
+  return {
+    values: valuesFrom(src),
+    name: src.display_name,
+    issn: normalizeISSN(src.issn_l) || clean,
+    issns: known,
+  };
 }
 
 /**
@@ -75,11 +98,15 @@ export async function fetchOpenAlexByISSN(
  */
 export async function fetchOpenAlexByName(
   name: string,
-): Promise<{ values: RankValue[]; name?: string; issn?: string } | null> {
+  options: RequestOptions = {},
+): Promise<OpenAlexJournal | null> {
   const wanted = normalizeJournal(name);
   if (!wanted || wanted.length < 4) return null;
   const url = `${BASE}/autocomplete/sources?q=${encodeURIComponent(name)}${politeParam("&")}`;
-  const res = await http.request<any>("GET", url, { responseType: "json" });
+  const res = await http.request<any>("GET", url, {
+    ...options,
+    responseType: "json",
+  });
   const hit = (res?.results || []).find(
     (r: any) => normalizeJournal(r?.display_name || "") === wanted,
   );
@@ -87,26 +114,40 @@ export async function fetchOpenAlexByName(
     String(hit?.external_id || "").replace(/^.*\//, ""),
   );
   if (!issn) return null;
-  const full = await fetchOpenAlexByISSN(issn);
+  const full = await fetchOpenAlexByISSN(issn, options);
   return full ? { ...full, issn } : null;
 }
 
 /** free singleton lookup by DOI → the work's host source (journal) */
 export async function fetchOpenAlexByDOI(
   doi: string,
-): Promise<{ values: RankValue[]; name?: string; issn?: string } | null> {
+  options: RequestOptions = {},
+): Promise<OpenAlexJournal | null> {
   const clean = doi.trim().replace(/^https?:\/\/(dx\.)?doi\.org\//i, "");
   if (!/^10\.\d{4,9}\//.test(clean)) return null;
   const url = `${BASE}/works/doi:${encodeURIComponent(clean)}?select=id,primary_location${politeParam("&")}`;
-  const work = await http.request<any>("GET", url, { responseType: "json" });
+  const work = await http.request<any>("GET", url, {
+    ...options,
+    responseType: "json",
+  });
   const src: OaSource | undefined = work?.primary_location?.source;
   if (!src) return null;
   const issn = src.issn_l || src.issn?.[0];
   // the work endpoint returns a trimmed source without summary_stats, so
   // follow up with the (also free) source singleton when we have an ISSN
   if (issn) {
-    const full = await fetchOpenAlexByISSN(issn);
-    if (full) return { ...full, issn: normalizeISSN(issn) };
+    const full = await fetchOpenAlexByISSN(issn, options);
+    if (full)
+      return {
+        ...full,
+        issn: normalizeISSN(issn),
+        issns: [...new Set([...full.issns, ...sourceISSNs(src)])],
+      };
   }
-  return { values: valuesFrom(src), name: src.display_name, issn };
+  return {
+    values: valuesFrom(src),
+    name: src.display_name,
+    issn,
+    issns: sourceISSNs(src),
+  };
 }

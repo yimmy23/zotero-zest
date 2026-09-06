@@ -93,6 +93,7 @@ import {
 } from "./panes/infoSection";
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
+import { stopAuthorshipFetches } from "./graph/authorFetch";
 import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
@@ -178,6 +179,19 @@ function watchPluginSweep() {
           registerAnnotSection();
           unregisterMenus();
           registerMenus();
+          // The first upgrade from an older release can still run its unowned
+          // DOM cleanup. Restore the current copy after that outgoing sweep.
+          for (const win of Zotero.getMainWindows()) {
+            const w = win as unknown as Window;
+            registerStyles(w);
+            applyRootFlags(w, !!getPref("tags.hideInTitle"));
+          }
+          syncTagPanes();
+          syncNativeBarVisibility();
+          // Older releases schedule an unconditional badge sweep at 600 ms.
+          Zotero.Promise.delay(700).then(() => {
+            if (addon.data.alive) syncCollectionCounts();
+          });
           void Zotero.PreferencePanes.register({
             pluginID: config.addonID,
             src: rootURI + "content/preferences.xhtml",
@@ -402,10 +416,13 @@ async function onStartup() {
         true,
       ),
       // the panel reads these while rendering; a change repaints the open panes
-      Zotero.Prefs.registerObserver(
-        `${P}.info.enable`,
-        () => refreshInfoSections(),
-        true,
+      ...["info.enable", "info.abstract", "info.affiliations.autoFetch"].map(
+        (p) =>
+          Zotero.Prefs.registerObserver(
+            `${P}.${p}`,
+            () => refreshInfoSections(),
+            true,
+          ),
       ),
       Zotero.Prefs.registerObserver(
         `${P}.graph.visible`,
@@ -523,6 +540,7 @@ async function onShutdown() {
   // first thing: nothing that is still awaiting a startup wait may install
   // anything from here on
   addon.data.alive = false;
+  stopAuthorshipFetches();
   // …and teardown must not overlap a still-running startup init (a fast
   // disable right after enable): wait for the loads to settle, bounded so a
   // hung init can never wedge shutdown
@@ -595,6 +613,7 @@ async function onAppShutdown() {
   // Zotero.Plugins shutdown sweep schedules registrations against a closed DB
   // while Zotero is already waiting for its shutdown barrier.
   addon.data.alive = false;
+  stopAuthorshipFetches();
   stopPluginSweep();
   try {
     await Promise.race([

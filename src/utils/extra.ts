@@ -95,8 +95,7 @@ export function upsertExtraText(
     out.push(line);
   }
   if (!done && value !== null) {
-    // append (after a trailing blank line cleanup)
-    while (out.length && out[out.length - 1].trim() === "") out.pop();
+    // Extra is user-authored text, including intentional trailing blank lines.
     out.push(`${keys[0]}: ${value}`);
     changed = true;
   }

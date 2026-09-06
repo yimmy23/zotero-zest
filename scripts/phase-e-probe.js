@@ -614,8 +614,28 @@ check(
     longIdentity.name === longJournal &&
       longIdentity.queryName === shortJournal &&
       longIdentity.key === shortIdentity.key &&
-      longIdentity.key === dev.rankNormalize.normalizeJournal(shortJournal),
+      longIdentity.key ===
+        `name:${dev.rankNormalize.normalizeJournal(shortJournal)}`,
     JSON.stringify(longIdentity),
+  );
+
+  const baltimore = await mk({
+    title: "phase-e journal identity Baltimore",
+    publicationTitle: "Medicine (Baltimore)",
+    ISSN: "0025-7974",
+  });
+  const abingdon = await mk({
+    title: "phase-e journal identity Abingdon",
+    publicationTitle: "Medicine (Abingdon)",
+    ISSN: "1357-3039",
+  });
+  trash.push(baltimore, abingdon);
+  check(
+    "rank.distinctISSNsNeverShareIdentity",
+    dev.rank.journalKeyOf(baltimore).key === "issn:0025-7974" &&
+      dev.rank.journalKeyOf(abingdon).key === "issn:1357-3039" &&
+      dev.rankNormalize.normalizeJournal("Medicine (Baltimore)") !==
+        dev.rankNormalize.normalizeJournal("Medicine (Abingdon)"),
   );
 
   const medicine = {
@@ -709,6 +729,211 @@ check(
     `${Zotero.locale}: legacy=${legacyDefaultFields.join(" ")} current=${defaultFields.join(" ")}`,
   );
 }
+
+/* ---------- visible panel: offline by default and reversible ---------- */
+// Rendering the default panel must remain offline; the manual control is the
+// explicit network action. Stub the transport so this probe never sends a DOI.
+{
+  setPref("info.enable", true);
+  setPref("info.affiliations.autoFetch", false);
+  setPref("rank.autoFetch", false);
+  const item = await mk({
+    title: "phase-e manual affiliations",
+    DOI: "10.0000/zest-affiliation-probe",
+  });
+  trash.push(item);
+  const request = dev.httpMod.http.requestResult;
+  let requests = 0;
+  dev.httpMod.http.requestResult = async () => {
+    requests++;
+    return {
+      kind: "ok",
+      status: 200,
+      value: {
+        authorships: [
+          {
+            author: {
+              id: "https://openalex.org/A0000000001",
+              display_name: "Zest Probe",
+            },
+            institutions: [{ display_name: "Zest Probe Institute" }],
+          },
+        ],
+      },
+    };
+  };
+  try {
+    await dev.reveal.clearZestFilters(win);
+    await win.ZoteroPane.selectItem(item.id);
+    await delay(900);
+    setPref("info.enable", false);
+    await delay(150);
+    check(
+      "info.disabledPanelHidden",
+      ![...doc.querySelectorAll(".zest-info")].some(
+        (el) => el.getClientRects().length,
+      ),
+    );
+    setPref("info.enable", true);
+    await delay(250);
+    const button = doc.querySelector(".zest-affiliations-fetch");
+    check("info.sameItemCanReopen", !!button?.getClientRects().length);
+    check("info.affiliationsDefaultOffline", requests === 0 && !!button);
+    const link = doc.querySelector(".zest-info-link");
+    const linkStyle = link && win.getComputedStyle(link);
+    check(
+      "info.linkSpacingAndSubtleBorder",
+      linkStyle?.margin === "0px" &&
+        linkStyle.borderTopWidth === "1px" &&
+        linkStyle.borderTopColor !== linkStyle.color,
+    );
+    const input = doc.querySelector(".zest-info-input");
+    const inputStyle = input && win.getComputedStyle(input);
+    check(
+      "info.remarkAlignedToContentColumn",
+      inputStyle?.margin === "0px" &&
+        input.getBoundingClientRect().right <=
+          input.parentElement.getBoundingClientRect().right + 1,
+    );
+    button?.click();
+    await delay(600);
+    check(
+      "info.affiliationsManualFetch",
+      requests === 1 &&
+        doc
+          .querySelector(".zest-info")
+          ?.textContent.includes("Zest Probe Institute"),
+    );
+  } finally {
+    dev.httpMod.http.requestResult = request;
+    dev.cache.remove("oaAuthors", `${item.libraryID}/${item.key}`);
+    dev.cache.remove("oaAuthorsMiss", `${item.libraryID}/${item.key}`);
+  }
+}
+
+/* ---------- graph controls: layout and keyboard interaction ---------- */
+{
+  const wasVisible = dev.graphPane.isGraphVisible(win);
+  setPref("graph.mode", "related");
+  const first = await mk({ title: "phase-e graph keyboard first" });
+  const second = await mk({ title: "phase-e graph keyboard second" });
+  trash.push(first, second);
+  first.addRelatedItem(second);
+  await first.saveTx();
+  await dev.reveal.clearZestFilters(win);
+  await win.ZoteroPane.selectItem(first.id);
+  dev.graphPane.hideGraphPane(win);
+  dev.graphPane.showGraphPane(win);
+  await delay(1200);
+  const pane = doc.querySelector(".zest-graph-pane");
+  check(
+    "graph.statusHasOwnRow",
+    !!pane?.querySelector(".zest-graph-footer .zest-graph-status"),
+  );
+  const modes = pane?.querySelector(".zest-graph-modes");
+  check(
+    "graph.selectedModeAccessible",
+    modes?.querySelectorAll('[aria-pressed="true"]').length === 1,
+  );
+  const activeMode = modes?.querySelector('[aria-pressed="true"]');
+  const inactiveMode = modes?.querySelector('[aria-pressed="false"]');
+  check(
+    "graph.segmentedControlsHaveOwnSpacing",
+    !!activeMode &&
+      !!inactiveMode &&
+      win.getComputedStyle(activeMode).margin === "0px" &&
+      win.getComputedStyle(activeMode).backgroundColor !==
+        win.getComputedStyle(inactiveMode).backgroundColor,
+  );
+  const nodes = [...(pane?.querySelectorAll(".zest-graph-node") || [])];
+  check(
+    "graph.singleKeyboardEntry",
+    nodes.length > 1 &&
+      nodes.filter((node) => node.getAttribute("tabindex") === "0").length ===
+        1,
+  );
+  const initial = nodes.find((node) => node.getAttribute("tabindex") === "0");
+  initial?.focus({ preventScroll: true });
+  initial?.dispatchEvent(
+    new win.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+  );
+  check(
+    "graph.keyboardMovesFocus",
+    !!initial &&
+      doc.activeElement !== initial &&
+      nodes.includes(doc.activeElement),
+  );
+  if (!wasVisible) dev.graphPane.hideGraphPane(win);
+}
+
+/* ---------- real sqlite: failed imports do not poison a retry ---------- */
+{
+  setPref("tracker.enable", false);
+  await dev.readingStore.flush();
+  const item = await mk({ title: "phase-e atomic reading import" });
+  trash.push(item);
+  const incoming = {
+    libraryID: item.libraryID,
+    itemKey: item.key,
+    pages: 4,
+    page: { 0: 25, 1: 35 },
+    days: { "2026-09-06": 60 },
+  };
+  const writeBatch = dev.zestDB.writeBatch;
+  let rejected = false;
+  dev.zestDB.writeBatch = function (batch, mode) {
+    if (batch.meta?.some((row) => row.itemKey === item.key)) {
+      return Promise.reject(new Error("phase-e injected write failure"));
+    }
+    return writeBatch.call(this, batch, mode);
+  };
+  try {
+    await dev.readingStore.mergeRecord(incoming, "max").catch(() => {
+      rejected = true;
+    });
+    check(
+      "reading.failedImportLeavesMemoryUntouched",
+      rejected && !dev.readingStore.getForItem(item),
+    );
+  } finally {
+    dev.zestDB.writeBatch = writeBatch;
+  }
+  try {
+    await dev.readingStore.mergeRecord(incoming, "max");
+    await dev.readingStore.mergeRecord(incoming, "max");
+    const persisted = (await dev.zestDB.loadAll()).pages.filter(
+      (row) => row.itemKey === item.key,
+    );
+    check(
+      "reading.retryPersistsExactlyOnce",
+      dev.readingStore.getForItem(item)?.total === 60 &&
+        persisted.reduce((n, row) => n + row.seconds, 0) === 60,
+    );
+    const exported = dev.exportImport
+      .collectExport()
+      .filter((row) => row.itemKey === item.key);
+    const json = dev.exportImport.fromJSON(dev.exportImport.toJSON(exported));
+    json[0].libraryID += 9000;
+    const csv = dev.exportImport.fromCSV(dev.exportImport.toCSV(exported));
+    csv[0].libraryID += 9000;
+    const jsonResult = await dev.exportImport.importItems(json, "max");
+    const csvResult = await dev.exportImport.importItems(csv, "max");
+    check(
+      "reading.portableJSONAndCSVResolveIdentity",
+      jsonResult.items === 1 &&
+        csvResult.items === 1 &&
+        dev.readingStore.getForItem(item)?.total === 60,
+    );
+  } finally {
+    await dev.readingStore.clearItem(item.libraryID, item.key);
+  }
+}
+
+check(
+  "extra.appendPreservesUserWhitespace",
+  dev.extra.upsertExtraText("my note\r\n\r\n  \r\n", ["Remark"], "value") ===
+    "my note\r\n\r\n  \r\n\r\nRemark: value",
+);
 
 /* ---------- cleanup ---------- */
 if (nativeShowAllBefore === undefined || nativeShowAllBefore === null)

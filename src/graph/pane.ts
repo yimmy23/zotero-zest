@@ -43,6 +43,8 @@ interface PaneState {
   box: XULElement;
   canvas: HTMLElement;
   status: HTMLElement;
+  message: HTMLElement;
+  refresh: HTMLButtonElement;
   view?: GraphView;
   modeButtons: Map<GraphMode, HTMLElement>;
   roleButtons: Map<string, HTMLElement>;
@@ -50,6 +52,7 @@ interface PaneState {
   minButtons: Map<number, HTMLElement>;
   minWrap: HTMLElement;
   building: boolean;
+  rebuildAgain: boolean;
 }
 
 const panes = new Map<Window, PaneState>();
@@ -148,14 +151,19 @@ export function showGraphPane(win: Window) {
   title.appendChild(icon(doc, "graph", 14));
   const titleText = doc.createElement("span");
   titleText.textContent = getString("graph-title");
+  titleText.id = `${config.addonRef}-graph-title`;
+  box.setAttribute("aria-labelledby", titleText.id);
   title.appendChild(titleText);
   header.appendChild(title);
 
   const modeButtons = new Map<GraphMode, HTMLElement>();
   const modeWrap = doc.createElement("div");
   modeWrap.className = "zest-graph-modes";
+  modeWrap.setAttribute("role", "group");
+  modeWrap.setAttribute("aria-label", getString("graph-filter-modes"));
   for (const mode of MODES) {
     const b = doc.createElement("button");
+    b.type = "button";
     b.className = "zest-graph-mode";
     b.textContent = getString(`graph-mode-${mode}`);
     b.title = getString(`graph-mode-${mode}-tip`);
@@ -176,8 +184,11 @@ export function showGraphPane(win: Window) {
   const roleButtons = new Map<string, HTMLElement>();
   const rolesWrap = doc.createElement("div");
   rolesWrap.className = "zest-graph-modes zest-graph-roles";
+  rolesWrap.setAttribute("role", "group");
+  rolesWrap.setAttribute("aria-label", getString("graph-filter-roles"));
   for (const role of ["firstlast", "all"] as const) {
     const b = doc.createElement("button");
+    b.type = "button";
     b.className = "zest-graph-mode";
     b.textContent = getString(`graph-roles-${role}`);
     b.title = getString(`graph-roles-${role}-tip`);
@@ -198,11 +209,15 @@ export function showGraphPane(win: Window) {
   const minButtons = new Map<number, HTMLElement>();
   const minWrap = doc.createElement("div");
   minWrap.className = "zest-graph-modes zest-graph-min";
+  minWrap.setAttribute("role", "group");
+  minWrap.setAttribute("aria-label", getString("graph-filter-shared"));
   for (const n of MIN_SHARED_STEPS) {
     const b = doc.createElement("button");
+    b.type = "button";
     b.className = "zest-graph-mode";
     b.textContent = `≥${n}`;
     b.title = getString("graph-min-tip", { args: { count: n } });
+    b.setAttribute("aria-label", b.title);
     b.addEventListener(
       "click",
       guard("graph min shared", () => {
@@ -218,7 +233,11 @@ export function showGraphPane(win: Window) {
 
   const status = doc.createElement("span");
   status.className = "zest-graph-status";
-  header.appendChild(status);
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+
+  const actions = doc.createElement("div");
+  actions.className = "zest-graph-actions";
 
   const refresh = iconButton(
     doc,
@@ -233,7 +252,7 @@ export function showGraphPane(win: Window) {
     "click",
     guard("graph rebuild", () => void rebuild(win)),
   );
-  header.appendChild(refresh);
+  actions.appendChild(refresh);
 
   const close = iconButton(
     doc,
@@ -245,13 +264,31 @@ export function showGraphPane(win: Window) {
     "click",
     guard("graph close", () => hideGraphPane(win)),
   );
-  header.appendChild(close);
+  actions.appendChild(close);
+  header.appendChild(actions);
 
   const canvas = doc.createElement("div");
   canvas.className = "zest-graph-canvas";
+  canvas.setAttribute("aria-labelledby", titleText.id);
+
+  const message = doc.createElement("div");
+  message.className = "zest-graph-message";
+  message.hidden = true;
+  canvas.appendChild(message);
+
+  const footer = doc.createElement("div");
+  footer.className = "zest-graph-footer";
+  footer.appendChild(status);
+  const hint = doc.createElement("span");
+  hint.className = "zest-graph-help";
+  hint.id = `${config.addonRef}-graph-help`;
+  hint.textContent = getString("graph-canvas-help");
+  canvas.setAttribute("aria-describedby", hint.id);
+  footer.appendChild(hint);
 
   box.appendChild(header as unknown as Node);
   box.appendChild(canvas as unknown as Node);
+  box.appendChild(footer as unknown as Node);
   container.appendChild(splitter as unknown as Node);
   container.appendChild(box as unknown as Node);
 
@@ -261,12 +298,15 @@ export function showGraphPane(win: Window) {
     box,
     canvas,
     status,
+    message,
+    refresh,
     modeButtons,
     roleButtons,
     rolesWrap,
     minButtons,
     minWrap,
     building: false,
+    rebuildAgain: false,
   };
   panes.set(win, state);
   syncModeButtons(win);
@@ -344,16 +384,19 @@ function syncModeButtons(win: Window) {
   const active = graphMode();
   for (const [mode, btn] of state.modeButtons) {
     btn.classList.toggle("active", mode === active);
+    btn.setAttribute("aria-pressed", String(mode === active));
   }
   state.rolesWrap.style.display = active === "author" ? "" : "none";
   const roles = authorRoles();
   for (const [role, btn] of state.roleButtons) {
     btn.classList.toggle("active", role === roles);
+    btn.setAttribute("aria-pressed", String(role === roles));
   }
   state.minWrap.style.display = active === "related" ? "none" : "";
   const min = minShared();
   for (const [n, btn] of state.minButtons) {
     btn.classList.toggle("active", n === min);
+    btn.setAttribute("aria-pressed", String(n === min));
   }
 }
 
@@ -388,9 +431,16 @@ function watchScope(win: Window) {
 
 async function rebuild(win: Window) {
   const state = panes.get(win);
-  if (!state || state.building) return;
+  if (!state) return;
+  if (state.building) {
+    state.rebuildAgain = true;
+    return;
+  }
   state.building = true;
+  state.refresh.disabled = true;
+  state.canvas.setAttribute("aria-busy", "true");
   state.status.textContent = getString("graph-building");
+  showMessage(state, getString("graph-building"));
   try {
     const items = scopeItems(win);
     const centerItemID = selectedItemID(win);
@@ -407,23 +457,58 @@ async function rebuild(win: Window) {
     });
     // closed while building — or closed AND reopened, which makes a fresh
     // PaneState under the same window key; only our own state may proceed
-    if (panes.get(win) !== state) return;
-    state.view?.setData(data);
+    if (panes.get(win) !== state || state.rebuildAgain) return;
+    if (!state.view) throw new Error("Graph view unavailable");
+    state.view.setData(data);
     state.status.textContent = statusText(data);
+    state.status.title = state.status.textContent;
+    if (data.nodes.length) state.message.hidden = true;
+    else
+      showMessage(
+        state,
+        getString("graph-empty"),
+        getString("graph-empty-hint"),
+      );
     if (mode === "author") {
       // top up the OpenAlex authorship cache in the background; rebuild
       // only when something new actually arrived (then everything is
       // cached or backed off, so the second pass fetches nothing)
-      void ensureAuthorships(items).then((changed) => {
-        if (changed && panes.get(win)) void rebuild(win);
+      const shouldContinue = () =>
+        addon.data.alive && panes.get(win) === state && graphMode() === mode;
+      void ensureAuthorships(items, { shouldContinue }).then((changed) => {
+        if (changed && shouldContinue()) void rebuild(win);
       });
     }
   } catch (e) {
     ztoolkit.log("[graph] build failed", e);
-    state.status.textContent = getString("graph-failed");
+    if (panes.get(win) === state) {
+      state.status.textContent = getString("graph-failed");
+      showMessage(state, getString("graph-failed"));
+    }
   } finally {
     state.building = false;
+    if (panes.get(win) === state) {
+      state.refresh.disabled = false;
+      state.canvas.setAttribute("aria-busy", "false");
+      if (state.rebuildAgain) {
+        state.rebuildAgain = false;
+        void rebuild(win);
+      }
+    }
   }
+}
+
+function showMessage(state: PaneState, text: string, hint?: string) {
+  state.message.replaceChildren();
+  const title = state.win.document.createElement("strong");
+  title.textContent = text;
+  state.message.appendChild(title);
+  if (hint) {
+    const detail = state.win.document.createElement("span");
+    detail.textContent = hint;
+    state.message.appendChild(detail);
+  }
+  state.message.hidden = false;
 }
 
 function statusText(data: ZGraphData): string {

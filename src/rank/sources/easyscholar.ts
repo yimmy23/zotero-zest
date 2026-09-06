@@ -28,18 +28,15 @@ let blockedUntil = 0;
 let consecutiveRateLimits = 0;
 
 export function easyScholarBlocked(): boolean {
-  return Date.now() < blockedUntil;
+  return Date.now() < blockedUntil || http.throttledFor(ENDPOINT) > 0;
 }
 
 export async function fetchEasyScholar(
   publicationName: string,
-  /** a user-triggered refresh ignores the back-off and any cached answer */
-  force = false,
+  shouldContinue?: () => boolean,
 ): Promise<EsResult> {
   if (!publicationName) return { values: [] };
-  // `force` means "ignore the cached answer", never "ignore the server telling
-  // us to slow down": a 300-journal refresh used to clear the block before
-  // every request, so a 40006 was answered with 299 more requests.
+  // Manual refreshes never bypass a service-wide back-off.
   if (easyScholarBlocked()) return { values: [], error: "rate" };
   // the block has expired without a new 40006 → start the back-off ladder over
   if (blockedUntil && Date.now() >= blockedUntil) {
@@ -50,7 +47,7 @@ export async function fetchEasyScholar(
   if (!key) return { values: [], error: "key" };
 
   const url = `${ENDPOINT}?secretKey=${encodeURIComponent(key)}&publicationName=${encodeURIComponent(publicationName)}`;
-  const res = await http.request<any>("GET", url, {
+  const result = await http.requestResult<any>("GET", url, {
     responseType: "json",
     // the key travels in the query string: send it outside Zotero's HTTP
     // layer (which logs URLs), log a redacted URL ourselves, and never cache
@@ -61,16 +58,21 @@ export async function fetchEasyScholar(
     noCache: true,
     displayURL: `${ENDPOINT}?secretKey=***&publicationName=${encodeURIComponent(publicationName)}`,
     retries: 0,
+    shouldContinue: () => !easyScholarBlocked() && shouldContinue?.() !== false,
+    observeResponse: (status, value) => {
+      if (status === 200 && Number(value?.code) === 40006) {
+        consecutiveRateLimits++;
+        blockedUntil =
+          Date.now() + Math.min(15, 2 ** consecutiveRateLimits) * 60000;
+      }
+    },
   });
-  if (!res) return { values: [], error: "network" };
+  if (result.kind === "throttled" || easyScholarBlocked())
+    return { values: [], error: "rate" };
+  if (result.kind !== "ok") return { values: [], error: "network" };
+  const res = result.value;
 
   const code = Number(res.code);
-  if (code === 40006) {
-    consecutiveRateLimits++;
-    blockedUntil =
-      Date.now() + Math.min(15, 2 ** consecutiveRateLimits) * 60000;
-    return { values: [], error: "rate" };
-  }
   if (code === 40002 || code === 40005) return { values: [], error: "key" };
   if (code !== 200) return { values: [], error: "network" };
   consecutiveRateLimits = 0;

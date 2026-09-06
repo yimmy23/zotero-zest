@@ -47,6 +47,7 @@ let paneWindow: Window | undefined;
 
 export async function registerPrefsScripts(_window: Window) {
   paneWindow = _window;
+  buildPrefNavigation(_window.document);
   if (!addon.data.prefs) {
     addon.data.prefs = { window: _window } as any;
   } else {
@@ -75,6 +76,33 @@ export async function registerPrefsScripts(_window: Window) {
     unsub();
     if (paneWindow === _window) paneWindow = undefined;
   });
+}
+
+/** One local jump list, using the existing Fluent section headings. */
+function buildPrefNavigation(d: Document) {
+  const root = d.getElementById("zest-prefs");
+  const navigation = d.getElementById(
+    "zest-pref-navigation",
+  ) as HTMLElement | null;
+  if (!root || !navigation || navigation.dataset.zestBuilt) return;
+  navigation.dataset.zestBuilt = "true";
+  for (const heading of root.querySelectorAll<HTMLElement>("groupbox h2")) {
+    const stringID = heading.getAttribute("data-l10n-id");
+    if (!stringID) continue;
+    heading.tabIndex = -1;
+    const button = d.createElement("button");
+    button.type = "button";
+    button.className = "zest-pref-jump";
+    button.setAttribute("data-l10n-id", stringID);
+    // The document owns preferences.ftl; getString() owns addon.ftl and
+    // would add a second prefix to these already-resolved message IDs.
+    button.textContent = heading.textContent;
+    button.addEventListener("click", () => {
+      heading.scrollIntoView({ block: "start" });
+      heading.focus({ preventScroll: true });
+    });
+    navigation.appendChild(button);
+  }
 }
 
 /**
@@ -267,9 +295,8 @@ async function testKey(name: KeyField) {
   status.textContent = getString("pref-key-testing");
   try {
     if (name === "easyscholar") {
-      // a journal every dataset knows; `force` skips the record cache only,
-      // the back-off is still honoured
-      const r = await fetchEasyScholar("Nature", true);
+      // A journal every dataset knows; this key test still honours back-off.
+      const r = await fetchEasyScholar("Nature");
       if (r.values.length) {
         status.textContent = getString("pref-key-valid", {
           args: { detail: `Nature · ${r.values.length}` },

@@ -13,11 +13,13 @@ export interface RankValue {
 }
 
 export interface JournalRecord {
-  /** normalised journal name — the cache key */
+  /** ISSN first; otherwise a namespaced normalised title. */
   key: string;
   /** the journal name as it was on the item */
   name: string;
   issn?: string;
+  /** Verified print/electronic ISSN aliases for the same source. */
+  issns?: string[];
   values: RankValue[];
   /** epoch ms of the lookup */
   updated: number;

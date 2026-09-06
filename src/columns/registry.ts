@@ -1,5 +1,4 @@
 import { config } from "../../package.json";
-import { guard } from "../utils/guard";
 import { setTimeout, clearTimeout } from "../utils/timers";
 
 /**
