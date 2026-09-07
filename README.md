@@ -70,7 +70,7 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式。作者模式做同名消歧：同姓下按全名聚类（Wang Lei ≠ Wang Li），有 OpenAlex 缓存时按作者 ID 合并拼写变体，悬停节点显示所属机构 |
 | **阅读统计…**            | 独立窗口：目标圆环、7 / 30 / 90 天趋势、星期分布、年度热力图、9 枚成就勋章与阅读排行                                                                                                                    |
-| **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                                                                                                                                             |
+| **标注矩阵…**            | 集中回顾当前视图 / 已选文献与附件的标注，按文献、类型、颜色、标签或批注筛选；分页阅读、定位原文、复制，完整导出 CSV / Markdown                                                                          |
 | **套用 Zest 推荐列布局** | 一键排好上面那套列                                                                                                                                                                                      |
 | **联网获取期刊数据**     | 分区 / 影响因子的联网开关（默认关）——不开这一项，期刊标签列会是空的                                                                                                                                     |
 | **Zest 设置…**           | 打开设置页                                                                                                                                                                                              |
@@ -320,6 +320,18 @@ The same button opens the **graph**, the **reading statistics** window, the **an
 the settings. The graph's author mode disambiguates names: same-surname authors cluster by full
 given name (Wang Lei ≠ Wang Li, an ambiguous "Wang L." stays its own node), cached OpenAlex author
 IDs merge spelling variants, and hovering a node shows the institution when known.
+
+The annotation matrix is a focused reading workspace: choose the current view or selected items,
+search across papers and comments, or narrow by paper, type, colour and tag. Long annotations expand
+in place; each has copy and open-source actions. Pagination keeps large sets responsive without
+discarding results. CSV and Markdown export **all matching annotations**, with source links, not
+just the current page. Independent attachments are included; duplicate tree rows are counted once.
+Use **Export ▸ Copy as Markdown** to paste all matching annotations into Obsidian or another
+Markdown editor, grouped by paper with full text, comments, page labels, tags and Zotero source
+links. No AI or other plugin is required. Copying does not create or update notes in either app;
+image-only annotations retain their source links rather than copying image files.
+Search supports space-separated terms, `|` alternatives, `-word` exclusions and quoted phrases.
+Opening and refreshing take a local snapshot; filters and paging do not rescan the library.
 
 ## The columns
 

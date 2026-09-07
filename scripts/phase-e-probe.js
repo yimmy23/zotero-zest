@@ -31,6 +31,43 @@ const mk = async (fields, creators) => {
 };
 const trash = [];
 
+/* ---------- matrix: native read-only scope and deduplication ---------- */
+const matrixItems = win.ZoteroPane.itemsView.getSortedItems();
+const matrixRows = dev.matrix.collectMatrix(matrixItems);
+check("matrix.nativeAnnotations", matrixRows.length > 0);
+check(
+  "matrix.expandedRowsDeduplicated",
+  dev.matrix.collectMatrix([...matrixItems, ...matrixItems]).length ===
+    matrixRows.length,
+);
+if (matrixRows.length) {
+  const first = matrixRows[0];
+  const before = first.annotation.annotationText;
+  const single = dev.matrix.collectMatrix([first.annotation]);
+  check(
+    "matrix.directAnnotationScope",
+    single.length === 1 && single[0].key === first.key,
+  );
+  check(
+    "matrix.directAttachmentScope",
+    dev.matrix.collectMatrix([first.attachment]).length ===
+      matrixRows.filter((r) => r.attachment.id === first.attachment.id).length,
+  );
+  const markdown = dev.matrix.toMarkdown(single);
+  check(
+    "matrix.exportSourceLink",
+    markdown.includes("zotero://open-pdf/") &&
+      markdown.includes("annotation=" + first.key),
+  );
+  check("matrix.exportReadOnly", before === first.annotation.annotationText);
+  check(
+    "matrix.clipboardSourceAndNativeAPI",
+    markdown.includes("annotation=" + first.key) &&
+      first.annotation.annotationText === before &&
+      typeof Zotero.Utilities.Internal.copyTextToClipboard === "function",
+  );
+}
+
 /* ---------- statistics: read-only aggregation and bounded title lookup ---------- */
 const statsEntries = [...dev.readingStore.entries()];
 const statsEncode = (entries) =>

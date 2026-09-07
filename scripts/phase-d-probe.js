@@ -279,8 +279,40 @@ if (matrixWin) {
   }
   check(
     "matrix.flatButtons",
-    d.querySelectorAll(".zest-flat-btn").length === 2,
+    !!d.querySelector(".zest-matrix-refresh") &&
+      !!d.querySelector(".zest-matrix-export-csv") &&
+      !!d.querySelector(".zest-matrix-export-md") &&
+      matrixWin.getComputedStyle(d.querySelector(".zest-flat-btn"))
+        .boxShadow === "none",
   );
+  await delay(250);
+  check(
+    "matrix.explicitActions",
+    !!d.querySelector(".zest-matrix-copy") &&
+      !!d.querySelector(".zest-matrix-open"),
+  );
+  const fileOpen = Zotero.FileHandlers.open;
+  const tabsBeforeNavigation = new Set(win.Zotero_Tabs._tabs.map((t) => t.id));
+  let navigation;
+  try {
+    Zotero.FileHandlers.open = async function (attachment, options) {
+      navigation = { attachment, options };
+      return fileOpen.call(this, attachment, options);
+    };
+    d.querySelector(".zest-matrix-open")?.click();
+    await delay(2000);
+    check(
+      "matrix.nativeNavigation",
+      !!navigation?.options?.location?.annotationID &&
+        !d.querySelector(".zest-matrix-status").textContent,
+    );
+  } finally {
+    Zotero.FileHandlers.open = fileOpen;
+    for (const tab of [...win.Zotero_Tabs._tabs]) {
+      if (!tabsBeforeNavigation.has(tab.id)) win.Zotero_Tabs.close(tab.id);
+    }
+    await delay(300);
+  }
   matrixWin.close();
 } else {
   out.fail.push("matrix.window");

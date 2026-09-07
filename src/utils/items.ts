@@ -83,6 +83,6 @@ export function isTrackedItem(item: Zotero.Item): boolean {
 export async function openAttachmentAt(
   attachment: Zotero.Item,
   location: Record<string, unknown>,
-): Promise<void> {
-  await (Zotero as any).FileHandlers.open(attachment, { location });
+): Promise<boolean | undefined> {
+  return await (Zotero as any).FileHandlers.open(attachment, { location });
 }

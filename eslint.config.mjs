@@ -11,6 +11,7 @@ export default zotero({
         "scripts/phase-*-probe.js",
         "scripts/upgrade-probe.js",
         "scripts/preferences-probe.js",
+        "scripts/matrix-probe.js",
       ],
     },
   ],

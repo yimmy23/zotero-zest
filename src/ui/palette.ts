@@ -34,8 +34,8 @@ export const HEAT_LEVELS = [0.18, 0.36, 0.6, 0.88] as const;
 export const BADGE_COLOR_DEFAULT = "#2DA44E";
 
 /**
- * Reading dashboard only: the requested multicolour rings and medal families.
- * These semantic chart colours do not change the main-window accent preference.
+ * Standalone reading windows: chart/medal colours and matching matrix accents.
+ * These colours do not change the main-window accent preference.
  */
 export const READING_STATS_PALETTE = {
   light: { blue: "#536B9D", violet: "#897299", bronze: "#967345" },

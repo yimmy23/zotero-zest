@@ -1,0 +1,851 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { createHarness } = require("./helpers.cjs");
+const { windowFixture, PANEL_URL } = require("./dialog-fixture.cjs");
+
+const settle = async () => {
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+};
+function row(index, values = {}) {
+  const value = {
+    annotation: { id: index },
+    attachment: { id: index + 10000 },
+    key: `ANN${String(index).padStart(5, "0")}`,
+    itemTitle: `Paper ${index}`,
+    itemID: index,
+    itemIdentity: `1/ITEM${index}`,
+    attachmentTitle: `PDF ${index}`,
+    text: `Unique annotation ${index}`,
+    comment: index % 2 ? `Comment ${index}` : "",
+    color: "#ffd400",
+    page: String(index),
+    type: "highlight",
+    tags: [index % 2 ? "Methods" : "Results"],
+    sourceURL: `zotero://open-pdf/library/items/ATT00001?annotation=ANN${String(index).padStart(5, "0")}`,
+    ...values,
+  };
+  value.searchText = [
+    value.itemTitle,
+    value.text,
+    value.comment,
+    value.tags.join(" "),
+    value.attachmentTitle,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return value;
+}
+
+function setup({ rows = [row(1), row(2)], windows, manualLoads = false } = {}) {
+  const allWindows = windows || [windowFixture()];
+  const queue = [...allWindows];
+  const loads = [];
+  const logs = [];
+  const openCalls = [];
+  const copies = [];
+  const navigations = [];
+  const writes = [];
+  const pickers = [];
+  let pickerResult = "/virtual/annotations-export";
+  let navigateResult = true;
+  const newHost = (viewRows = rows, selectedRows = viewRows.slice(0, 1)) => {
+    const host = {
+      closed: false,
+      viewItems: [{ rows: viewRows }],
+      selectedItems: [{ rows: selectedRows }],
+      ZoteroPane: {
+        itemsView: { getSortedItems: () => host.viewItems },
+        getSelectedItems: () => host.selectedItems,
+      },
+      openDialog(...args) {
+        openCalls.push({ host, args });
+        const win = queue.shift() || windowFixture();
+        if (!allWindows.includes(win)) allWindows.push(win);
+        return win;
+      },
+    };
+    return host;
+  };
+  const host = newHost();
+  const harness = createHarness({
+    mocks: {
+      "src/utils/locale.ts": {
+        getString: (id, options) =>
+          id + (options?.args ? ` ${JSON.stringify(options.args)}` : ""),
+      },
+      "src/annots/matrixSource.ts": {
+        collectMatrix: (items) => items.flatMap((item) => item.rows),
+        collectMatrixAsync: (items, cancelled) => {
+          const load = { items, cancelled };
+          loads.push(load);
+          if (manualLoads)
+            return new Promise((resolve, reject) =>
+              Object.assign(load, { resolve, reject }),
+            );
+          return Promise.resolve(items.flatMap((item) => item.rows));
+        },
+      },
+      "src/utils/items.ts": {
+        async openAttachmentAt(attachment, location) {
+          navigations.push({ attachment, location });
+          if (navigateResult instanceof Error) throw navigateResult;
+          return navigateResult;
+        },
+      },
+    },
+    globals: {
+      Zotero: {
+        getMainWindow: () => host,
+        logError: (error) => logs.push(error),
+        Utilities: {
+          Internal: {
+            copyTextToClipboard(text) {
+              copies.push(text);
+            },
+          },
+        },
+        File: {
+          async putContentsAsync(path, text) {
+            writes.push({ path, text });
+          },
+        },
+      },
+      Services: { wm: { getEnumerator: () => allWindows } },
+      ztoolkit: {
+        log: (...args) => logs.push(args),
+        FilePicker: class {
+          constructor(...args) {
+            pickers.push(args);
+          }
+          async open() {
+            return pickerResult;
+          }
+        },
+      },
+    },
+  });
+  return {
+    ...harness.load("src/panes/annotMatrix.ts"),
+    host,
+    newHost,
+    allWindows,
+    loads,
+    logs,
+    openCalls,
+    copies,
+    navigations,
+    writes,
+    pickers,
+    zotero: harness.context.Zotero,
+    win: allWindows[0],
+    picker: (result) => {
+      pickerResult = result;
+    },
+    navigate: (result) => {
+      navigateResult = result;
+    },
+  };
+}
+const find = (win, selector) => {
+  const result = win.document.querySelector(selector);
+  assert.ok(result, `Missing ${selector}`);
+  return result;
+};
+const rendered = (win) => win.document.querySelectorAll(".zest-matrix-row");
+const change = (win, selector, value) => {
+  const input = find(win, selector);
+  input.value = value;
+  input.dispatch("change");
+  return input;
+};
+
+test("matrix waits past about:blank and renders exactly once after its real load", async () => {
+  const win = windowFixture({ url: "about:blank" });
+  const app = setup({ windows: [win] });
+  app.openMatrix(app.host);
+  assert.equal(app.openCalls[0].args[0], PANEL_URL);
+  assert.equal(app.openCalls[0].args[1], "");
+  assert.equal(app.loads.length, 0);
+  win.dispatch("load");
+  win.dispatch("unload");
+  assert.equal(app.loads.length, 0);
+  assert.equal(win.listeners.get("load").size, 1);
+  win.finishLoad();
+  await settle();
+  assert.equal(app.loads.length, 1);
+  assert.equal(rendered(win).length, 2);
+  assert.equal(win.listeners.get("load").size, 0);
+  win.dispatch("load");
+  assert.equal(app.loads.length, 1);
+  assert.equal(app.logs.length, 0);
+});
+
+test("closing a pending matrix removes its load listener and rejects captured late loads", async () => {
+  const win = windowFixture({
+    url: "about:blank",
+    readyState: "loading",
+    body: false,
+  });
+  const app = setup({ windows: [win] });
+  app.openMatrix(app.host);
+  const late = [...win.listeners.get("load").keys()][0];
+  app.closeMatrix();
+  assert.equal(win.closed, true);
+  assert.equal(win.listeners.get("load").size, 0);
+  win.finishLoad();
+  late();
+  await settle();
+  assert.equal(app.loads.length, 0);
+  assert.equal(rendered(win).length, 0);
+});
+
+test("each host has an independent matrix, source snapshot and search", async () => {
+  const first = windowFixture();
+  const second = windowFixture();
+  const app = setup({ windows: [first, second] });
+  const other = app.newHost([row(999)]);
+  app.openMatrix(app.host);
+  app.openMatrix(other);
+  await settle();
+  assert.equal(rendered(first).length, 2);
+  assert.equal(rendered(second).length, 1);
+  const search = find(first, ".zest-matrix-search");
+  search.value = "missing";
+  search.dispatch("input");
+  first.flushTimers();
+  assert.equal(rendered(first).length, 0);
+  assert.equal(rendered(second).length, 1);
+  assert.equal(find(second, ".zest-matrix-search").value, "");
+  app.openMatrix(other);
+  await settle();
+  assert.equal(app.openCalls.length, 2);
+  assert.equal(second.focusCount, 1);
+  first.close();
+  assert.equal(second.closed, false);
+  assert.equal(
+    app.loads[1].cancelled(),
+    true,
+    "the refreshed second snapshot supersedes its first load",
+  );
+  find(second, ".zest-matrix-refresh").click();
+  await settle();
+  assert.equal(rendered(second).length, 1);
+});
+
+test("scope changes cancel in-flight reloads and late results cannot replace the new scope", async () => {
+  const app = setup({ manualLoads: true });
+  app.openMatrix(app.host);
+  const first = app.loads[0];
+  assert.equal(
+    find(app.win, ".zest-matrix-list").getAttribute("aria-busy"),
+    "true",
+  );
+  change(app.win, ".zest-matrix-scope", "selected");
+  assert.equal(app.loads.length, 2);
+  assert.equal(first.cancelled(), true);
+  assert.equal(app.loads[1].items, app.host.selectedItems);
+  app.loads[1].resolve([row(55)]);
+  await settle();
+  assert.equal(rendered(app.win).length, 1);
+  assert.ok(rendered(app.win)[0].textContent.includes("Unique annotation 55"));
+  first.resolve([row(66), row(67)]);
+  await settle();
+  assert.equal(rendered(app.win).length, 1);
+  assert.ok(rendered(app.win)[0].textContent.includes("Unique annotation 55"));
+  assert.equal(
+    find(app.win, ".zest-matrix-list").getAttribute("aria-busy"),
+    "false",
+  );
+});
+
+test("closing during reload cancels the source and prevents DOM writes after resolution", async () => {
+  const app = setup({ manualLoads: true });
+  app.openMatrix(app.host);
+  const pending = app.loads[0];
+  app.win.close();
+  const writes = app.win.document.writes;
+  assert.equal(pending.cancelled(), true);
+  pending.resolve([row(5)]);
+  await settle();
+  assert.equal(app.win.document.writes, writes);
+});
+
+test("100-row pages expose all 2500 marks without recollecting or truncating", async () => {
+  const app = setup({
+    rows: Array.from({ length: 2500 }, (_, i) => row(i + 1)),
+  });
+  app.openMatrix(app.host);
+  await settle();
+  assert.equal(rendered(app.win).length, 100);
+  assert.equal(find(app.win, ".zest-matrix-previous").disabled, true);
+  for (let page = 1; page < 25; page++) {
+    find(app.win, ".zest-matrix-next").click();
+    assert.equal(rendered(app.win).length, 100);
+  }
+  assert.ok(
+    rendered(app.win).at(-1).textContent.includes("Unique annotation 2500"),
+  );
+  assert.equal(find(app.win, ".zest-matrix-next").disabled, true);
+  assert.equal(app.loads.length, 1);
+  assert.equal(
+    app.win.document.activeElement,
+    find(app.win, ".zest-matrix-list"),
+  );
+  change(app.win, ".zest-matrix-tag", "Methods");
+  assert.equal(rendered(app.win).length, 100);
+  assert.ok(rendered(app.win)[0].textContent.includes("Unique annotation 1"));
+  assert.equal(app.loads.length, 1);
+});
+
+test("debounced search preserves input identity, caret, focus and uses no new collection", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(app.win, ".zest-matrix-search");
+  search.focus();
+  search.value = '"annotation 1"';
+  search.selectionStart = search.selectionEnd = 7;
+  search.dispatch("input");
+  assert.equal(app.win.timers.size, 1);
+  search.dispatch("input");
+  assert.equal(app.win.timers.size, 1);
+  assert.equal(rendered(app.win).length, 2);
+  app.win.flushTimers();
+  assert.equal(rendered(app.win).length, 1);
+  assert.equal(find(app.win, ".zest-matrix-search"), search);
+  assert.equal(app.win.document.activeElement, search);
+  assert.equal(search.selectionStart, 7);
+  assert.equal(app.loads.length, 1);
+});
+
+test("export uses the latest typed query before debounce and writes actual filtered CSV", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = '"annotation 2"';
+  search.dispatch("input");
+  find(app.win, ".zest-matrix-export-csv").click();
+  await settle();
+  assert.equal(app.pickers.length, 1);
+  assert.equal(app.writes.length, 1);
+  assert.equal(app.writes[0].path, "/virtual/annotations-export");
+  assert.ok(app.writes[0].text.includes('"Unique annotation 2"'));
+  assert.ok(!app.writes[0].text.includes('"Unique annotation 1"'));
+  assert.equal(app.loads.length, 1);
+  assert.ok(
+    find(app.win, ".zest-matrix-status").textContent.includes('"count":1'),
+  );
+});
+
+test("export captures a snapshot before the file picker; cancelling or closing prevents writes", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  let finishPicker;
+  app.picker(
+    new Promise((resolve) => {
+      finishPicker = resolve;
+    }),
+  );
+  find(app.win, ".zest-matrix-export-md").click();
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = "missing";
+  search.dispatch("input");
+  app.win.flushTimers();
+  finishPicker("/virtual/snapshot.md");
+  await settle();
+  assert.equal(app.writes.length, 1);
+  assert.ok(app.writes[0].text.includes("Unique annotation 1"));
+  assert.ok(app.writes[0].text.includes("Unique annotation 2"));
+  find(app.win, ".zest-matrix-reset").click();
+  app.picker(false);
+  find(app.win, ".zest-matrix-export-md").click();
+  await settle();
+  assert.equal(app.writes.length, 1);
+  app.picker(
+    new Promise((resolve) => {
+      finishPicker = resolve;
+    }),
+  );
+  find(app.win, ".zest-matrix-export-md").click();
+  app.win.close();
+  finishPicker("/virtual/closed.md");
+  await settle();
+  assert.equal(app.writes.length, 1);
+});
+
+test("long text and comments expand independently of copying complete original content", async () => {
+  const text = `Long text ${"x".repeat(900)}`;
+  const comment = `Long comment ${"y".repeat(750)}`;
+  const app = setup({ rows: [row(1, { text, comment })] });
+  app.openMatrix(app.host);
+  await settle();
+  const preview = find(app.win, ".zest-matrix-text");
+  const expand = find(app.win, ".zest-matrix-expand");
+  assert.equal(preview.textContent.length, 651);
+  assert.equal(expand.getAttribute("aria-expanded"), "false");
+  find(app.win, ".zest-matrix-copy").click();
+  assert.equal(app.copies[0], `${text}\n\n${comment}`);
+  assert.equal(
+    find(app.win, ".zest-matrix-status").textContent,
+    "matrix-copied",
+  );
+  expand.click();
+  assert.equal(preview.textContent, text);
+  assert.equal(find(app.win, ".zest-matrix-comment p").textContent, comment);
+  assert.equal(expand.getAttribute("aria-expanded"), "true");
+  expand.click();
+  assert.equal(preview.textContent.length, 651);
+});
+
+test("textless image marks copy their locator; open false gives user feedback and reenables action", async () => {
+  const sample = row(1, { text: "", comment: "", type: "image" });
+  const app = setup({ rows: [sample] });
+  app.openMatrix(app.host);
+  await settle();
+  assert.ok(find(app.win, ".zest-matrix-no-text"));
+  find(app.win, ".zest-matrix-copy").click();
+  assert.equal(app.copies[0], sample.sourceURL);
+  app.navigate(false);
+  const open = find(app.win, ".zest-matrix-open");
+  open.click();
+  assert.equal(open.disabled, true);
+  open.click();
+  assert.equal(app.navigations.length, 1);
+  await settle();
+  assert.equal(open.disabled, false);
+  assert.equal(app.navigations[0].attachment, sample.attachment);
+  assert.equal(app.navigations[0].location.annotationID, sample.key);
+  assert.equal(
+    find(app.win, ".zest-matrix-status").textContent,
+    "matrix-open-failed",
+  );
+});
+
+test("annotation HTML and unsafe colour values are inert text, not injected DOM or style", async () => {
+  const text = '<img src=x onerror="alert(1)"><script>evil()</script>';
+  const app = setup({
+    rows: [
+      row(1, {
+        text,
+        itemTitle: text,
+        comment: text,
+        color: "red; background:url(evil)",
+        tags: [text],
+      }),
+    ],
+  });
+  app.openMatrix(app.host);
+  await settle();
+  assert.equal(find(app.win, ".zest-matrix-text").textContent, text);
+  assert.equal(find(app.win, ".zest-matrix-item-title").textContent, text);
+  assert.equal(app.win.document.querySelectorAll("script").length, 0);
+  assert.equal(app.win.document.querySelectorAll("img").length, 0);
+  assert.equal(
+    find(app.win, ".zest-matrix-type").style.getPropertyValue(
+      "--annotation-color",
+    ),
+    "",
+  );
+  assert.equal(app.logs.length, 0);
+});
+
+test("keyboard shortcuts target only local search and export menu; advanced filters toggle", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const root = find(app.win, ".zest-matrix");
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = "lung";
+  const event = root.dispatch("keydown", { metaKey: true, key: "f" });
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(app.win.document.activeElement, search);
+  assert.equal(search.selectionEnd, 4);
+  const menu = find(app.win, ".zest-matrix-export");
+  menu.open = true;
+  root.dispatch("keydown", { key: "Escape" });
+  assert.equal(menu.open, false);
+  assert.equal(app.win.document.activeElement.tagName, "summary");
+  const toggle = find(app.win, ".zest-matrix-filter-toggle");
+  const filters = find(app.win, ".zest-matrix-filters");
+  assert.equal(filters.hidden, true);
+  toggle.click();
+  assert.equal(filters.hidden, false);
+  assert.equal(toggle.getAttribute("aria-expanded"), "true");
+});
+
+test("closing cancels debounce timers and captured callbacks cannot repaint", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = "test";
+  search.dispatch("input");
+  const late = [...app.win.timers.values()][0].fn;
+  app.closeMatrix();
+  assert.equal(app.win.timers.size, 0);
+  const writes = app.win.document.writes;
+  late();
+  assert.equal(app.win.document.writes, writes);
+});
+
+test("item and tag shortcuts restore focus to results; reset returns focus to search", async () => {
+  const app = setup({ rows: [row(1), row(2), row(3)] });
+  app.openMatrix(app.host);
+  await settle();
+  const title = find(app.win, ".zest-matrix-item-title");
+  title.focus();
+  title.click();
+  assert.equal(rendered(app.win).length, 1);
+  assert.equal(find(app.win, ".zest-matrix-item").value, "1/ITEM1");
+  assert.equal(
+    app.win.document.activeElement,
+    find(app.win, ".zest-matrix-list"),
+  );
+  find(app.win, ".zest-matrix-reset").click();
+  assert.equal(rendered(app.win).length, 3);
+  assert.equal(
+    app.win.document.activeElement,
+    find(app.win, ".zest-matrix-search"),
+  );
+  const tag = find(app.win, ".zest-matrix-tag-chip");
+  tag.focus();
+  tag.click();
+  assert.equal(rendered(app.win).length, 2);
+  assert.equal(find(app.win, ".zest-matrix-tag").tagName, "select");
+  assert.equal(find(app.win, ".zest-matrix-tag").value, "Methods");
+  assert.equal(
+    app.win.document.activeElement,
+    find(app.win, ".zest-matrix-list"),
+  );
+  assert.equal(app.loads.length, 1);
+  assert.doesNotMatch(
+    find(app.win, "style").textContent,
+    /\.zest-matrix-tag\s*\{/,
+  );
+});
+
+test("late navigation success or failure cannot overwrite a newer reload error", async () => {
+  for (const result of [true, false]) {
+    const app = setup();
+    app.openMatrix(app.host);
+    await settle();
+    let finish;
+    app.navigate(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    find(app.win, ".zest-matrix-open").click();
+    app.host.closed = true;
+    find(app.win, ".zest-matrix-refresh").click();
+    await settle();
+    assert.equal(
+      find(app.win, ".zest-matrix-status").textContent,
+      "matrix-load-failed",
+    );
+    assert.equal(
+      rendered(app.win).length,
+      0,
+      "a failed source must not show the previous snapshot",
+    );
+    assert.equal(
+      find(app.win, ".zest-matrix-empty h2").textContent,
+      "matrix-unavailable",
+    );
+    assert.equal(find(app.win, ".zest-matrix-count").textContent, "");
+    finish(result);
+    await settle();
+    assert.equal(
+      find(app.win, ".zest-matrix-status").textContent,
+      "matrix-load-failed",
+    );
+  }
+});
+
+test("late export feedback cannot replace a newer copy confirmation", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  let finish;
+  app.picker(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  find(app.win, ".zest-matrix-export-md").click();
+  find(app.win, ".zest-matrix-copy").click();
+  finish("/virtual/late-export.md");
+  await settle();
+  assert.equal(app.writes.length, 1);
+  assert.equal(
+    find(app.win, ".zest-matrix-status").textContent,
+    "matrix-copied",
+  );
+});
+
+test("copy Markdown includes all 2501 results, not the current page, without I/O or recollection", async () => {
+  const rows = Array.from({ length: 2501 }, (_, i) => row(i + 1));
+  const original = JSON.stringify(rows);
+  const app = setup({ rows });
+  const mutations = [];
+  const unexpectedWrite = (...args) => {
+    mutations.push(args);
+    throw new Error("Copy must not write the library");
+  };
+  app.zotero.DB = { executeTransaction: unexpectedWrite };
+  app.zotero.Item = unexpectedWrite;
+  for (const sample of rows) {
+    sample.annotation.saveTx = unexpectedWrite;
+    sample.attachment.saveTx = unexpectedWrite;
+  }
+  app.openMatrix(app.host);
+  await settle();
+  find(app.win, ".zest-matrix-next").click();
+  assert.equal(rendered(app.win).length, 100);
+  assert.ok(rendered(app.win)[0].textContent.includes("Unique annotation 101"));
+  const menu = find(app.win, ".zest-matrix-export");
+  const copy = find(app.win, ".zest-matrix-copy-md");
+  assert.equal(find(app.win, ".zest-matrix-export-menu button"), copy);
+  menu.open = true;
+  copy.click();
+  assert.equal(app.copies.length, 1);
+  assert.equal((app.copies[0].match(/^## Paper /gm) || []).length, 2501);
+  assert.ok(app.copies[0].includes("> Unique annotation 1  \n"));
+  assert.ok(app.copies[0].includes("> Unique annotation 2501  \n"));
+  assert.ok(app.copies[0].includes(rows.at(-1).sourceURL));
+  assert.equal(
+    find(app.win, ".zest-matrix-status").textContent,
+    'matrix-copied-md {"count":2501}',
+  );
+  assert.equal(copy.disabled, false);
+  assert.equal(menu.open, false);
+  assert.equal(app.loads.length, 1);
+  assert.equal(app.pickers.length, 0);
+  assert.equal(app.writes.length, 0);
+  assert.equal(app.navigations.length, 0);
+  assert.equal(mutations.length, 0);
+  assert.equal(JSON.stringify(rows), original);
+  assert.equal(rendered(app.win).length, 100);
+});
+
+test("copy Markdown combines selected scope and all filters with the latest unpainted query", async () => {
+  const common = {
+    itemID: 1,
+    itemIdentity: "1/ITEM1",
+    itemTitle: "Selected paper",
+    text: "Lung cancer evidence",
+    comment: "Important",
+    tags: ["Methods"],
+  };
+  const rows = [
+    row(1, common),
+    row(2, { ...common, text: "Lung cancer second result" }),
+    row(3, { ...common, color: "#ff6666" }),
+    row(4, { ...common, tags: ["Results"] }),
+    row(5, { ...common, type: "underline" }),
+    row(6, { ...common, comment: " " }),
+    row(7, { ...common, itemIdentity: "2/ITEM1", itemID: 7 }),
+    row(8, { ...common, text: "Lung cancer excluded" }),
+    row(9, { ...common, text: "Lung cancer outside selection" }),
+  ];
+  const app = setup({ rows });
+  app.host.selectedItems = [{ rows: rows.slice(0, -1) }];
+  app.openMatrix(app.host);
+  await settle();
+  change(app.win, ".zest-matrix-scope", "selected");
+  await settle();
+  change(app.win, ".zest-matrix-item", "1/ITEM1");
+  change(app.win, ".zest-matrix-color", "#ffd400");
+  change(app.win, ".zest-matrix-tag", "Methods");
+  change(app.win, ".zest-matrix-type", "highlight");
+  const comments = find(app.win, ".zest-matrix-comments");
+  comments.checked = true;
+  comments.dispatch("change");
+  assert.equal(rendered(app.win).length, 3);
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = '"lung cancer" -excluded';
+  search.dispatch("input");
+  assert.equal(app.win.timers.size, 1);
+  find(app.win, ".zest-matrix-copy-md").click();
+  assert.equal(app.copies.length, 1);
+  for (const sample of rows.slice(0, 2))
+    assert.ok(app.copies[0].includes(sample.sourceURL));
+  for (const sample of rows.slice(2))
+    assert.ok(!app.copies[0].includes(sample.sourceURL));
+  assert.equal(
+    find(app.win, ".zest-matrix-status").textContent,
+    'matrix-copied-md {"count":2}',
+  );
+  assert.equal(app.loads.length, 2);
+  assert.equal(app.loads[1].items, app.host.selectedItems);
+  assert.equal(app.pickers.length, 0);
+  assert.equal(app.writes.length, 0);
+});
+
+test("copy Markdown and file export preserve identical full content, escaping, grouping and provenance", async () => {
+  const text = `Long ${"x".repeat(1000)}\n[raw](javascript:evil)\n<img src=x>`;
+  const comment = `**Comment** ${"y".repeat(800)}\nsecond & final`;
+  const title = "# Same <title>";
+  const first = row(1, { itemTitle: title, text, comment, page: "iv" });
+  const second = row(2, {
+    itemTitle: title,
+    itemIdentity: "2/ITEM1",
+    text: "",
+    comment: "",
+    type: "image",
+    sourceURL:
+      "zotero://open-pdf/groups/123/items/ATT00002?annotation=ANN00002",
+  });
+  const app = setup({ rows: [first, second] });
+  app.openMatrix(app.host);
+  await settle();
+  assert.equal(find(app.win, ".zest-matrix-text").textContent.length, 651);
+  find(app.win, ".zest-matrix-copy-md").click();
+  assert.equal(app.copies.length, 1);
+  assert.equal(app.pickers.length, 0);
+  assert.equal(app.writes.length, 0);
+  const markdown = app.copies[0];
+  assert.equal((markdown.match(/^## /gm) || []).length, 2);
+  assert.ok(markdown.includes("x".repeat(1000)));
+  assert.ok(markdown.includes("y".repeat(800)));
+  assert.ok(markdown.includes("\\[raw\\]\\(javascript:evil\\)"));
+  assert.ok(markdown.includes("&lt;img src=x&gt;"));
+  assert.ok(markdown.includes("\\*\\*Comment\\*\\*"));
+  assert.ok(markdown.includes("> second &amp; final"));
+  assert.ok(markdown.includes("matrix\\-col\\-page iv"));
+  assert.ok(markdown.includes("matrix\\-comment:"));
+  assert.ok(markdown.includes("matrix\\-col\\-tags:"));
+  assert.ok(markdown.includes(first.sourceURL));
+  assert.ok(markdown.includes(second.sourceURL));
+  assert.ok(markdown.includes("PDF 2 · matrix\\-col\\-page 2 · image"));
+  assert.ok(!markdown.includes("<img"));
+  find(app.win, ".zest-matrix-export-md").click();
+  await settle();
+  assert.equal(app.writes.length, 1);
+  assert.equal(app.writes[0].text, markdown);
+  assert.equal(app.loads.length, 1);
+});
+
+test("copy Markdown is disabled while loading, empty or saving and recovers after cancellation", async () => {
+  const app = setup({ manualLoads: true });
+  app.openMatrix(app.host);
+  const copy = find(app.win, ".zest-matrix-copy-md");
+  assert.equal(copy.disabled, true);
+  copy.click();
+  app.loads[0].resolve([]);
+  await settle();
+  assert.equal(copy.disabled, true);
+  copy.click();
+  find(app.win, ".zest-matrix-refresh").click();
+  assert.equal(copy.disabled, true);
+  app.loads[1].resolve([row(1), row(2)]);
+  await settle();
+  assert.equal(copy.disabled, false);
+  let finishPicker;
+  app.picker(
+    new Promise((resolve) => {
+      finishPicker = resolve;
+    }),
+  );
+  find(app.win, ".zest-matrix-export-md").click();
+  assert.equal(copy.disabled, true);
+  copy.click();
+  assert.equal(app.copies.length, 0);
+  finishPicker(false);
+  await settle();
+  assert.equal(copy.disabled, false);
+  copy.click();
+  assert.equal(app.copies.length, 1);
+  assert.equal(app.pickers.length, 1);
+  assert.equal(app.writes.length, 0);
+});
+
+test("an unpainted zero-match query never copies stale results", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = "definitely missing";
+  search.dispatch("input");
+  find(app.win, ".zest-matrix-copy-md").click();
+  assert.equal(app.copies.length, 0);
+  assert.doesNotMatch(
+    find(app.win, ".zest-matrix-status").textContent,
+    /copied/,
+  );
+  app.win.flushTimers();
+  assert.equal(find(app.win, ".zest-matrix-copy-md").disabled, true);
+  assert.equal(app.pickers.length, 0);
+  assert.equal(app.loads.length, 1);
+});
+
+test("copy Markdown reports unavailable or throwing clipboard and allows a successful retry", async () => {
+  for (const unavailable of [
+    undefined,
+    null,
+    () => {
+      throw new Error("clipboard busy");
+    },
+  ]) {
+    const app = setup();
+    app.openMatrix(app.host);
+    await settle();
+    const internal = app.zotero.Utilities.Internal;
+    const workingCopy = internal.copyTextToClipboard;
+    internal.copyTextToClipboard = unavailable;
+    const copy = find(app.win, ".zest-matrix-copy-md");
+    copy.click();
+    assert.equal(
+      find(app.win, ".zest-matrix-status").textContent,
+      "matrix-copy-failed",
+    );
+    assert.equal(copy.disabled, false);
+    assert.equal(app.copies.length, 0);
+    internal.copyTextToClipboard = workingCopy;
+    copy.click();
+    assert.equal(app.copies.length, 1);
+    assert.equal(
+      find(app.win, ".zest-matrix-status").textContent,
+      'matrix-copied-md {"count":2}',
+    );
+    assert.equal(app.pickers.length, 0);
+    assert.equal(app.writes.length, 0);
+    assert.equal(app.loads.length, 1);
+  }
+});
+
+test("copy Markdown keeps each window's filters and feedback isolated", async () => {
+  const first = windowFixture();
+  const second = windowFixture();
+  const app = setup({ windows: [first, second] });
+  const other = app.newHost([row(900), row(901)]);
+  app.openMatrix(app.host);
+  app.openMatrix(other);
+  await settle();
+  const search = find(first, ".zest-matrix-search");
+  search.value = '"annotation 1"';
+  search.dispatch("input");
+  find(first, ".zest-matrix-copy-md").click();
+  assert.equal(find(second, ".zest-matrix-status").textContent, "");
+  assert.equal(find(second, ".zest-matrix-search").value, "");
+  const firstStatus = find(first, ".zest-matrix-status").textContent;
+  find(second, ".zest-matrix-copy-md").click();
+  assert.equal(app.copies.length, 2);
+  assert.ok(app.copies[0].includes("Unique annotation 1"));
+  assert.ok(!app.copies[0].includes("Unique annotation 2"));
+  assert.ok(app.copies[1].includes("Unique annotation 900"));
+  assert.ok(app.copies[1].includes("Unique annotation 901"));
+  assert.equal(find(first, ".zest-matrix-status").textContent, firstStatus);
+  assert.equal(
+    find(second, ".zest-matrix-status").textContent,
+    'matrix-copied-md {"count":2}',
+  );
+  first.close();
+  find(second, ".zest-matrix-copy-md").click();
+  assert.equal(app.copies[2], app.copies[1]);
+  assert.equal(app.loads.length, 2);
+  assert.equal(app.pickers.length, 0);
+  assert.equal(app.writes.length, 0);
+});
