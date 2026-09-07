@@ -412,6 +412,11 @@ export function registerStyles(win: Window) {
     .zest-info-abstract-text p { margin: 0 0 .85em; }
     .zest-info-abstract-text p:last-child { margin-bottom: 0; }
     .zest-info-abstract-text p > span { white-space: pre-wrap; }
+    .zest-info-abstract-text ul, .zest-info-abstract-text ol { margin: 0 0 .85em; padding-inline-start: 1.7em; }
+    .zest-info-abstract-text li { margin-block: .25em; white-space: pre-wrap; }
+    .zest-info-abstract-text strong { font-weight: 600; }
+    .zest-info-abstract-text code { font-size: .95em; }
+    .zest-info-abstract-text p:has(> .zest-info-abstract-heading:only-child) { margin-bottom: .25em; }
     .zest-info-abstract-preview { max-height: 16em; overflow: hidden; mask-image: linear-gradient(to bottom, black calc(100% - 2em), transparent); }
     .zest-info-abstract-expand { margin-top: 6px; color: var(--fill-primary); }
     .zest-info-abstract-heading { display: block; margin-bottom: 2px; font-weight: 600; color: var(--fill-primary); }

@@ -2,11 +2,84 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createHarness } = require("./helpers.cjs");
 
-const { normalizeAbstractText, abstractParagraphs } = createHarness().load(
-  "src/panes/abstractText.ts",
-);
+const { normalizeAbstractText, abstractParagraphs, abstractInlineParts } =
+  createHarness().load("src/panes/abstractText.ts");
 const paragraphs = (raw, options) =>
   JSON.parse(JSON.stringify(abstractParagraphs(raw, options)));
+const inline = (raw) => JSON.parse(JSON.stringify(abstractInlineParts(raw)));
+
+test("Markdown abstract headings support bold wrappers, colon positions and ATX titles", () => {
+  const text =
+    "**目的**\n研究问题。\n__方法：__ 随机分组。\n**结果**：P<0.001。\n### **结论** ###\n结论正文。\n## 其他信息\n补充内容。";
+  assert.deepEqual(paragraphs(text, { plainText: true, markdown: true }), [
+    { heading: "目的", text: "" },
+    { text: "研究问题。" },
+    { heading: "方法", text: "随机分组。" },
+    { heading: "结果", text: "P<0.001。" },
+    { heading: "结论", text: "" },
+    { text: "结论正文。" },
+    { heading: "其他信息", text: "" },
+    { text: "补充内容。" },
+  ]);
+  assert.deepEqual(paragraphs("**目的**", { plainText: true }), [
+    { text: "**目的**" },
+  ]);
+});
+
+test("Markdown lists retain ordinals and mixed list types without treating decimals as markers", () => {
+  assert.deepEqual(
+    paragraphs(
+      "方法\n- 第一组\n+ 第二组\n4. 四\n7) 七\n0.58 (95% CI 0.46–0.72)\n-0.5",
+      { plainText: true, markdown: true },
+    ),
+    [
+      { heading: "方法", text: "" },
+      { list: "ul", text: "第一组" },
+      { list: "ul", text: "第二组" },
+      { list: "ol", ordinal: 4, text: "四" },
+      { list: "ol", ordinal: 7, text: "七" },
+      { text: "0.58 (95% CI 0.46–0.72)" },
+      { text: "-0.5" },
+    ],
+  );
+});
+
+test("safe inline formatting preserves clinical comparisons, literal HTML and entities", () => {
+  assert.deepEqual(inline("**P<0.001**；__HR 0.58__；`**不解析**`"), [
+    { strong: true, text: "P<0.001" },
+    { text: "；" },
+    { strong: true, text: "HR 0.58" },
+    { text: "；" },
+    { code: true, text: "**不解析**" },
+  ]);
+  for (const text of [
+    "2**3**4",
+    "gene__alpha__beta",
+    "2 * 3; *P<0.05",
+    "**未闭合",
+    "A<B and C>D; &lt;b&gt;",
+    '<img src=x onerror="run()">',
+    "***保守保留***",
+    "#无空格",
+  ]) {
+    assert.equal(
+      inline(text)
+        .map((p) => p.text)
+        .join(""),
+      text,
+    );
+  }
+  assert.equal(
+    inline(String.raw`\**literal\**`)
+      .map((p) => p.text)
+      .join(""),
+    "**literal**",
+  );
+  assert.equal(
+    inline("含**关键结果**的正文。").filter((p) => p.strong)[0].text,
+    "关键结果",
+  );
+});
 
 test("abstract text keeps JATS structure, inline content and quoted tag attributes", () => {
   const raw =

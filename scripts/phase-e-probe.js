@@ -868,9 +868,23 @@ check(
     const hadTranslationPlugin = Object.hasOwn(Zotero, "PDFTranslate");
     const translationPlugin = Zotero.PDFTranslate;
     const translationCalls = [];
-    const clickTranslation =
-      "背景\n这是一条用于界面验证的中文译文，不覆盖文献的原始字段。\n\n" +
-      "结果\n保留 P<0.001、字面 <b> 和完整段落；点击按钮后才展示这段译文。";
+    const clickTranslation = [
+      "**目的**",
+      "这是一条用于界面验证的中文译文，**不覆盖**文献的原始字段。",
+      "",
+      "__方法__",
+      "- __完整段落__：点击按钮后才展示这段译文。",
+      "- 保留 P<0.001、字面 <b> 和 &lt;；95% CI 0.46–0.72。",
+      "",
+      "## 结果",
+      "4. A<B and C>D。",
+      "7. 未配对 **标记和单个 *。",
+      "",
+      "HR 0.58**; OR 0.65**。",
+      "`P<0.001. Methods: **原文**`",
+      "<script>alert(1)</script> <img src=x onerror=alert(1)>",
+      "[来源](javascript:alert(1)) ![图](https://example.test/tracker.png)",
+    ].join("\n");
     let item;
     let cacheKey;
     let sizedBody;
@@ -1213,9 +1227,52 @@ check(
             "这是一条用于界面验证的中文译文",
           ) &&
           translationText.textContent.includes("P<0.001、字面 <b>") &&
-          !translationText.querySelector("b, script, img") &&
+          !translationText.querySelector("b, script, img, a, iframe") &&
           !translationText.textContent.includes(resultTail) &&
           !body.querySelector(".zest-info-abstract-note"),
+      );
+      const translatedHeadings = [
+        ...(translationText?.querySelectorAll(".zest-info-abstract-heading") ||
+          []),
+      ].map((node) => node.textContent);
+      const translatedStrong = [
+        ...(translationText?.querySelectorAll("strong") || []),
+      ].map((node) => node.textContent);
+      const translatedOrdered = translationText?.querySelector("ol");
+      check(
+        "abstract.translationMarkdownUsesStructuralDOM",
+        JSON.stringify(translatedHeadings) ===
+          JSON.stringify(["目的", "方法", "结果"]) &&
+          translatedStrong.includes("不覆盖") &&
+          translatedStrong.includes("完整段落") &&
+          translationText?.querySelectorAll("ul > li").length === 2 &&
+          translatedOrdered?.querySelectorAll(":scope > li").length === 2 &&
+          translatedOrdered.getAttribute("start") === "4" &&
+          translatedOrdered.children[1].getAttribute("value") === "7" &&
+          !/\*\*目的\*\*|__方法__|## 结果|\*\*不覆盖\*\*|__完整段落__/.test(
+            translationText.textContent,
+          ),
+      );
+      check(
+        "abstract.translationMarkdownPreservesInertLiteralContent",
+        [
+          "P<0.001",
+          "95% CI 0.46–0.72",
+          "A<B and C>D",
+          "<b> 和 &lt;",
+          "未配对 **标记和单个 *",
+          "HR 0.58**; OR 0.65**",
+          "P<0.001. Methods: **原文**",
+          "<script>alert(1)</script>",
+          "<img src=x onerror=alert(1)>",
+          "[来源](javascript:alert(1))",
+          "![图](https://example.test/tracker.png)",
+        ].every((literal) => translationText?.textContent.includes(literal)) &&
+          translationText.querySelector("code")?.textContent ===
+            "P<0.001. Methods: **原文**" &&
+          !translatedStrong.some((text) => /HR 0\.58|OR 0\.65/.test(text)) &&
+          !translationText.querySelector("b, script, img, a, iframe") &&
+          unexpectedRequests === 0,
       );
       body?.querySelector(".zest-abstract-translate")?.click();
       await delay(75);
@@ -1227,7 +1284,10 @@ check(
           ?.getAttribute("data-language") === "original" &&
         body
           ?.querySelector(".zest-info-abstract-text")
-          ?.textContent.includes(resultTail);
+          ?.textContent.includes(resultTail) &&
+        !body
+          ?.querySelector(".zest-info-abstract-text")
+          ?.querySelector("ul, ol");
       body?.querySelector(".zest-abstract-translate")?.click();
       await delay(75);
       body = visibleBody();

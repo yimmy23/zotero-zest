@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.1.1 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.1.2 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -14,6 +14,14 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 1. 从 [最新 Release](https://github.com/yimmy23/zotero-zest/releases/latest) 下载 `zest.xpi`。
 2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
+
+## 1.1.2 更新
+
+- 修复摘要译文直接显示 `**目的**` 等 Markdown 标记的问题，支持常见标题、加粗、行内代码和单层列表。
+- 保留统计脚注、比较符号、原始列表编号与转义字符，避免格式识别改变原文含义。
+- 改进明暗主题和窄栏中的摘要排版；仍然点击才翻译，可随时切回原文，不覆盖文献字段。
+
+升级后请重启 Zotero。翻译引擎配置不变，无需重新配置。
 
 ## 1.1.1 更新
 
@@ -118,6 +126,7 @@ OpenAlex、Connected Papers）。文献信息、**摘要**和阅读工作区分�
 摘要缺失或只有简介时，可手动点「查找完整摘要」，按 DOI / PMID 精确查询 Europe PMC、PubMed，符合身份校验条件时再尝试 Crossref。
 摘要始终只有一个主体，优先显示已补全的来源摘要。点击「翻译」才翻译为中文并切换显示，点击「原文」即可返回；不会默认展示译文或多个重复摘要区。
 翻译优先复用 Translate for Zotero 已配置的引擎；未安装时使用内置 Microsoft 网页翻译接口，不需要另填密钥。内置接口可用性取决于服务；已配置引擎失败时不会自动换服务。
+更换引擎请在 Translate for Zotero 的「设置 → 翻译 → 服务」中选择；Zest 当前跟随其默认引擎，没有独立的引擎选择项。摘要支持常见 Markdown 标题、加粗与单层列表，保留统计符号和脚注；不会执行返回的 HTML 或加载其中的图片。
 相同文本的翻译在本次运行中短暂缓存，切换文献后仍需点击才显示。摘要、Extra 中已有译文及语言字段不会被改写；标题仍可显示 `titleTranslation`。
 Zotero 在阅读器右侧的上下文面板里也会显示这一栏。
 作者优先展示来源明确标记的第一作者和通讯作者；第一作者无明确标记时取条目作者列表首位，无明确通讯作者时显示末位，分别用「一作」「通讯」「末位」区分。其余作者折叠，单作者不重复展示。
@@ -251,6 +260,14 @@ with a graph, a reading-statistics window and an annotation matrix on top.
 Download `zest.xpi` from the [latest release](https://github.com/yimmy23/zotero-zest/releases/latest),
 then Zotero → **Tools ▸ Plugins** → gear icon → **Install Plugin From File…** → restart when prompted.
 
+## What's new in 1.1.2
+
+- Render common Markdown headings, bold text, inline code, and single-level lists in abstracts instead of showing raw markers such as `**Purpose**`.
+- Preserve statistical footnotes, comparison symbols, original list numbering, and escaped characters without changing the meaning of the text.
+- Improve abstract readability in narrow panels and both themes. Translation remains click-only, with one abstract body and no changes to stored item fields.
+
+Restart Zotero after updating. Existing translation-engine settings are unchanged.
+
 ## What's new in 1.1.1
 
 - Improve large-library graph layouts, label collision avoidance, and fit-to-view behavior while preserving the view during zooming, dragging, and resizing.
@@ -355,8 +372,12 @@ PubMed, then Crossref when identifier checks permit, using exact DOI / PMID matc
 There is one abstract body, preferring the retrieved source text. Click **Translate** to display Chinese
 in the same body and **Original** to switch back. Translation uses a configured Translate for Zotero
 engine, or the built-in Microsoft web translation service when the plugin is absent; a configured
-engine's failure does not silently switch services. Translations use a short-lived memory cache and
-are never displayed automatically. Stored abstract, Extra, and language fields remain unchanged;
+engine's failure does not silently switch services.
+To change engines, use Translate for Zotero's **Settings → Translate → Service**; Zest follows its
+default and does not currently expose a separate engine selector. Abstracts support common Markdown
+headings, bold text, and single-level lists while preserving statistical notation and footnotes;
+returned HTML is never executed and embedded images are not loaded. Translations use a short-lived
+memory cache and are never displayed automatically. Stored abstract, Extra, and language fields remain unchanged;
 title translations still come from `titleTranslation`. Zotero shows the same section in a reader tab's context pane.
 
 Authors with explicit first/corresponding metadata stay visible. Without first-author metadata, the

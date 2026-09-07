@@ -694,6 +694,174 @@ test("translation is click-only, replaces the same abstract view, survives repai
   assert.deepEqual(s.logs, []);
 });
 
+test("Markdown translations render safe headings, emphasis and numbered lists in the single opt-in abstract", async () => {
+  const original = "A<B and C>D remain literal; the original abstract.";
+  const extra = "Remark: saved note\nCustom_Field: untouched";
+  const translated = [
+    "**目的**",
+    "比较 **总体生存** 与 __无病生存__。",
+    "",
+    "__方法__",
+    "- **取样组**：随机分配。",
+    "- 清扫组：保留 P<0.001 和 95% CI 0.46–0.72。",
+    "",
+    "## 结果",
+    "4. A<B and C>D。",
+    "7. 保留 <b>、&lt; 与未配对 **标记和单个 *。",
+    "",
+    "<script>alert(1)</script> <img src=x onerror=alert(1)>",
+    "[来源](javascript:alert(1)) ![图](https://example.test/tracker.png)",
+  ].join("\n");
+  const s = setup({
+    abstract: true,
+    fields: { abstractNote: original, extra },
+  });
+  s.setTranslationImplementation(async (text) => {
+    assert.equal(text, original, "formatting must not rewrite API input");
+    return { kind: "ok", text: translated, provider: "Test Translator" };
+  });
+  const props = s.show(1);
+  assert.equal(s.translationRequests.length, 0);
+  assert.equal(
+    findClass(props.body, "zest-info-abstract-text").textContent,
+    original,
+  );
+  await findClass(props.body, "zest-abstract-translate").listeners.click();
+  const content = findClass(props.body, "zest-info-abstract-text");
+  const headings = findAll(content, (node) =>
+    node.classList?.contains("zest-info-abstract-heading"),
+  ).map((node) => node.textContent);
+  assert.deepEqual(headings, ["目的", "方法", "结果"]);
+  const strong = findAll(content, (node) => node.tag === "strong").map(
+    (node) => node.textContent,
+  );
+  for (const text of ["总体生存", "无病生存", "取样组"])
+    assert.ok(strong.includes(text), `inline emphasis is structural: ${text}`);
+  const unordered = find(content, (node) => node.tag === "ul");
+  const ordered = find(content, (node) => node.tag === "ol");
+  assert.deepEqual(
+    unordered?.children.map((node) => node.tag),
+    ["li", "li"],
+  );
+  assert.deepEqual(
+    ordered?.children.map((node) => node.tag),
+    ["li", "li"],
+  );
+  assert.equal(ordered.getAttribute("start"), "4");
+  assert.equal(ordered.children[1].getAttribute("value"), "7");
+  assert.doesNotMatch(content.textContent, /\*\*目的\*\*|__方法__|## 结果/);
+  assert.doesNotMatch(content.textContent, /\*\*总体生存\*\*|__无病生存__/);
+  for (const literal of [
+    "P<0.001",
+    "95% CI 0.46–0.72",
+    "A<B and C>D",
+    "<b>、&lt;",
+    "未配对 **标记和单个 *",
+    "<script>alert(1)</script>",
+    "<img src=x onerror=alert(1)>",
+    "[来源](javascript:alert(1))",
+    "![图](https://example.test/tracker.png)",
+  ])
+    assert.ok(content.textContent.includes(literal), `preserved: ${literal}`);
+  assert.deepEqual(
+    findAll(content, (node) =>
+      ["script", "img", "a", "b", "iframe"].includes(node.tag),
+    ),
+    [],
+    "translated markup must never create active HTML or network elements",
+  );
+  assert.equal(content.getAttribute("data-language"), "translation");
+  assert.equal(
+    findAll(props.body, (node) =>
+      node.classList?.contains("zest-info-abstract-text"),
+    ).length,
+    1,
+  );
+  await findClass(props.body, "zest-abstract-translate").listeners.click();
+  const restored = findClass(props.body, "zest-info-abstract-text");
+  assert.equal(restored.textContent, original);
+  assert.equal(restored.getAttribute("data-language"), "original");
+  assert.equal(
+    find(restored, (node) => node.tag === "ul"),
+    undefined,
+  );
+  assert.equal(
+    find(restored, (node) => node.tag === "ol"),
+    undefined,
+  );
+  assert.equal(s.translationRequests.length, 1);
+  assert.equal(props.item.getField("abstractNote"), original);
+  assert.equal(props.item.getField("extra"), extra);
+  assert.deepEqual(s.writes, []);
+  assert.deepEqual(s.logs, []);
+});
+
+for (const [name, translated, expected] of [
+  [
+    "clinical significance footnotes",
+    "HR 0.58**; OR 0.65**。P<0.05**（校正前）；P<0.01**（校正后）。",
+    "HR 0.58**; OR 0.65**。P<0.05**（校正前）；P<0.01**（校正后）。",
+  ],
+  [
+    "escaped closing delimiters",
+    String.raw`**保留\**；__保留\__`,
+    "**保留**；__保留__",
+  ],
+]) {
+  test(`Markdown translation preserves ${name} without introducing emphasis`, async () => {
+    const s = setup({
+      abstract: true,
+      fields: { abstractNote: "Original abstract." },
+    });
+    s.setTranslationImplementation(async () => ({
+      kind: "ok",
+      text: translated,
+      provider: "Test Translator",
+    }));
+    const props = s.show(1);
+    await findClass(props.body, "zest-abstract-translate").listeners.click();
+    const content = findClass(props.body, "zest-info-abstract-text");
+    assert.equal(content.textContent, expected);
+    assert.deepEqual(
+      findAll(content, (node) => node.tag === "strong"),
+      [],
+    );
+    assert.deepEqual(s.writes, []);
+    assert.deepEqual(s.logs, []);
+  });
+}
+
+test("Markdown code spans containing abstract keywords are not split into false sections", async () => {
+  const translated = "结果：`P<0.001. Methods: **原文**`";
+  const s = setup({
+    abstract: true,
+    fields: { abstractNote: "Original abstract." },
+  });
+  s.setTranslationImplementation(async () => ({
+    kind: "ok",
+    text: translated,
+    provider: "Test Translator",
+  }));
+  const props = s.show(1);
+  await findClass(props.body, "zest-abstract-translate").listeners.click();
+  const content = findClass(props.body, "zest-info-abstract-text");
+  assert.deepEqual(
+    findAll(content, (node) =>
+      node.classList?.contains("zest-info-abstract-heading"),
+    ).map((node) => node.textContent),
+    ["结果"],
+  );
+  assert.deepEqual(
+    findAll(content, (node) => node.tag === "code").map(
+      (node) => node.textContent,
+    ),
+    ["P<0.001. Methods: **原文**"],
+  );
+  assert.equal(content.textContent.includes("`"), false);
+  assert.deepEqual(s.writes, []);
+  assert.deepEqual(s.logs, []);
+});
+
 test("a pending translation survives same-item repaint, retains the remark draft and suppresses duplicate clicks", async () => {
   const s = setup({
     abstract: true,

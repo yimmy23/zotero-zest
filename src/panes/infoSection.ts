@@ -32,7 +32,11 @@ import { ensureAuthorships } from "../graph/authorFetch";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { getExtraBlock } from "../utils/extra";
 import { iconButton } from "../ui/icons";
-import { abstractParagraphs, normalizeAbstractText } from "./abstractText";
+import {
+  abstractInlineParts,
+  abstractParagraphs,
+  normalizeAbstractText,
+} from "./abstractText";
 import {
   abstractIdentity,
   cachedAbstract,
@@ -938,17 +942,47 @@ function abstractText(
 ): HTMLElement {
   const content = doc.createElement("div");
   content.className = "zest-info-abstract-text";
-  for (const part of abstractParagraphs(raw, { plainText })) {
+  const appendText = (parent: HTMLElement, value: string) => {
+    for (const part of abstractInlineParts(value)) {
+      const node =
+        part.strong || part.code
+          ? doc.createElement(part.strong ? "strong" : "code")
+          : doc.createTextNode(part.text);
+      if (part.strong || part.code) node.textContent = part.text;
+      parent.appendChild(node);
+    }
+  };
+  let list: HTMLElement | undefined;
+  let listKind: "ul" | "ol" | undefined;
+  for (const part of abstractParagraphs(raw, { plainText, markdown: true })) {
+    if (part.list) {
+      if (!list || listKind !== part.list) {
+        list = doc.createElement(part.list);
+        listKind = part.list;
+        if (part.ordinal !== undefined)
+          list.setAttribute("start", String(part.ordinal));
+        content.appendChild(list);
+      }
+      const item = doc.createElement("li");
+      if (part.ordinal !== undefined)
+        item.setAttribute("value", String(part.ordinal));
+      appendText(item, part.text);
+      list.appendChild(item);
+      continue;
+    }
+    list = undefined;
     const paragraph = doc.createElement("p");
     if (part.heading) {
       const heading = doc.createElement("strong");
       heading.className = "zest-info-abstract-heading";
-      heading.textContent = part.heading;
+      appendText(heading, part.heading);
       paragraph.appendChild(heading);
     }
-    const text = doc.createElement("span");
-    text.textContent = part.text;
-    paragraph.appendChild(text);
+    if (part.text) {
+      const text = doc.createElement("span");
+      appendText(text, part.text);
+      paragraph.appendChild(text);
+    }
     content.appendChild(paragraph);
   }
   return content;

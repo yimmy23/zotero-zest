@@ -1,4 +1,4 @@
-/** Abstracts are rendered as text only; neither helper creates or parses a DOM. */
+/** Abstract formatting is parsed without a DOM; raw HTML is never rendered. */
 const ENTITIES: Readonly<Record<string, string>> = {
   amp: "&",
   AMP: "&",
@@ -272,11 +272,88 @@ const INLINE_HEADINGS = new RegExp(
 export interface AbstractParagraph {
   heading?: string;
   text: string;
+  list?: "ul" | "ol";
+  ordinal?: number;
+}
+
+export interface AbstractInlinePart {
+  text: string;
+  strong?: boolean;
+  code?: boolean;
+}
+
+function escapedAt(raw: string, index: number): boolean {
+  let count = 0;
+  while (index > 0 && raw[--index] === "\\") count++;
+  return count % 2 === 1;
+}
+
+function codeSpans(raw: string): RegExpMatchArray[] {
+  return [...raw.matchAll(/`([^`\n]+)`/g)].filter(
+    (match) =>
+      raw[match.index! - 1] !== "`" &&
+      raw[match.index! + match[0].length] !== "`" &&
+      !escapedAt(raw, match.index!),
+  );
+}
+
+/** Deliberately small Markdown subset. Unsupported syntax remains literal text. */
+export function abstractInlineParts(raw: string): AbstractInlinePart[] {
+  const parts: AbstractInlinePart[] = [];
+  const literal = (value: string) => value.replace(/\\([\\*_`])/g, "$1");
+  // No nested delimiter interpretation, HTML, links, images or entity decoding.
+  const tokens =
+    /\\([\\*_`])|`([^`\n]+)`|(\*\*)([^\s*](?:[^*\n]*?[^\s*])?)\3|(__)([^\s_](?:[^_\n]*?[^\s_])?)\5/g;
+  let start = 0;
+  for (const match of raw.matchAll(tokens)) {
+    const index = match.index;
+    const before = raw[index - 1] || "";
+    const after = raw[index + match[0].length] || "";
+    const body = match[4] || match[6];
+    const punctuation = (value: string) => /[\p{P}\p{S}]/u.test(value);
+    const boundary = (value: string) =>
+      !value || /\s/.test(value) || punctuation(value);
+    const invalidStrong =
+      body &&
+      ((punctuation(body[0]) && !boundary(before)) ||
+        (punctuation(body[body.length - 1]) && !boundary(after)) ||
+        escapedAt(raw, index + match[0].length - 2));
+    // Keep gene identifiers, powers and longer delimiter runs verbatim.
+    if (
+      invalidStrong ||
+      (match[5] && /[\p{L}\p{N}_]/u.test(before + after)) ||
+      (match[3] &&
+        (before === "*" ||
+          after === "*" ||
+          (/\d/.test(before) && /\d/.test(after)))) ||
+      (match[2] && (before === "`" || after === "`"))
+    )
+      continue;
+    if (index > start) parts.push({ text: literal(raw.slice(start, index)) });
+    if (match[1]) parts.push({ text: match[1] });
+    else if (match[2]) parts.push({ text: match[2], code: true });
+    else parts.push({ text: literal(body), strong: true });
+    start = index + match[0].length;
+  }
+  if (start < raw.length) parts.push({ text: literal(raw.slice(start)) });
+  return parts;
+}
+
+function markdownHeading(
+  line: string,
+): { heading: string; text: string } | undefined {
+  const atx = /^#{1,6}\s+(.+?)(?:\s+#+)?$/.exec(line);
+  const candidate = atx ? atx[1] : line;
+  const bold = /^(\*\*|__)(.+?)\1(?:[：:]\s*|\s+)?(.*)$/.exec(candidate);
+  if (bold && STANDALONE_HEADING.test(bold[2]))
+    return { heading: bold[2].replace(/[：:]$/, ""), text: bold[3] };
+  if (atx) return { heading: candidate.replace(/[：:]$/, ""), text: "" };
+  return undefined;
 }
 
 export function abstractParagraphs(
   raw: string,
-  options: { plainText?: boolean } = {},
+  options: { plainText?: boolean; markdown?: boolean } = {},
 ): AbstractParagraph[] {
   // Cached/provider text has already been decoded. Parsing it as markup again
   // would erase literal tags or decode an entity a second time.
@@ -295,6 +372,27 @@ export function abstractParagraphs(
     }
   };
   for (const line of normalized.split(/\n+/)) {
+    if (options.markdown) {
+      const marked = markdownHeading(line);
+      if (marked) {
+        if (pendingHeading) append(pendingHeading);
+        paragraphs.push(marked);
+        pendingHeading = undefined;
+        continue;
+      }
+      const list = /^(?:([-+*])|(\d{1,9})[.)])\s+(\S.*)$/.exec(line);
+      if (list) {
+        if (pendingHeading)
+          paragraphs.push({ heading: pendingHeading, text: "" });
+        pendingHeading = undefined;
+        paragraphs.push({
+          text: list[3],
+          list: list[1] ? "ul" : "ol",
+          ...(list[2] ? { ordinal: Number(list[2]) } : {}),
+        });
+        continue;
+      }
+    }
     if (STANDALONE_HEADING.test(line)) {
       // Preserve consecutive heading-only lines rather than silently dropping one.
       if (pendingHeading) append(pendingHeading);
@@ -304,8 +402,16 @@ export function abstractParagraphs(
     let start = 0;
     let heading = pendingHeading;
     pendingHeading = undefined;
+    const codes = options.markdown ? codeSpans(line) : [];
+    let codeIndex = 0;
     for (const match of line.matchAll(INLINE_HEADINGS)) {
       const index = match.index + match[1].length;
+      while (
+        codeIndex < codes.length &&
+        codes[codeIndex].index! + codes[codeIndex][0].length <= index
+      )
+        codeIndex++;
+      if (codeIndex < codes.length && index > codes[codeIndex].index!) continue;
       if (index > 0) {
         let before = index - 1;
         while (before >= 0 && /\s/.test(line[before])) before--;
