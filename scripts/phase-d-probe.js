@@ -168,6 +168,87 @@ if (statsWin) {
     `${cells} cells, ${coloured} with reading`,
   );
   check("stats.cards", d.querySelectorAll(".zest-stats-card").length === 6);
+  check(
+    "stats.goalRings",
+    d.querySelectorAll(".zest-ring-progress").length === 3 &&
+      [...d.querySelectorAll(".zest-goal-metric progress")].length === 3 &&
+      [...d.querySelectorAll(".zest-goal-metric progress")].every(
+        (p) => p.max > 0 && p.value >= 0 && p.value <= p.max,
+      ),
+  );
+  check(
+    "stats.goalWeek",
+    d.querySelectorAll(".zest-goal-day").length === 7 &&
+      [...d.querySelectorAll(".zest-goal-day")].every(
+        (day) => day.getAttribute("role") === "img",
+      ),
+  );
+  check("stats.medals", d.querySelectorAll("svg.zest-medal").length === 9);
+  check("stats.trend", !!d.querySelector("svg.zest-stats-trend"));
+  check(
+    "stats.weekdays",
+    d.querySelector(".zest-stats-weekdays")?.children.length === 7,
+  );
+  const achievements = [...d.querySelectorAll(".zest-achievement")];
+  check(
+    "stats.achievements",
+    achievements.length === 9 &&
+      achievements.every((card) => {
+        const progress = card.querySelector("progress");
+        return (
+          progress &&
+          progress.max > 0 &&
+          progress.value >= 0 &&
+          progress.value <= progress.max
+        );
+      }),
+  );
+  check(
+    "stats.rangeDefault",
+    ["7", "30", "90"].every((days) => {
+      const button = d.querySelector(`button[data-range="${days}"]`);
+      return (
+        button && button.getAttribute("aria-pressed") === String(days === "30")
+      );
+    }),
+  );
+  d.querySelector('button[data-range="7"]')?.click();
+  await delay(300);
+  check(
+    "stats.rangeChange",
+    d.querySelector('button[data-range="7"]')?.getAttribute("aria-pressed") ===
+      "true" &&
+      d
+        .querySelector('button[data-range="30"]')
+        ?.getAttribute("aria-pressed") === "false" &&
+      !!d.querySelector('[data-period-days="7"]'),
+  );
+  check(
+    "stats.dailyDetails",
+    d.querySelectorAll(".zest-stats-daily-table tbody tr").length === 7,
+  );
+  const refresh = d.querySelector(".zest-stats-refresh");
+  refresh?.click();
+  await delay(300);
+  check(
+    "stats.refreshKeepsRange",
+    !!refresh &&
+      d
+        .querySelector('button[data-range="7"]')
+        ?.getAttribute("aria-pressed") === "true" &&
+      !!d.querySelector('[data-period-days="7"]') &&
+      d.querySelectorAll(".zest-stats").length === 1 &&
+      d.querySelectorAll(".zest-stats-daily-table tbody tr").length === 7,
+  );
+  if (statsWin.innerWidth > 700) {
+    const root = d.querySelector(".zest-stats");
+    check(
+      "stats.noHorizontalOverflow",
+      root.scrollWidth <= root.clientWidth + 1 &&
+        d.documentElement.scrollWidth <= d.documentElement.clientWidth + 1,
+      `window ${statsWin.innerWidth}px, content ${root.scrollWidth}/${root.clientWidth}px`,
+    );
+  }
   statsWin.close();
 } else {
   out.fail.push("stats.window");

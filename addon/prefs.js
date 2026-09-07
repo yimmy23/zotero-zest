@@ -31,6 +31,9 @@ pref("annots.color", "");
 // Accent colour for every Zest surface (heat map and #tag badges have their
 // own colours; the settings pane can push this one onto them)
 pref("ui.accent", "#40C463");
+// Reading dashboard targets; editable only by the user in its goal controls.
+pref("stats.dailyGoalMinutes", 30);
+pref("stats.weeklyGoalDays", 5);
 pref("heat.color", "#40C463");
 pref("heat.opacity", "0.62");
 pref("titleDecor.heat", true);

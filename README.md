@@ -1,6 +1,6 @@
 # Zest — 把「阅读」放进 Zotero 的条目列表
 
-> Zotero 10 插件 · v1.1.2 · [English below](#zest--reading-in-your-zotero-item-list)
+> Zotero 10 插件 · v1.2.0 · [English below](#zest--reading-in-your-zotero-item-list)
 
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
@@ -14,6 +14,16 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 1. 从 [最新 Release](https://github.com/yimmy23/zotero-zest/releases/latest) 下载 `zest.xpi`。
 2. Zotero →**工具 ▸ 插件**→ 右上角齿轮 →Install Plugin From File…→ 选中该 `.xpi`。
 3. 按提示重启 Zotero。
+
+## 1.2.0 更新
+
+- 全新阅读统计：今日 / 本周时长与达标天数三层圆环，可调整每日目标和每周天数。
+- 新增 7 / 30 / 90 天趋势、星期分布、日期明细，保留年度热力图和阅读最多的文献。
+- 新增时间积累、阅读广度与连续习惯三类共 9 枚勋章，展示达成条件、进度和下一里程碑。
+- 暖白与墨蓝灰界面，搭配雾蓝、灰紫和香槟铜；优化紧凑数据栏、勋章陈列、窄屏和放大字号。
+- 改善大量阅读记录的统计效率；旧导入中没有日期的时长仍计入累计，不会被分配到虚构日期。
+
+升级后重启 Zotero，从 **Z 按钮 ▸ 阅读统计…** 打开。统计与成就由本机阅读记录计算，不会自动跨设备同步；调整目标不会改变历史记录。
 
 ## 1.1.2 更新
 
@@ -59,7 +69,7 @@ Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评�
 | 菜单项                   | 作用                                                                                                                                                                                                    |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **图谱面板**             | 条目列表下方的关系图：相关条目 / 共同作者 / 共同标签 / 共同分类，可切换模式。作者模式做同名消歧：同姓下按全名聚类（Wang Lei ≠ Wang Li），有 OpenAlex 缓存时按作者 ID 合并拼写变体，悬停节点显示所属机构 |
-| **阅读统计…**            | 独立窗口：GitHub 式年度日历、累计时长、连续天数、读得最多的条目                                                                                                                                         |
+| **阅读统计…**            | 独立窗口：目标圆环、7 / 30 / 90 天趋势、星期分布、年度热力图、9 枚成就勋章与阅读排行                                                                                                                    |
 | **标注矩阵…**            | 当前视图的全部标注汇成一张可搜索的表，可导出 CSV / Markdown                                                                                                                                             |
 | **套用 Zest 推荐列布局** | 一键排好上面那套列                                                                                                                                                                                      |
 | **联网获取期刊数据**     | 分区 / 影响因子的联网开关（默认关）——不开这一项，期刊标签列会是空的                                                                                                                                     |
@@ -259,6 +269,16 @@ with a graph, a reading-statistics window and an annotation matrix on top.
 
 Download `zest.xpi` from the [latest release](https://github.com/yimmy23/zotero-zest/releases/latest),
 then Zotero → **Tools ▸ Plugins** → gear icon → **Install Plugin From File…** → restart when prompted.
+
+## What's new in 1.2.0
+
+- A redesigned reading dashboard with three rings for today's time, this week's time, and days on target. Set your daily minutes and weekly reading days.
+- New 7 / 30 / 90-day trends, weekday patterns, and daily details, alongside the yearly heatmap and most-read items.
+- Nine achievement medals for reading time, breadth, and consistency, with clear requirements, progress, and next milestones.
+- Refined warm-white and ink-blue-grey themes with muted blue, violet, and champagne-bronze accents; improved compact summaries, medal layouts, narrow windows, and enlarged text.
+- Faster aggregation of large reading histories. Undated time from older imports still counts toward the total without inventing calendar activity.
+
+Restart Zotero after updating and open **Z button ▸ Reading statistics…**. Statistics and achievements are calculated from local reading records and do not automatically sync between devices. Changing goals does not alter your history.
 
 ## What's new in 1.1.2
 

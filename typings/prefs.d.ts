@@ -25,6 +25,8 @@ declare namespace _ZoteroTypes {
       "annots.style": string;
       "annots.color": string;
       "ui.accent": string;
+      "stats.dailyGoalMinutes": number;
+      "stats.weeklyGoalDays": number;
       "heat.color": string;
       "heat.opacity": string;
       "titleDecor.heat": boolean;

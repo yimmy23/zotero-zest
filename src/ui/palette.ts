@@ -32,3 +32,12 @@ export const HEAT_LEVELS = [0.18, 0.36, 0.6, 0.88] as const;
 /** #Tags badge colour when a tag has no Zotero colour (deeper green; the
  *  badge itself is painted at 0.16 alpha, so this reads pale) */
 export const BADGE_COLOR_DEFAULT = "#2DA44E";
+
+/**
+ * Reading dashboard only: the requested multicolour rings and medal families.
+ * These semantic chart colours do not change the main-window accent preference.
+ */
+export const READING_STATS_PALETTE = {
+  light: { blue: "#536B9D", violet: "#897299", bronze: "#967345" },
+  dark: { blue: "#9AAFE0", violet: "#B9A1CC", bronze: "#D4B381" },
+} as const;

@@ -31,6 +31,33 @@ const mk = async (fields, creators) => {
 };
 const trash = [];
 
+/* ---------- statistics: read-only aggregation and bounded title lookup ---------- */
+const statsEntries = [...dev.readingStore.entries()];
+const statsEncode = (entries) =>
+  JSON.stringify(entries, (_key, value) =>
+    value instanceof Map ? [...value] : value,
+  );
+const statsBefore = statsEncode(statsEntries);
+const statsLookup = Zotero.Items.getByLibraryAndKey;
+let statsLookups = 0;
+try {
+  Zotero.Items.getByLibraryAndKey = function (...args) {
+    statsLookups++;
+    return statsLookup.apply(this, args);
+  };
+  const snapshot = dev.stats.collectStats();
+  check(
+    "stats.readOnlySnapshot",
+    statsBefore === statsEncode([...dev.readingStore.entries()]),
+  );
+  check(
+    "stats.boundedTitleLookup",
+    statsLookups === snapshot.topItems.length && statsLookups <= 12,
+  );
+} finally {
+  Zotero.Items.getByLibraryAndKey = statsLookup;
+}
+
 /* ---------- 0. app shutdown disables delayed sweep recovery ---------- */
 // Running APP_SHUTDOWN would destroy this probe's own transport, so pin the
 // two guards non-destructively here. The real close path is exercised by the
