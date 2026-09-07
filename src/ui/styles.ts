@@ -214,63 +214,73 @@ export function registerStyles(win: Window) {
     /* Zotero styles #zotero-tag-selector with display:flex, which beats the
        UA sheet's [hidden]{display:none} — so hiding it needs our own rule. */
     #zotero-tag-selector[hidden] { display: none !important; }
-    .zest-tagtree { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; }
-    .zest-tagtree[hidden] { display: none; }
+    .zest-tagtree { display:flex; flex-direction:column; min-height:0; min-width:0; flex:1 1 auto; overflow:hidden; color:var(--fill-primary); }
+    .zest-tagtree, .zest-tagtree * { box-sizing:border-box; }
+    .zest-tagtree[hidden], .zest-tagtree [hidden] { display:none; }
     /* on the "All" tab our root is only the tab row — the native tag list
        below it needs every remaining pixel */
     .zest-tagtree.zest-tagtree-baronly { flex: 0 0 auto; }
-    /* the bar's children set display themselves, which outranks the UA rule
-       for [hidden] — without this the tree-only controls keep painting on the
-       flat tab */
-    .zest-tagtree-bar > [hidden], .zest-tagtree-body[hidden] { display: none; }
     .zest-tagtree-tabs {
-      display: flex; flex: 0 0 auto; margin-inline-end: 4px; padding: 1px;
-      gap: 1px; border-radius: 5px; background-color: var(--fill-quinary);
+      display:flex; flex:1 1 auto; min-width:0; padding:2px; gap:2px;
+      border-radius:7px; background-color:var(--fill-quinary);
     }
-    /* icon tabs: the glyphs differ only in indentation (nested vs flat), and
-       both are stroked in currentColor, so they read on either theme */
     .zest-tagtree-tab {
-      appearance: none; border: 0; background-color: transparent; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      width: 22px; height: 18px; padding: 0; border-radius: 4px;
-      color: var(--fill-secondary);
+      appearance:none; border:1px solid transparent; background-color:transparent; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; flex:1 1 auto; min-width:0;
+      gap:3px; min-height:24px; margin:0; padding:2px 3px; border-radius:5px;
+      color:var(--fill-secondary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.846);
     }
+    .zest-tagtree-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .zest-tagtree-tab:hover { color: var(--fill-primary); }
     .zest-tagtree-tab.selected {
       background-color: var(--material-background, var(--fill-quarternary));
-      color: var(--zest-accent-strong);
+      color:var(--fill-primary); border-color:var(--fill-quinary); font-weight:600;
     }
     .zest-tagtree-tab:focus-visible {
-      outline: 2px solid var(--zest-accent); outline-offset: -2px;
+      outline:2px solid var(--fill-secondary); outline-offset:-2px;
     }
     .zest-tagtree-bar {
-      display: flex; align-items: center; gap: 4px; padding: 6px; flex-wrap: nowrap;
-      border-bottom: 1px solid var(--fill-quinary);
+      display:flex; align-items:center; gap:3px; padding:5px 7px 3px; flex:0 0 auto; min-width:0;
     }
     .zest-tagtree-btn {
-      appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
-      background-color: transparent; color: var(--fill-secondary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      appearance:none; border:1px solid transparent; border-radius:5px; margin:0; padding:0;
+      width:25px; height:25px; flex:0 0 auto; justify-content:center; cursor:pointer;
+      background-color:transparent; color:var(--fill-secondary); box-shadow:none;
     }
     .zest-tagtree-btn:hover { background-color: var(--fill-quinary); }
+    .zest-tagtree-btn:disabled { opacity:.45; cursor:default; }
+    .zest-tagtree-searchbar {
+      display:flex; align-items:center; gap:5px; flex:0 0 auto; min-width:0;
+      margin:2px 8px 5px; padding:1px 6px; border:1px solid var(--fill-quinary);
+      border-radius:6px; background-color:var(--material-background,transparent); color:var(--fill-secondary);
+    }
+    .zest-tagtree-searchbar:focus-within { border-color:var(--fill-secondary); }
     .zest-tagtree-search {
-      flex: 1 1 auto; min-width: 0; margin: 0 2px; padding: 4px 7px;
-      border: 1px solid var(--fill-quinary);
-      border-radius: 4px; background-color: var(--material-background, transparent);
-      color: var(--fill-primary); font-size: calc(var(--zotero-font-size, 13px) * .923);
+      appearance:none; flex:1 1 auto; width:0; min-width:0; margin:0; padding:4px 0;
+      border:0; outline:none; background-color:transparent; box-shadow:none;
+      color:var(--fill-primary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.923);
     }
-    .zest-tagtree-count { color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); }
-    .zest-tagtree-body { flex: 1 1 auto; overflow: auto; padding: 4px 3px 8px; }
+    .zest-tagtree-searchbar .zest-search-clear { width:19px; height:19px; }
+    .zest-tagtree-scroll { flex:1 1 auto; min-height:0; min-width:0; overflow:auto; border-top:1px solid var(--fill-quinary); }
+    .zest-tagtree-selection { display:flex; align-items:center; gap:5px; padding:5px 8px; border-bottom:1px solid var(--fill-quinary); }
+    .zest-tagtree-count { flex:0 0 auto; white-space:nowrap; color:var(--fill-secondary); font-size:calc(var(--zotero-font-size,13px)*.846); }
+    .zest-tagtree-chips { display:flex; flex:1 1 auto; gap:4px; min-width:0; overflow:auto; scrollbar-width:thin; }
+    .zest-tagtree-chip { appearance:none; display:inline-flex; align-items:center; flex:0 0 auto; max-width:100%; gap:6px; margin:0; padding:3px 6px; border:1px solid var(--fill-quinary); border-radius:5px; background-color:var(--fill-quinary); color:var(--fill-primary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.846); cursor:pointer; box-shadow:none; }
+    .zest-tagtree-chip span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .zest-tagtree-chip:hover { border-color:var(--fill-tertiary); }
+    .zest-tagtree-body { padding:4px 6px 6px; }
     .zest-tagtree-row {
-      display: flex; align-items: center; gap: 5px; padding: 3px 7px 3px 0;
-      cursor: pointer; border-radius: 4px; white-space: nowrap;
-      font-size: calc(var(--zotero-font-size, 13px) * .923);
+      display:flex; align-items:center; min-width:0; gap:5px; min-height:26px;
+      padding:3px 5px 3px calc(3px + var(--zest-tag-depth,0)*11px);
+      border:1px solid transparent; cursor:pointer; border-radius:5px; white-space:nowrap;
+      font-size:calc(var(--zotero-font-size,13px)*.923);
     }
+    .zest-tagtree-branch .zest-tagtree-label { font-weight:550; }
     .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
     .zest-tagtree-row:focus-visible {
-      outline: 2px solid var(--zest-accent-strong); outline-offset: -2px;
+      outline:2px solid var(--fill-secondary); outline-offset:-2px;
     }
-    .zest-tagtree-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
+    .zest-tagtree-row.selected { background-color:var(--fill-quinary); border-color:var(--fill-quarternary); color:var(--fill-primary); font-weight:600; }
     /* "not in this view" is a hint, not a disabled state: dimming the whole
        row to .55 put the label near 2:1 against the pane background, which is
        unreadable. Grey the TEXT one step instead and keep it legible. */
@@ -281,10 +291,11 @@ export function registerStyles(win: Window) {
     .zest-tagtree-row.selected .zest-tagtree-twisty { color: inherit; }
     .zest-tagtree-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
     .zest-tagtree-emoji { flex: 0 0 auto; }
-    .zest-tagtree-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
-    .zest-tagtree-num { flex: 0 0 auto; color: var(--fill-secondary); font-variant-numeric: tabular-nums; }
+    .zest-tagtree-label { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    .zest-tagtree-num { flex:0 0 auto; min-width:20px; padding:1px 4px; border-radius:4px; text-align:center; background-color:var(--fill-quinary); color:var(--fill-secondary); font-size:.85em; font-variant-numeric:tabular-nums; }
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
-    .zest-tagtree-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
+    .zest-tagtree-empty { padding:8px; color:var(--fill-secondary); font-size:calc(var(--zotero-font-size,13px)*.923); line-height:1.5; }
+    .zest-tagtree-retry { display:block; margin:6px 0 0; padding:3px 8px; color:var(--fill-primary); border:1px solid var(--fill-quinary); border-radius:5px; background-color:var(--material-background,transparent); box-shadow:none; }
 
     /* toolbar button: Zotero's own chrome, one extra "graph is open" state.
        fill:currentColor + context-properties is exactly what Zotero does

@@ -391,13 +391,18 @@ async function onStartup() {
       ),
       // the tag cache keeps one list per mode, but a mode change must not
       // leave a filter running on lists computed the other way
-      Zotero.Prefs.registerObserver(
+      ...[
         `${P}.nestedTags.matchChildTags`,
-        () => {
-          clearTagCache();
-          refreshAllTagTrees();
-        },
-        true,
+        "extensions.zotero.tagSelector.showAutomatic",
+      ].map((p) =>
+        Zotero.Prefs.registerObserver(
+          p,
+          () => {
+            clearTagCache();
+            refreshAllTagTrees();
+          },
+          true,
+        ),
       ),
       ...["graph.mode", "graph.maxNodes"].map((p) =>
         Zotero.Prefs.registerObserver(

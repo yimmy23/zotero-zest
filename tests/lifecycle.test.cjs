@@ -154,7 +154,10 @@ function baseHarness(Zotero, prefs = {}, clock = clockFixture(), mocks = {}) {
       "src/utils/timers.ts": clock,
       "src/utils/locale.ts": { getString: (key) => key },
       "src/utils/guard.ts": { guard: (_name, fn) => fn },
-      "src/ui/icons.ts": { iconButton: (doc) => doc.createElement("button") },
+      "src/ui/icons.ts": {
+        iconButton: (doc) => doc.createElement("button"),
+        icon: (doc) => doc.createElement("svg"),
+      },
       ...mocks,
     },
   });

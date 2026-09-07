@@ -294,6 +294,28 @@ if (rows.length > 1) {
   );
 }
 // the predicate must not clear the tag cache on every pass
+{
+  const focus = doc.querySelector(".zest-tagtree-row");
+  if (focus) {
+    focus.focus();
+    const path = focus.getAttribute("data-tag");
+    await dev.tagTreeUI.refreshTagTree(win);
+    await delay(500);
+    check(
+      "tagtree.refreshPreservesFocus",
+      doc.activeElement?.getAttribute("data-tag") === path,
+    );
+  }
+  check(
+    "tagtree.namedControls",
+    !!doc.querySelector(".zest-tagtree-search")?.getAttribute("aria-label") &&
+      doc.querySelectorAll(".zest-tagtree-tab span").length === 2,
+  );
+  check(
+    "tagtree.multiselect",
+    body?.getAttribute("aria-multiselectable") === "true",
+  );
+}
 check(
   "tagtree.filterKeepsCache",
   typeof dev.tagScope?.invalidateTagCache === "function",
@@ -339,8 +361,15 @@ check(
   probeTags().join("|"),
 );
 
+doc.querySelector('.zest-tagtree-row[data-tag="ZestTabAlpha"]')?.click();
+await delay(500);
+check("tagpane.selectionChip", !!doc.querySelector(".zest-tagtree-chip"));
 setPref("nestedTags.tab", "native");
 await delay(800);
+check(
+  "tagpane.preferenceClearsSelection",
+  dev.tagTreeUI.selectedTagNames(win).length === 0,
+);
 tabbed.addTag("#ZestTabGamma");
 await tabbed.saveTx();
 await delay(2000);

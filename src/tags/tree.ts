@@ -39,7 +39,18 @@ export interface TagNode {
 
 export type TagSortMode = "name" | "count";
 
-export const LINK_SYMBOLS = ["/", "\\", ".", "-", "_", ":", ">"] as const;
+export const LINK_SYMBOLS = [
+  "/",
+  "\\",
+  ".",
+  "-",
+  "_",
+  ":",
+  ">",
+  "+",
+  "~",
+  "<",
+] as const;
 export type LinkSymbol = (typeof LINK_SYMBOLS)[number];
 
 function newNode(name: string, segment: string, depth: number): TagNode {

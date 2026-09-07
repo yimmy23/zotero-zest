@@ -122,6 +122,15 @@ menu-graph =
     .label = Graph panel
 
 # ---- nested tag tree ----
+tags-view-label = Tag view
+tags-search-clear = Clear search
+tags-remove-selection = Remove filter: { $path }
+tags-expand-all = Expand all groups
+tags-collapse-all = Collapse all groups
+tags-loading = Loading tags…
+tags-load-failed = Tags could not be loaded
+tags-retry = Retry
+tags-no-results = No matching tags. Try another keyword.
 tags-sort-tip = Sort order — click to cycle
 tags-sort-az = Sorting: tag A→Z
 tags-sort-za = Sorting: tag Z→A

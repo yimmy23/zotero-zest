@@ -123,6 +123,15 @@ menu-graph =
 
 # ---- nested tag tree ----
 tags-sort-tip = 排序方式——点击切换
+tags-view-label = 标签视图
+tags-search-clear = 清除搜索
+tags-remove-selection = 取消筛选：{ $path }
+tags-expand-all = 展开全部分组
+tags-collapse-all = 折叠全部分组
+tags-loading = 正在加载标签…
+tags-load-failed = 标签暂时无法加载
+tags-retry = 重试
+tags-no-results = 没有匹配的标签，试试其他关键词
 tags-sort-az = 排序：标签 A→Z
 tags-sort-za = 排序：标签 Z→A
 tags-sort-freq-desc = 排序：使用最多在前

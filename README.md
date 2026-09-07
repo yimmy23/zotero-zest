@@ -158,6 +158,10 @@ emoji（不占 Zotero 那 9 个颜色位）。全程可用键盘：方向键移�
 
 默认是关的，随时可以切回 Zotero 原生标签选择器。
 
+「嵌套 / 全部」切换与搜索栏独立显示；已选分组可逐个移除，也可一次清空。刷新保留键盘焦点和滚动位置，
+搜索支持 Esc 清空。计数按文献去重，不因展开附件或同一标签出现在多条标注中而重复计数；自动标签沿用
+Zotero 的显示设置。分支中新建或删除标签后，当前筛选随之更新，切回原生视图或关闭嵌套标签树会清除分支筛选。
+
 ## 列视图（保存列布局）
 
 把当前的列组合存成一个命名视图（比如「筛文献」「写作」「投标书」），之后从**列标题右键菜单**一键切换，
@@ -435,6 +439,12 @@ For hierarchical tags (`#Method/Statistics/Survival`), turn on the nested tag tr
 filter can only AND exact names. Search, sort, collapse, rename a whole branch (with a merge warning),
 and colour/emoji rules beyond Zotero's nine colour slots. Fully keyboard operable. Off by default, and
 one click back to Zotero's own selector.
+
+The compact view tabs keep search usable in narrow sidebars. Selected branches appear as removable
+chips; use arrows to move through the hierarchy and Escape to clear tag search. Counts represent
+distinct papers or standalone attachments, including child annotation tags when enabled. Automatic
+tags follow Zotero's own switch. New descendants update an active branch filter; switching to the
+native view, disabling the tree, or changing libraries clears the nested selection.
 
 ## Column views
 

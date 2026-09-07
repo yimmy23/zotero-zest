@@ -14,16 +14,16 @@ import {
 } from "./scope";
 import {
   buildTagTree,
-  branchTagNames,
+  tagNamesOf,
   walk,
   type TagNode,
   type TagSortMode,
   LINK_SYMBOLS,
 } from "./tree";
-import { resolveTagStyle } from "./rules";
+import { resolveTagStyle, ruleFor } from "./rules";
 import { setItemFilter, refreshItemView, canFilter } from "../views/itemFilter";
 import { showTagContextMenu } from "./menu";
-import { iconButton, type IconName } from "../ui/icons";
+import { icon, iconButton, type IconName } from "../ui/icons";
 import { createDOMOwnership } from "../utils/domOwnership";
 
 /**
@@ -54,6 +54,11 @@ interface TreeState {
   query: string;
   inView: Set<string>;
   libraryID: number;
+  /** Branch metadata is computed once per snapshot, not for every row click. */
+  branches: Map<string, { node: TagNode; names: Set<string>; inView: boolean }>;
+  filterKey: string;
+  loading: boolean;
+  failed: boolean;
   refreshTimer?: number;
   searchTimer?: number;
   /** display path of the row that owns the tab stop (roving tabindex) */
@@ -132,6 +137,8 @@ function treeActive(): boolean {
  */
 export function syncTagPanes() {
   for (const w of states.keys()) {
+    // Preference observers and tab clicks must have the same hand-back path.
+    if (!treeActive()) clearSelection(w);
     applyVisibility(w);
     scheduleRefresh(w, 0);
   }
@@ -139,9 +146,6 @@ export function syncTagPanes() {
 
 export function setTagPaneMode(_win: Window, mode: TagPaneMode) {
   setPref("nestedTags.tab", mode);
-  // the tree is about to leave the screen IN EVERY WINDOW (the pref is
-  // global); a filter whose cause is invisible is worse than no filter
-  if (mode === "native") for (const w of states.keys()) clearSelection(w);
   syncTagPanes();
 }
 
@@ -203,18 +207,18 @@ export function installTagTree(win: Window) {
     fn: () => void,
   ) => {
     const b = iconButton(doc, name, tip, `zest-tagtree-btn ${cls}`);
+    b.type = "button";
     b.addEventListener("click", guard("tag tree button", fn));
     return b;
   };
 
-  // the tab strip rides in the toolbar row rather than adding a second row:
-  // the tag pane is short and a whole row of chrome for two words is a poor
-  // trade. On the native tab everything after it is hidden, so the row shrinks
-  // to just the tabs.
+  // Keep switching/actions separate from search: the native sidebar can be
+  // just 200px wide. One crowded row leaves only a few characters to type in.
   const tabs = new Map<TagPaneMode, HTMLElement>();
   const tabStrip = doc.createElement("div");
   tabStrip.className = "zest-tagtree-tabs";
   tabStrip.setAttribute("role", "tablist");
+  tabStrip.setAttribute("aria-label", getString("tags-view-label"));
   for (const [mode, iconName, key] of [
     ["tree", "tagnest", "tags-tab-tree"],
     ["native", "list", "tags-tab-all"],
@@ -226,6 +230,10 @@ export function installTagTree(win: Window) {
       "zest-tagtree-tab",
       13,
     );
+    tab.type = "button";
+    const text = doc.createElement("span");
+    text.textContent = getString(key);
+    tab.appendChild(text);
     tab.setAttribute("role", "tab");
     tab.addEventListener(
       "click",
@@ -240,9 +248,16 @@ export function installTagTree(win: Window) {
   tabStrip.addEventListener(
     "keydown",
     guard("tag pane tabs", (ev: KeyboardEvent) => {
-      if (ev.key !== "ArrowLeft" && ev.key !== "ArrowRight") return;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(ev.key)) return;
       ev.preventDefault();
-      const next: TagPaneMode = tagPaneMode() === "tree" ? "native" : "tree";
+      const next: TagPaneMode =
+        ev.key === "Home"
+          ? "tree"
+          : ev.key === "End"
+            ? "native"
+            : tagPaneMode() === "tree"
+              ? "native"
+              : "tree";
       setTagPaneMode(win, next);
       tabs.get(next)?.focus();
     }),
@@ -270,25 +285,70 @@ export function installTagTree(win: Window) {
   search.className = "zest-tagtree-search";
   search.type = "search";
   search.placeholder = getString("tags-search-placeholder");
+  search.setAttribute("aria-label", getString("tags-search-placeholder"));
+  const searchBar = doc.createElement("div");
+  searchBar.className = "zest-tagtree-searchbar";
+  searchBar.appendChild(icon(doc, "search", 13));
+  searchBar.appendChild(search);
+  const resetSearch = mkButton(
+    "zest-search-clear",
+    "clear",
+    getString("tags-search-clear"),
+    () => {
+      search.value = "";
+      updateSearch();
+      search.focus();
+    },
+  );
+  resetSearch.hidden = true;
+  searchBar.appendChild(resetSearch);
+  treeOnly.push(searchBar);
+  const updateSearch = () => {
+    const state = states.get(win);
+    if (!state) return;
+    if (state.searchTimer) clearTimeout(state.searchTimer);
+    state.searchTimer = undefined;
+    state.query = search.value.trim().toLowerCase();
+    resetSearch.hidden = !search.value;
+    if (treeActive()) render(state);
+  };
   search.addEventListener(
     "input",
     guard("tag search", () => {
       const state = states.get(win);
       if (!state) return;
-      // debounce: every keystroke rebuilds the whole tree body
       if (state.searchTimer) clearTimeout(state.searchTimer);
-      state.searchTimer = setTimeout(() => {
-        state.searchTimer = undefined;
-        state.query = search.value.trim().toLowerCase();
-        render(state);
-      }, 150);
+      resetSearch.hidden = !search.value;
+      state.searchTimer = setTimeout(updateSearch, 150);
     }),
   );
-  addTreeOnly(search);
+  search.addEventListener(
+    "keydown",
+    guard("tag search keys", (ev: KeyboardEvent) => {
+      if (ev.key === "Escape" && search.value) {
+        ev.preventDefault();
+        search.value = "";
+        updateSearch();
+      } else if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        updateSearch();
+        body
+          .querySelector<HTMLElement>('.zest-tagtree-row[tabindex="0"]')
+          ?.focus();
+      }
+    }),
+  );
+  const selectionBar = doc.createElement("div");
+  selectionBar.className = "zest-tagtree-selection";
+  selectionBar.hidden = true;
   const count = doc.createElement("span");
   count.className = "zest-tagtree-count";
-  addTreeOnly(count);
-  addTreeOnly(
+  count.setAttribute("role", "status");
+  selectionBar.appendChild(count);
+  const chips = doc.createElement("div");
+  chips.className = "zest-tagtree-chips";
+  selectionBar.appendChild(chips);
+  selectionBar.appendChild(
     mkButton("zest-clear", "clear", getString("tags-clear-tip"), () =>
       clearSelection(win),
     ),
@@ -297,9 +357,15 @@ export function installTagTree(win: Window) {
   const body = doc.createElement("div");
   body.className = "zest-tagtree-body";
   installTreeKeys(win, body);
+  const scroller = doc.createElement("div");
+  scroller.className = "zest-tagtree-scroll";
+  scroller.appendChild(selectionBar);
+  scroller.appendChild(body);
+  treeOnly.push(scroller);
 
   root.appendChild(bar);
-  root.appendChild(body);
+  root.appendChild(searchBar);
+  root.appendChild(scroller);
   // above the native selector: the tab row has to head the pane in both
   // modes, and our root is still a sibling, never inside the React root
   container.insertBefore(root, native);
@@ -315,6 +381,10 @@ export function installTagTree(win: Window) {
     query: "",
     inView: new Set(),
     libraryID: 1,
+    branches: new Map(),
+    filterKey: "",
+    loading: false,
+    failed: false,
     tabs,
     treeOnly,
     viewListeners: [],
@@ -442,6 +512,18 @@ function applyVisibility(win: Window) {
   state.root.classList.toggle("zest-tagtree-baronly", on && !tree);
   state.body.hidden = !tree;
   for (const el of state.treeOnly) el.hidden = !tree;
+  const selectionBar = state.root.querySelector<HTMLElement>(
+    ".zest-tagtree-selection",
+  );
+  if (selectionBar) selectionBar.hidden = !tree || !state.selection.size;
+  if (!tree && state.searchTimer) {
+    clearTimeout(state.searchTimer);
+    state.searchTimer = undefined;
+    const search = state.root.querySelector<HTMLInputElement>(
+      ".zest-tagtree-search",
+    );
+    state.query = search?.value.trim().toLowerCase() || "";
+  }
   for (const [mode, tab] of state.tabs) {
     const active = on && tagPaneMode() === mode;
     tab.classList.toggle("selected", active);
@@ -530,6 +612,11 @@ export function uninstallAllTagOptionsMenus() {
 function scheduleRefresh(win: Window, delay = 300) {
   const state = states.get(win);
   if (!state || !ownership.owns(state.native, NATIVE_VISIBILITY)) return;
+  // Invalidate on the event, not 300ms later when its debounce runs. An old
+  // collection's async scope must not paint in the meantime (or after a
+  // quick native → tree round trip).
+  if (refreshing.has(win))
+    refreshGeneration.set(win, (refreshGeneration.get(win) ?? 0) + 1);
   if (state.refreshTimer) clearTimeout(state.refreshTimer);
   state.refreshTimer = undefined;
   if (!treeActive()) return;
@@ -555,10 +642,18 @@ export async function refreshTagTree(win: Window): Promise<void> {
     refreshGeneration.set(win, (refreshGeneration.get(win) ?? 0) + 1);
     return inFlight;
   }
+  const state = states.get(win);
+  if (state?.refreshTimer) {
+    clearTimeout(state.refreshTimer);
+    state.refreshTimer = undefined;
+  }
+  refreshGeneration.set(win, 0);
   const run = runTagTreeRefresh(win).finally(() => {
+    // An old window/copy's promise must not remove a newer pass's lock.
+    if (refreshing.get(win) !== run) return;
     refreshing.delete(win);
     const pending = refreshGeneration.get(win) ?? 0;
-    if (pending > 0) {
+    if (pending > 0 && !states.get(win)?.refreshTimer) {
       refreshGeneration.set(win, 0);
       void refreshTagTree(win);
     }
@@ -575,21 +670,33 @@ async function runTagTreeRefresh(win: Window) {
     !ownership.owns(state.native, NATIVE_VISIBILITY)
   )
     return;
+  const libraryID = selectedLibraryID(win);
+  const cancelled = () =>
+    states.get(win) !== state ||
+    !treeActive() ||
+    !ownership.owns(state.native, NATIVE_VISIBILITY) ||
+    selectedLibraryID(win) !== libraryID ||
+    (refreshGeneration.get(win) ?? 0) > 0;
   try {
     const zp = (win as any).ZoteroPane;
-    const libraryID = selectedLibraryID(win);
+    if (state.libraryID !== libraryID) {
+      clearSelection(win);
+      state.collapsed.clear();
+      state.nodes = [];
+      state.branches.clear();
+      state.focusPath = undefined;
+      state.libraryID = libraryID;
+    }
+    state.loading = true;
+    state.failed = false;
+    render(state);
     const rows: Zotero.Item[] = (zp?.itemsView?.getSortedItems?.() ??
       []) as Zotero.Item[];
     const viewItems = rows.filter(
       (i) => i instanceof Zotero.Item && !i.isAnnotation?.(),
     );
-    const scope = await collectTagScope(libraryID, viewItems);
-    if (
-      states.get(win) !== state ||
-      !treeActive() ||
-      !ownership.owns(state.native, NATIVE_VISIBILITY)
-    )
-      return;
+    const scope = await collectTagScope(libraryID, viewItems, cancelled);
+    if (cancelled()) return;
     const { mode, descending } = sortMode();
     state.libraryID = libraryID;
     state.inView = scope.inView;
@@ -599,15 +706,52 @@ async function runTagTreeRefresh(win: Window) {
       descending,
       matcher: parseTagRule(getPref("textTags.match") as string),
     });
+    state.branches.clear();
+    const indexBranch = (node: TagNode): Set<string> => {
+      // A single post-order pass per snapshot. Subsequent selections, search
+      // and expansion reuse these sets rather than re-walking each branch.
+      const names = new Set(tagNamesOf(node));
+      for (const child of node.children)
+        for (const name of indexBranch(child)) names.add(name);
+      state.branches.set(node.name, {
+        node,
+        names,
+        inView: [...names].some((n) => state.inView.has(n)),
+      });
+      return names;
+    };
+    for (const node of state.nodes) indexBranch(node);
+    for (const path of state.collapsed.keys())
+      if (!state.branches.has(path)) state.collapsed.delete(path);
+    for (const path of state.selection.keys()) {
+      const branch = state.branches.get(path);
+      if (branch) state.selection.set(path, branch.names);
+      else state.selection.delete(path);
+    }
+    state.loading = false;
+    applyTagFilter(state);
     render(state);
   } catch (e) {
+    if (cancelled()) return;
     ztoolkit.log("[tags] refresh failed", e);
+    state.loading = false;
+    state.failed = true;
+    render(state);
   }
 }
 
 function render(state: TreeState) {
   const doc = state.win.document;
   const body = state.body;
+  const hadFocus = !!doc.activeElement && body.contains(doc.activeElement);
+  // In a background chrome window focus() can update activeElement without
+  // dispatching focus yet. Read the actual row before replacing its DOM.
+  if (hadFocus) {
+    const path = doc.activeElement?.getAttribute("data-tag");
+    if (path) state.focusPath = path;
+  }
+  const scroller = body.parentElement!;
+  const scrollTop = scroller.scrollTop;
   body.textContent = "";
   // Zotero's own "Display All Tags in This Library" switch (tag selector ≡
   // menu) decides this for the tree too — one setting, not two
@@ -617,24 +761,29 @@ function render(state: TreeState) {
   );
 
   const query = state.query;
+  const matching = new Map<TagNode, boolean>();
   const matches = (node: TagNode): boolean => {
     if (!query) return true;
-    if (node.name.toLowerCase().includes(query)) return true;
-    return node.children.some(matches);
+    if (!matching.has(node))
+      matching.set(
+        node,
+        node.name.toLowerCase().includes(query) || node.children.some(matches),
+      );
+    return matching.get(node)!;
   };
 
   const rows: HTMLElement[] = [];
   const addNode = (node: TagNode, depth: number) => {
     if (!matches(node)) return;
-    const realNames = branchTagNames(node);
-    const inView = [...realNames].some((n) => state.inView.has(n));
+    const { names: realNames, inView } = state.branches.get(node.name)!;
     const selected = state.selection.has(node.name);
     // a search always opens the branches that contain a hit
     const collapsed = query ? false : (state.collapsed.get(node.name) ?? true);
 
     const row = doc.createElement("div");
     row.className = "zest-tagtree-row";
-    row.style.paddingInlineStart = `${6 + depth * 14}px`;
+    row.style.setProperty("--zest-tag-depth", String(Math.min(depth, 7)));
+    row.classList.toggle("zest-tagtree-branch", !!node.children.length);
     if (selected) row.classList.add("selected");
     if (!inView && !selected) row.classList.add("dim");
     row.setAttribute("data-tag", node.name);
@@ -648,6 +797,9 @@ function render(state: TreeState) {
       row.setAttribute("aria-expanded", collapsed ? "false" : "true");
     }
     row.tabIndex = -1;
+    row.addEventListener("focus", () => {
+      state.focusPath = node.name;
+    });
 
     const twisty = doc.createElement("span");
     twisty.className = "zest-tagtree-twisty";
@@ -657,8 +809,11 @@ function render(state: TreeState) {
         "click",
         guard("tag twisty", (ev: Event) => {
           ev.stopPropagation();
+          if (state.loading) return;
+          state.focusPath = node.name;
           state.collapsed.set(node.name, !collapsed);
           render(state);
+          focusTreePath(state, node.name);
         }),
       );
     }
@@ -670,7 +825,7 @@ function render(state: TreeState) {
         node.color ? [[node.name, { color: node.color, position: 0 }]] : [],
       ),
     );
-    if (node.color || style.emoji) {
+    if (node.color || style.emoji || ruleFor(node.name)?.color) {
       const dot = doc.createElement("span");
       if (style.emoji) {
         dot.className = "zest-tagtree-emoji";
@@ -689,15 +844,16 @@ function render(state: TreeState) {
 
     const num = doc.createElement("span");
     num.className = "zest-tagtree-num";
-    num.textContent = node.total ? String(node.total) : "";
+    num.textContent = String(node.total);
     row.appendChild(num);
 
     row.title = getString("tags-row-tip", {
       args: { path: node.name, items: node.total, tags: realNames.size },
     });
 
-    const clickable = showAll || inView || selected;
+    const clickable = !state.loading && (showAll || inView || selected);
     if (!clickable) row.classList.add("disabled");
+    row.setAttribute("aria-disabled", String(!clickable));
     row.addEventListener(
       "click",
       guard("tag click", () => {
@@ -724,25 +880,113 @@ function render(state: TreeState) {
     if (!collapsed) for (const c of node.children) addNode(c, depth + 1);
   };
 
-  for (const n of state.nodes) addNode(n, 0);
+  if (!state.failed) for (const n of state.nodes) addNode(n, 0);
   for (const r of rows) body.appendChild(r);
 
   body.setAttribute("role", "tree");
   body.setAttribute("aria-label", getString("tags-tree-label"));
+  body.setAttribute("aria-multiselectable", "true");
+  body.setAttribute("aria-busy", String(state.loading));
   // the remembered row keeps the tab stop across re-renders; if it is gone
   // (collapsed away, filtered out) the first row takes it
-  const tabStop =
-    rows.find((r) => r.getAttribute("data-tag") === state.focusPath) ?? rows[0];
+  let focusPath = state.focusPath;
+  let tabStop = rows.find((r) => r.getAttribute("data-tag") === focusPath);
+  while (!tabStop && focusPath?.includes(linkSymbol())) {
+    focusPath = focusPath.slice(0, focusPath.lastIndexOf(linkSymbol()));
+    tabStop = rows.find((r) => r.getAttribute("data-tag") === focusPath);
+  }
+  tabStop ??= rows[0];
   if (tabStop) {
     tabStop.tabIndex = 0;
     state.focusPath = tabStop.getAttribute("data-tag") || undefined;
+    if (hadFocus) tabStop.focus({ preventScroll: true });
   }
 
   if (!rows.length) {
     const empty = doc.createElement("div");
     empty.className = "zest-tagtree-empty";
-    empty.textContent = getString("tags-empty");
+    empty.textContent = getString(
+      state.loading
+        ? "tags-loading"
+        : state.failed
+          ? "tags-load-failed"
+          : query
+            ? "tags-no-results"
+            : "tags-empty",
+    );
+    if (state.failed) {
+      const retry = doc.createElement("button");
+      retry.type = "button";
+      retry.className = "zest-tagtree-retry";
+      retry.textContent = getString("tags-retry");
+      retry.addEventListener(
+        "click",
+        guard("tag retry", () => void refreshTagTree(state.win)),
+      );
+      empty.appendChild(retry);
+    }
     body.appendChild(empty);
+  }
+  scroller.scrollTop = scrollTop;
+  syncControls(state);
+}
+
+function syncControls(state: TreeState) {
+  const doc = state.win.document;
+  const sort = state.root.querySelector<HTMLButtonElement>(".zest-sort");
+  if (sort) {
+    const mode =
+      SORTS.find((mode) => mode === getPref("nestedTags.sort")) ?? "az";
+    sort.title = getString(`tags-sort-${mode}`);
+    sort.setAttribute("aria-label", sort.title);
+    sort.disabled = state.loading;
+  }
+  const collapse =
+    state.root.querySelector<HTMLButtonElement>(".zest-collapse");
+  if (collapse) {
+    const branches = [...state.branches.values()].filter(
+      (b) => b.node.children.length,
+    );
+    const open = branches.some(
+      (b) => state.collapsed.get(b.node.name) === false,
+    );
+    collapse.title = getString(open ? "tags-collapse-all" : "tags-expand-all");
+    collapse.setAttribute("aria-label", collapse.title);
+    collapse.disabled = !branches.length || !!state.query || state.loading;
+  }
+  const selected = state.root.querySelector<HTMLElement>(
+    ".zest-tagtree-selection",
+  );
+  if (selected) selected.hidden = !treeActive() || !state.selection.size;
+  const chips = state.root.querySelector<HTMLElement>(".zest-tagtree-chips");
+  if (chips) {
+    const focused = doc.activeElement?.getAttribute("data-selected-tag");
+    chips.textContent = "";
+    for (const path of state.selection.keys()) {
+      const chip = doc.createElement("button");
+      chip.type = "button";
+      chip.className = "zest-tagtree-chip";
+      chip.setAttribute("data-selected-tag", path);
+      chip.title = getString("tags-remove-selection", { args: { path } });
+      chip.setAttribute("aria-label", chip.title);
+      const text = doc.createElement("span");
+      text.textContent = path;
+      chip.appendChild(text);
+      chip.appendChild(icon(doc, "clear", 10));
+      chip.addEventListener(
+        "click",
+        guard("tag remove selection", () => {
+          state.selection.delete(path);
+          applyTagFilter(state);
+          render(state);
+          state.root
+            .querySelector<HTMLInputElement>(".zest-tagtree-search")
+            ?.focus();
+        }),
+      );
+      chips.appendChild(chip);
+      if (focused === path) chip.focus({ preventScroll: true });
+    }
   }
 
   const counter = state.root.querySelector(".zest-tagtree-count");
@@ -751,6 +995,14 @@ function render(state: TreeState) {
       ? getString("tags-selected", { args: { count: state.selection.size } })
       : "";
   }
+}
+
+function focusTreePath(state: TreeState, path: string) {
+  // No selector interpolation: imported labels may contain quotes/newlines.
+  const row = [
+    ...state.body.querySelectorAll<HTMLElement>(".zest-tagtree-row"),
+  ].find((r) => r.getAttribute("data-tag") === path);
+  row?.focus();
 }
 
 /**
@@ -767,7 +1019,8 @@ function installTreeKeys(win: Window, body: HTMLElement) {
     "keydown",
     guard("tag keys", (ev: KeyboardEvent) => {
       const state = states.get(win);
-      if (!state) return;
+      if (!state || state.loading || ev.altKey || ev.ctrlKey || ev.metaKey)
+        return;
       const rows = [...body.querySelectorAll<HTMLElement>(".zest-tagtree-row")];
       if (!rows.length) return;
       const active = win.document.activeElement as HTMLElement | null;
@@ -800,34 +1053,39 @@ function installTreeKeys(win: Window, body: HTMLElement) {
           return;
         case "ArrowRight":
         case "ArrowLeft": {
-          if (current.getAttribute("aria-expanded") === null) return;
           ev.preventDefault();
-          state.collapsed.set(path, ev.key === "ArrowLeft");
-          state.focusPath = path;
-          render(state);
-          body
-            .querySelector<HTMLElement>(`[data-tag="${cssEscape(path)}"]`)
-            ?.focus();
+          const expanded = current.getAttribute("aria-expanded");
+          const level = Number(current.getAttribute("aria-level"));
+          if (ev.key === "ArrowRight") {
+            if (expanded === "false") {
+              state.collapsed.set(path, false);
+              render(state);
+              focusTreePath(state, path);
+            } else if (expanded === "true") focusRow(rows[index + 1]);
+          } else if (expanded === "true" && !state.query) {
+            state.collapsed.set(path, true);
+            render(state);
+            focusTreePath(state, path);
+          } else {
+            for (let i = index - 1; i >= 0; i--)
+              if (Number(rows[i].getAttribute("aria-level")) < level) {
+                focusRow(rows[i]);
+                break;
+              }
+          }
           return;
         }
         case "Enter":
         case " ":
           ev.preventDefault();
           current.click();
-          body
-            .querySelector<HTMLElement>(`[data-tag="${cssEscape(path)}"]`)
-            ?.focus();
+          focusTreePath(state, path);
           return;
         default:
           return;
       }
     }),
   );
-}
-
-/** CSS.escape is not on every chrome window; this covers our attribute use */
-function cssEscape(value: string): string {
-  return value.replace(/["\\]/g, "\\$&");
 }
 
 function toggleNode(state: TreeState, node: TagNode, realNames: Set<string>) {
@@ -841,7 +1099,8 @@ export function clearSelection(win: Window) {
   const state = states.get(win);
   if (!state) return;
   if (!state.selection.size) {
-    setItemFilter(win, "tags", null);
+    // No phantom refresh when the normal preference observer calls us twice.
+    if (state.filterKey) applyTagFilter(state);
     return;
   }
   state.selection.clear();
@@ -873,15 +1132,29 @@ function emitSelectionChange() {
 }
 
 function applyTagFilter(state: TreeState) {
-  emitSelectionChange();
   const groups = [...state.selection.values()].map((set) => new Set(set));
+  const withChildren = matchChildTags();
+  const showAutomatic =
+    Zotero.Prefs.get("extensions.zotero.tagSelector.showAutomatic", true) !==
+    false;
+  const link = linkSymbol();
+  const key = groups.length
+    ? JSON.stringify([
+        state.libraryID,
+        withChildren,
+        showAutomatic,
+        link,
+        [...state.selection].map(([path, names]) => [path, [...names].sort()]),
+      ])
+    : "";
+  if (key === state.filterKey) return;
+  state.filterKey = key;
+  emitSelectionChange();
   if (!groups.length) {
     setItemFilter(state.win, "tags", null);
     void refreshItemView(state.win);
     return;
   }
-  const withChildren = matchChildTags();
-  const link = linkSymbol();
   // per selected branch: the exact names as a set, the "under this tag"
   // prefixes as strings — built once, not per item per tag
   const tests = groups.map((names) => ({
@@ -895,7 +1168,7 @@ function applyTagFilter(state: TreeState) {
     // the entries that actually changed.
     return items.filter((item) => {
       try {
-        const tags = cachedTags(item, withChildren);
+        const tags = cachedTags(item, withChildren, showAutomatic);
         if (!tags.length) return false;
         // AND between branches, OR within a branch
         return tests.every(({ exact, prefixes }) =>
@@ -927,14 +1200,8 @@ function cycleSort(win: Window) {
   const next = SORTS[(i + 1) % SORTS.length];
   // the nestedTags.sort pref observer (hooks.ts) refreshes every tree
   setPref("nestedTags.sort", next);
-  try {
-    const btn = states
-      .get(win)
-      ?.root.querySelector(".zest-sort") as HTMLElement;
-    if (btn) btn.title = getString(`tags-sort-${next}`);
-  } catch {
-    // no button yet
-  }
+  const state = states.get(win);
+  if (state) syncControls(state);
 }
 
 function toggleAll(win: Window) {
@@ -990,16 +1257,19 @@ function startNotifier() {
         if (
           type === "tag" ||
           type === "item-tag" ||
+          type === "item" ||
           type === "collection-item"
         ) {
           // a renamed or deleted tag can touch any item; an item-tag event
           // names the items it touched
-          invalidateTagCache(type === "item-tag" ? ids : undefined);
+          invalidateTagCache(
+            type === "item-tag" || type === "item" ? ids : undefined,
+          );
           refreshAllTagTrees();
         }
       },
     },
-    ["tag", "item-tag", "setting", "collection-item"],
+    ["tag", "item-tag", "item", "setting", "collection-item"],
     `${config.addonRef}-tagtree`,
     101,
   );
