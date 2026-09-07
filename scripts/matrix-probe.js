@@ -248,6 +248,34 @@ try {
     addon.data.locale.current = new Localization(["zest-addon.ftl"], true);
     dev.matrix.render(w);
     await settled();
+    // Exercise labels updated after initial render, not just static translations.
+    d.querySelector(".zest-matrix-refresh").click();
+    await settled();
+    d.querySelector(".zest-matrix-next").click();
+    d.querySelector(".zest-matrix-copy-md").click();
+    await delay(100);
+    const chinese = lang === "zh-CN";
+    const text = (selector) => d.querySelector(selector).textContent.trim();
+    check(
+      lang + " static controls retain the selected language",
+      text(".zest-matrix-refresh") === (chinese ? "刷新" : "Refresh") &&
+        text(".zest-matrix-filter-toggle") === (chinese ? "筛选" : "Filters") &&
+        text(".zest-matrix-next") === (chinese ? "下一页" : "Next"),
+    );
+    check(
+      lang + " refresh and pagination retain the selected language",
+      (chinese ? /条标注$/ : /annotations$/).test(text(".zest-matrix-count")) &&
+        (chinese ? /^第 101–200 条 · 共/ : /^101–200 of/).test(
+          text(".zest-matrix-range"),
+        ),
+    );
+    check(
+      lang + " copy feedback retains the selected language",
+      text(".zest-matrix-copy-md") ===
+        (chinese ? "复制为 Markdown" : "Copy as Markdown") &&
+        (chinese ? /^已复制 / : /^Copied /).test(text(".zest-matrix-status")),
+    );
+    d.querySelector(".zest-matrix-previous").click();
     for (const width of [360, 480, 720, 1100]) {
       w.resizeTo(width, 800);
       d.documentElement.style.fontSize = "20px";
@@ -305,6 +333,7 @@ try {
   check("close cancels pending collection", w.closed);
   return report;
 } finally {
+  dev.matrix.closeMatrix();
   pane.itemsView.getSortedItems = oldView;
   pane.getSelectedItems = oldSelection;
   Zotero.Items.get = oldLookup;
@@ -313,5 +342,4 @@ try {
   Services.locale.requestedLocales = oldRequested;
   if (hadTheme) Services.prefs.setIntPref("ui.systemUsesDarkTheme", oldTheme);
   else Services.prefs.clearUserPref("ui.systemUsesDarkTheme");
-  dev.matrix.closeMatrix();
 }

@@ -13,6 +13,7 @@ export default zotero({
         "scripts/preferences-probe.js",
         "scripts/matrix-probe.js",
         "scripts/tags-probe.js",
+        "scripts/native-select-probe.js",
       ],
     },
   ],
