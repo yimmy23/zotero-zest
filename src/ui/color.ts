@@ -36,3 +36,18 @@ export function readableTextColor(
   const sat = Math.max(0.35, s);
   return `hsl(${Math.round(h * 360)}, ${Math.round(sat * 100)}%, ${Math.round(l * 100)}%)`;
 }
+
+/** Keep both contrasts available so CSS can follow theme changes without a render. */
+export function setReadableColorVariants(
+  element: HTMLElement,
+  rgb: [number, number, number],
+): void {
+  element.style.setProperty(
+    "--zest-readable-light",
+    readableTextColor(rgb, false),
+  );
+  element.style.setProperty(
+    "--zest-readable-dark",
+    readableTextColor(rgb, true),
+  );
+}

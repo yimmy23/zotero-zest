@@ -1,10 +1,33 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { createHarness } = require("./helpers.cjs");
 const { config } = require("../package.json");
 
 const NOW = new Date("2026-09-07T12:00:00").getTime();
 const PANEL_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
+
+test("bundled achievement artwork stays local and below a 50 KiB asset budget", () => {
+  const dir = path.join(
+    path.dirname(module.filename),
+    "../addon/content/images/achievements",
+  );
+  const files = fs.readdirSync(dir).sort();
+  assert.deepEqual(files, [
+    "reading-library.webp",
+    "reading-streak.webp",
+    "reading-time.webp",
+  ]);
+  let size = 0;
+  for (const file of files) {
+    const bytes = fs.readFileSync(path.join(dir, file));
+    assert.equal(bytes.subarray(0, 4).toString(), "RIFF");
+    assert.equal(bytes.subarray(8, 12).toString(), "WEBP");
+    size += bytes.length;
+  }
+  assert.ok(size < 50 * 1024, `${size} bytes`);
+});
 class FixedDate extends Date {
   constructor(...args) {
     super(...(args.length ? args : [NOW]));
@@ -196,23 +219,35 @@ test("the real light and dark chart palettes have three distinct colours with su
   ].map((match) => match[1]);
   assert.equal(surfaces.length, 2, "both theme surfaces must be declared");
   const textColours = ["fg", "muted"].map((token) =>
-    [
-      ...css.matchAll(
-        new RegExp(`--zest-${token}:\\s*(#[0-9a-f]{6})\\s*;`, "gi"),
-      ),
-    ].map((match) => match[1]),
+    [...css.matchAll(new RegExp(`--zest-${token}:\\s*([^;]+)\\s*;`, "gi"))].map(
+      (match) => match[1],
+    ),
   );
-  const luminance = (hex) => {
+  const channels = (colour, background = "#ffffff") => {
+    if (colour.startsWith("rgb")) {
+      const values = colour.match(/[\d.]+/g).map(Number);
+      assert.ok(values.length === 3 || values.length === 4);
+      const alpha = values[3] ?? 1;
+      const base = channels(background);
+      return values
+        .slice(0, 3)
+        .map((v, i) => v * alpha + base[i] * (1 - alpha));
+    }
+    assert.match(colour, /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i);
     const rgb =
-      hex.length === 4
-        ? hex
+      colour.length === 4
+        ? colour
             .slice(1)
             .split("")
             .map((digit) => digit + digit)
             .join("")
-        : hex.slice(1);
+        : colour.slice(1);
+    return [0, 1, 2].map((i) => parseInt(rgb.slice(i * 2, i * 2 + 2), 16));
+  };
+  const luminance = (colour, background) => {
+    const rgb = channels(colour, background);
     return [0.2126, 0.7152, 0.0722].reduce((sum, weight, index) => {
-      const channel = parseInt(rgb.slice(index * 2, index * 2 + 2), 16) / 255;
+      const channel = rgb[index] / 255;
       const linear =
         channel <= 0.04045
           ? channel / 12.92
@@ -240,7 +275,7 @@ test("the real light and dark chart palettes have three distinct colours with su
     }
     for (const values of textColours) {
       assert.equal(values.length, 2);
-      const a = luminance(values[index]);
+      const a = luminance(values[index], surfaces[index]);
       const b = luminance(surfaces[index]);
       assert.ok(
         (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5,
@@ -387,7 +422,20 @@ test("range and refresh preserve expanded details, focus and scroll without subs
   const doc = app.win.document;
   assert.equal(doc.querySelectorAll(".zest-stats-card").length, 6);
   assert.equal(doc.querySelectorAll(".zest-achievement progress").length, 9);
-  assert.equal(doc.querySelectorAll("svg.zest-medal").length, 9);
+  assert.equal(doc.querySelectorAll(".zest-medal img").length, 9);
+  assert.equal(
+    new Set(doc.querySelectorAll(".zest-medal img").map((image) => image.src))
+      .size,
+    3,
+  );
+  for (const image of doc.querySelectorAll(".zest-medal img")) {
+    assert.match(
+      image.src,
+      /^chrome:\/\/zest\/content\/images\/achievements\/reading-(time|library|streak)\.webp$/,
+    );
+    assert.equal(image.loading, "lazy");
+    assert.equal(image.alt, "");
+  }
   assert.ok(doc.querySelector("svg.zest-stats-trend"));
   assert.equal(doc.querySelector(".zest-stats-weekdays").children.length, 7);
   assert.equal(
@@ -708,7 +756,88 @@ test("unloaded and empty stores render explicit states without fetching or writi
   }
 });
 
-test("embedded and standalone statistics have independent snapshots and ranges", () => {
+test("unloaded embedded statistics show an unknown value instead of a false zero", () => {
+  const app = setup({ loaded: false, entries: [] });
+  const mount = app.mountStats(app.win);
+  const button = app.win.document.querySelector(".zest-stats-open-details");
+  assert.equal(button.getAttribute("aria-busy"), "true");
+  assert.equal(button.querySelector("strong").textContent, "—");
+  app.store.loaded = true;
+  mount.refresh();
+  assert.equal(
+    app.win.document
+      .querySelector(".zest-stats-open-details")
+      .getAttribute("aria-busy"),
+    null,
+  );
+  assert.equal(
+    app.win.document.querySelector(".zest-rings-centre strong").textContent,
+    "stats-zero-time",
+  );
+});
+
+test("embedded statistics render only clickable rings without resolving document titles", () => {
+  const app = setup({
+    entries: Array.from({ length: 2000 }, (_, index) => [
+      `1/READ${String(index).padStart(4, "0")}`,
+      record(index === 0 ? 599 : 0),
+    ]),
+  });
+  let opens = 0;
+  app.mountStats(app.win, () => opens++);
+  const doc = app.win.document;
+  const button = doc.querySelector(".zest-stats-open-details");
+  assert.equal(
+    button.tagName,
+    "button",
+    "native button supports Enter and Space",
+  );
+  assert.equal(button.type, "button");
+  assert.equal(button.disabled, false);
+  assert.equal(
+    button.listeners.has("keydown"),
+    false,
+    "native activation must not be duplicated",
+  );
+  button.focus();
+  assert.equal(doc.activeElement, button);
+  button.click();
+  assert.equal(opens, 1);
+  assert.equal(app.reads(), 1);
+  assert.equal(
+    app.lookups.length,
+    0,
+    "sidebar never resolves most-read titles",
+  );
+  assert.equal(doc.querySelectorAll("button").length, 1);
+  assert.equal(doc.querySelectorAll(".zest-ring-progress").length, 3);
+  assert.equal(doc.querySelectorAll(".zest-ring-track").length, 3);
+  assert.match(button.getAttribute("aria-label"), /sidebar-open-window/);
+  assert.match(button.getAttribute("aria-label"), /9 min 59 s \/ 30 min/);
+  assert.match(button.getAttribute("aria-label"), /stats-ring-week-time/);
+  assert.match(button.getAttribute("aria-label"), /stats-ring-week-days/);
+  assert.equal(button.title, button.getAttribute("aria-label"));
+  for (const selector of [
+    ".zest-stats-header",
+    ".zest-stats-summary",
+    ".zest-stats-charts",
+    ".zest-cal",
+    ".zest-achievements",
+    ".zest-goal-controls",
+    ".zest-stats-top",
+    ".zest-goal-week",
+  ])
+    assert.equal(
+      doc.querySelector(selector),
+      null,
+      `${selector} is not built in the sidebar`,
+    );
+  const css = doc.querySelector("style").textContent;
+  assert.match(css, /\.zest-stats-open-details[^}]*width:min\(172px,100%\)/);
+  app.assertUnchanged();
+});
+
+test("embedded and standalone statistics have independent snapshots", () => {
   const standalone = windowFixture();
   const embedded = windowFixture();
   const app = setup({ windows: [standalone, embedded] });
@@ -721,11 +850,11 @@ test("embedded and standalone statistics have independent snapshots and ranges",
   assert.ok(standard.querySelector(".zest-stats-standalone"));
   assert.ok(sidebar.querySelector(".zest-stats-embedded"));
   standard.querySelector('[data-range="7"]').click();
-  sidebar.querySelector('[data-range="90"]').click();
   assert.ok(standard.querySelector('[data-period-days="7"]'));
-  assert.ok(sidebar.querySelector('[data-period-days="90"]'));
-  assert.equal(app.reads(), 2, "both ranges reuse their own snapshots");
+  assert.equal(sidebar.querySelector('[data-range="90"]'), null);
+  assert.equal(app.reads(), 2, "standalone range reuses its own snapshot");
   const before = standard.querySelector(".zest-stats-summary").textContent;
+  const previousToday = sidebar.querySelector(".zest-rings-centre").textContent;
   app.records.set("1/READ0002", record(900));
   mount.refresh();
   assert.equal(app.reads(), 3);
@@ -734,10 +863,11 @@ test("embedded and standalone statistics have independent snapshots and ranges",
     before,
   );
   assert.notEqual(
-    sidebar.querySelector(".zest-stats-summary").textContent,
-    before,
+    sidebar.querySelector(".zest-rings-centre").textContent,
+    previousToday,
   );
-  assert.ok(sidebar.querySelector('[data-period-days="90"]'));
+  assert.ok(standard.querySelector('[data-period-days="7"]'));
+  assert.equal(app.lookups.length, 1, "embedded refresh never resolves titles");
   app.closeStatsDialog();
   assert.equal(standalone.closed, true);
   assert.equal(embedded.closed, false);
@@ -752,12 +882,31 @@ test("embedded and standalone statistics have independent snapshots and ranges",
   assert.deepEqual(app.prefWrites, []);
 });
 
-test("inactive statistics defer repeated refresh requests and reuse a clean snapshot on resume", () => {
+test("ring buttons without a host callback open the complete standalone statistics", () => {
+  const standalone = windowFixture();
+  const embedded = windowFixture();
+  const app = setup({ windows: [standalone, embedded] });
+  const mount = app.mountStats(embedded);
+  embedded.document.querySelector(".zest-stats-open-details").click();
+  assert.equal(app.opens(), 1);
+  assert.ok(standalone.document.querySelector(".zest-stats-standalone"));
+  assert.ok(standalone.document.querySelector(".zest-stats-charts"));
+  assert.ok(standalone.document.querySelector(".zest-achievements"));
+  assert.ok(embedded.document.querySelector(".zest-stats-embedded"));
+  assert.equal(embedded.document.querySelector(".zest-achievements"), null);
+  embedded.close();
+  app.closeStatsDialog();
+  embedded.document.querySelector(".zest-stats-open-details").click();
+  assert.equal(app.opens(), 1, "a closed embedded host cannot reopen details");
+  mount.dispose();
+  app.assertUnchanged();
+});
+
+test("inactive statistics defer refresh work and collect one fresh snapshot on every reshow", () => {
   const app = setup();
   const mount = app.mountStats(app.win);
   const doc = app.win.document;
-  doc.querySelector('[data-range="7"]').click();
-  const before = doc.querySelector(".zest-stats-summary").textContent;
+  const before = doc.querySelector(".zest-rings-centre").textContent;
   mount.setActive(false);
   const writes = doc.writes;
   mount.setActive(false);
@@ -777,44 +926,71 @@ test("inactive statistics defer repeated refresh requests and reuse a clean snap
     2,
     "all pending requests coalesce into one snapshot",
   );
-  assert.notEqual(doc.querySelector(".zest-stats-summary").textContent, before);
-  assert.ok(doc.querySelector('[data-period-days="7"]'));
+  assert.notEqual(doc.querySelector(".zest-rings-centre").textContent, before);
   const resumedWrites = doc.writes;
-  mount.setActive(true);
-  mount.setActive(false);
   mount.setActive(true);
   assert.equal(
     app.reads(),
     2,
-    "merely showing a clean snapshot does not recollect",
+    "repeated active notifications do not recollect",
   );
   assert.equal(doc.writes, resumedWrites);
+  const previousToday = doc.querySelector(".zest-rings-centre").textContent;
+  mount.setActive(false);
+  app.records.set("1/READ0003", record(1200));
+  assert.equal(app.reads(), 2, "reading data changes do no work while hidden");
+  assert.equal(doc.writes, resumedWrites);
+  mount.setActive(true);
+  assert.equal(
+    app.reads(),
+    3,
+    "reshow collects once even without an explicit refresh request",
+  );
+  assert.notEqual(
+    doc.querySelector(".zest-rings-centre").textContent,
+    previousToday,
+    "reading changes made while hidden appear on reshow",
+  );
+  const latestWrites = doc.writes;
+  mount.setActive(true);
+  assert.equal(app.reads(), 3);
+  assert.equal(doc.writes, latestWrites);
   assert.deepEqual(app.logs, []);
   assert.deepEqual(app.prefWrites, []);
 });
 
-test("embedded goal changes are snapshot-backed and inactive controls cannot persist changes", () => {
+test("inactive or repainted ring buttons cannot open details", () => {
   const app = setup();
-  const mount = app.mountStats(app.win);
+  let opens = 0;
+  const mount = app.mountStats(app.win, () => opens++);
   const doc = app.win.document;
-  let daily = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
-  daily.value = "45";
-  daily.dispatch("change");
-  assert.equal(app.reads(), 1);
-  assert.equal(doc.querySelector(".zest-goal-metric progress").max, 2700);
-  daily = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
-  const refresh = doc.querySelector(".zest-stats-refresh");
-  const range = doc.querySelector('[data-range="90"]');
+  const original = doc.querySelector(".zest-stats-open-details");
   mount.setActive(false);
   const writes = doc.writes;
-  daily.value = "60";
-  daily.dispatch("change");
-  refresh.click();
-  range.click();
+  original.click();
+  assert.equal(opens, 0);
   assert.equal(doc.writes, writes);
   assert.equal(app.reads(), 1);
-  assert.ok(doc.querySelector('[data-period-days="30"]'));
-  app.assertUnchanged([["stats.dailyGoalMinutes", 45]]);
+  mount.setActive(true);
+  original.click();
+  assert.equal(opens, 0, "a button from before reshow is stale");
+  const resumed = doc.querySelector(".zest-stats-open-details");
+  resumed.click();
+  assert.equal(opens, 1);
+  resumed.focus();
+  mount.refresh();
+  const current = doc.querySelector(".zest-stats-open-details");
+  assert.equal(
+    doc.activeElement,
+    current,
+    "refresh preserves ring button focus",
+  );
+  original.click();
+  resumed.click();
+  assert.equal(opens, 1, "replaced ring button cannot open details");
+  current.click();
+  assert.equal(opens, 2);
+  app.assertUnchanged();
 });
 
 test("disposing an embedded instance clears only its owned content and rejects stale controls", () => {
@@ -823,12 +999,9 @@ test("disposing an embedded instance clears only its owned content and rejects s
   const head = doc.createElement("head");
   head.textContent = "native host stylesheet";
   doc.documentElement.append(head);
-  const mount = app.mountStats(app.win);
-  const oldRefresh = doc.querySelector(".zest-stats-refresh");
-  const oldRange = doc.querySelector('[data-range="7"]');
-  const oldGoal = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
-  oldRange.click();
-  const latestGoal = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  let opens = 0;
+  const mount = app.mountStats(app.win, () => opens++);
+  const oldButton = doc.querySelector(".zest-stats-open-details");
   const unowned = doc.createElement("aside");
   unowned.textContent = "host-owned node";
   doc.body.append(unowned);
@@ -840,12 +1013,8 @@ test("disposing an embedded instance clears only its owned content and rejects s
   assert.equal(doc.querySelector("head"), head);
   assert.equal(doc.querySelector("aside"), unowned);
   const writes = doc.writes;
-  oldRefresh.click();
-  oldRange.click();
-  for (const goal of [oldGoal, latestGoal]) {
-    goal.value = "60";
-    goal.dispatch("change");
-  }
+  oldButton.click();
+  assert.equal(opens, 0, "disposed callback is never invoked");
   mount.setActive(false);
   mount.refresh();
   mount.setActive(true);
@@ -854,7 +1023,7 @@ test("disposing an embedded instance clears only its owned content and rejects s
   assert.equal(doc.writes, writes);
   const next = app.mountStats(app.win);
   assert.equal(app.reads(), 2, "remount does not keep the disposed snapshot");
-  assert.ok(doc.querySelector('[data-period-days="30"]'));
+  assert.ok(doc.querySelector(".zest-stats-open-details"));
   mount.dispose();
   mount.refresh();
   assert.ok(doc.querySelector(".zest-stats-embedded"));
@@ -893,7 +1062,7 @@ test("shutdown ignores main windows and embedded hosts even if they contain stat
 
 test("repainted controls cannot change goals or overwrite the current range", () => {
   const app = setup();
-  app.mountStats(app.win);
+  app.openStatsDialog(app.host);
   const doc = app.win.document;
   const staleRefresh = doc.querySelector(".zest-stats-refresh");
   const staleRange = doc.querySelector('[data-range="90"]');

@@ -1,4 +1,5 @@
 import { config } from "../package.json";
+import { guard } from "./utils/guard";
 import { initLocale } from "./utils/locale";
 import { api } from "./api";
 import {
@@ -352,6 +353,13 @@ async function onStartup() {
       // mount — without these the settings-pane checkboxes only take effect
       // after a restart
       Zotero.Prefs.registerObserver(`${P}.ui.accent`, () => syncAccent(), true),
+      ...["stats", "matrix", "graph"].map((kind) =>
+        Zotero.Prefs.registerObserver(
+          `${P}.sidebar.${kind}`,
+          guard("sidebar preference", () => registerSidebarSections()),
+          true,
+        ),
+      ),
       Zotero.Prefs.registerObserver(
         `${P}.tabs.sidebar`,
         () => {

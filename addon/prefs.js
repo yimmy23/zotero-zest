@@ -142,6 +142,11 @@ pref("info.affiliations.autoFetch", false);
 // One abstract body; translation is displayed only after an explicit click.
 pref("info.abstract", true);
 
+// Optional item-pane tools; hiding them never disables their standalone menus.
+pref("sidebar.stats", true);
+pref("sidebar.matrix", true);
+pref("sidebar.graph", true);
+
 // Vertical tab manager (off by default — it changes a window people know)
 pref("tabs.sidebar", false);
 pref("tabs.width", 200);

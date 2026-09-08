@@ -31,8 +31,13 @@ export function accentColor(): string {
 /** write the accent onto the root element; the stylesheet derives the rest */
 export function applyAccent(win: Window) {
   const root = styles.get(win)?.root;
-  if (root && ownership.owns(root, ACCENT_KEY))
-    root.style.setProperty("--zest-accent", accentColor());
+  if (!root || !ownership.owns(root, ACCENT_KEY)) return;
+  const color = accentColor();
+  if (root.style.getPropertyValue("--zest-accent") === color) return;
+  root.style.setProperty("--zest-accent", color);
+  // SVG graph colours are materialised attributes, unlike CSS consumers.
+  // Repaint only this window's mounted views; never rebuild their graph data.
+  win.dispatchEvent?.(new (win as any).CustomEvent("zest-accent-change"));
 }
 
 /** re-read the preference into every open main window */
@@ -181,6 +186,10 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923); white-space: nowrap;
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
+    .zest-badge.zest-readable-text { color: var(--zest-readable-light, var(--fill-primary)); }
+    @media (prefers-color-scheme: dark) {
+      .zest-badge.zest-readable-text { color: var(--zest-readable-dark, var(--fill-primary)); }
+    }
 
     /* Journal rank badges + impact factor (heat wash behind the number, or a bar) */
     .virtualized-table .cell.zest-pubtags .zest-rank-badge { font-variant-numeric: tabular-nums; }
@@ -237,7 +246,7 @@ export function registerStyles(win: Window) {
       color:var(--fill-primary); border-color:var(--fill-quinary); font-weight:600;
     }
     .zest-tagtree-tab:focus-visible {
-      outline:2px solid var(--fill-secondary); outline-offset:-2px;
+      outline:2px solid var(--color-focus-border, var(--fill-primary)); outline-offset:-2px;
     }
     .zest-tagtree-bar {
       display:flex; align-items:center; gap:3px; padding:5px 7px 3px; flex:0 0 auto; min-width:0;
@@ -278,7 +287,7 @@ export function registerStyles(win: Window) {
     .zest-tagtree-branch .zest-tagtree-label { font-weight:550; }
     .zest-tagtree-row:hover { background-color: var(--fill-quinary); }
     .zest-tagtree-row:focus-visible {
-      outline:2px solid var(--fill-secondary); outline-offset:-2px;
+      outline:2px solid var(--color-focus-border, var(--fill-primary)); outline-offset:-2px;
     }
     .zest-tagtree-row.selected { background-color:var(--fill-quinary); border-color:var(--fill-quarternary); color:var(--fill-primary); font-weight:600; }
     /* "not in this view" is a hint, not a disabled state: dimming the whole
@@ -389,7 +398,7 @@ export function registerStyles(win: Window) {
     .zest-annot-copy:focus-visible,
     .zest-tabbar :is(button, input):focus-visible,
     .zest-tagtree :is(button, input):focus-visible {
-      outline: 2px solid var(--zest-accent-strong); outline-offset: 2px;
+      outline: 2px solid var(--color-focus-border, var(--fill-primary)); outline-offset: 2px;
     }
     .zest-info-stars { display: inline-flex; flex: 0 0 auto; gap: 1px; white-space: nowrap; }
     .zest-info-star { cursor: pointer; color: var(--fill-quinary); }
@@ -440,12 +449,15 @@ export function registerStyles(win: Window) {
       color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846);
     }
     .zest-annot-card {
-      border-inline-start: 3px solid var(--zest-annot-line, var(--zest-accent));
+      border-inline-start: 3px solid var(--zest-readable-light, var(--zest-accent));
       border-radius: 6px; padding: 8px 10px;
       background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .13);
       cursor: default;
     }
     .zest-annot-card:hover { background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .23); }
+    @media (prefers-color-scheme: dark) {
+      .zest-annot-card { border-inline-start-color: var(--zest-readable-dark, var(--zest-accent)); }
+    }
     .zest-annot-head { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
     .zest-annot-where {
       flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -530,7 +542,7 @@ export function registerStyles(win: Window) {
     }
     .zest-graph-btn:hover { background-color: var(--fill-quarternary, var(--fill-quinary)); }
     .zest-graph-btn:disabled { opacity: .55; cursor: default; }
-    .zest-graph-mode:focus-visible, .zest-graph-btn:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 2px; }
+    .zest-graph-mode:focus-visible, .zest-graph-btn:focus-visible { outline: 2px solid var(--color-focus-border, var(--fill-primary)); outline-offset: 2px; }
     .zest-graph-close { background-color: transparent; border-color: transparent; padding-inline: 6px; }
     .zest-graph-canvas { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden;
       background-color: var(--material-background, transparent); }
@@ -548,7 +560,7 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .846); line-height: 1.4; color: var(--fill-secondary); }
     .zest-graph-status { flex: 1 1 180px; min-width: 0; }
     .zest-graph-help { flex: 0 1 auto; color: var(--fill-secondary); }
-    .zest-graph-node:focus-visible { outline: 2px solid var(--zest-accent); outline-offset: 4px; }
+    .zest-graph-node:focus-visible { outline: 2px solid var(--color-focus-border, var(--fill-primary)); outline-offset: 4px; }
     .zest-graph-node.is-selected { stroke: var(--zest-accent); stroke-opacity: .9; stroke-width: 2; }
     .zest-graph-label { font-size: calc(var(--zotero-font-size, 13px) * .846); }
 

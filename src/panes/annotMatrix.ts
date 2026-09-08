@@ -903,7 +903,7 @@ function matrixCSS(): string {
     .zest-flat-btn { appearance:none; padding:6px 12px; cursor:pointer; line-height:1.5; }
     .zest-flat-btn:hover { background:var(--zest-fill); }
     button:disabled { opacity:.5; cursor:default; }
-    :focus-visible { outline:2px solid var(--zest-accent); outline-offset:3px; }
+    :focus-visible { outline:2px solid var(--zest-focus); outline-offset:3px; }
     .zest-flat-input { padding:9px 12px; }
     .zest-flat-select { appearance:none; padding:8px 28px 8px 9px; min-width:0; max-width:100%; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:right 12px center,right 8px center; background-size:4px 4px,4px 4px; background-repeat:no-repeat; }
     .zest-matrix-tools { border:1px solid var(--zest-line); border-radius:12px; background:var(--zest-surface); padding:10px; }

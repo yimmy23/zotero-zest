@@ -29,13 +29,16 @@ export function mountSidebarGraph(
   const root = doc.createElement("div");
   root.className = "zest-sidebar-graph";
   const style = doc.createElement("style");
+  // Gecko's select dropmarker is an anonymous button. Style only our own
+  // controls, and paint one chevron without changing native select semantics.
   style.textContent = `
     .zest-sidebar-graph { color:var(--fill-primary); font-size:var(--zotero-font-size); min-width:0; }
-    .zest-sidebar-graph-bar { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:8px; }
-    .zest-sidebar-graph button,.zest-sidebar-graph select { appearance:none; color:inherit; font:inherit; border:1px solid var(--fill-quinary); border-radius:6px; background:var(--material-background); margin:0; min-width:0; max-width:100%; padding:5px 8px; }
-    .zest-sidebar-graph select { appearance:auto; flex:1; }
-    .zest-sidebar-graph button:hover { background:var(--fill-quinary); }
-    .zest-sidebar-graph button:focus-visible,.zest-sidebar-graph select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .zest-sidebar-graph-bar { display:grid; grid-template-columns:minmax(0,1fr) 30px 30px; gap:6px; align-items:stretch; margin-bottom:8px; }
+    .zest-sidebar-graph-button,.zest-sidebar-graph-mode { appearance:none; box-sizing:border-box; color:inherit; font:inherit; border:1px solid var(--fill-quinary); border-radius:6px; background:var(--material-background); margin:0; min-width:0; max-width:100%; min-height:30px; padding:5px 8px; }
+    .zest-sidebar-graph-mode { width:100%; padding-inline-end:28px; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:right 12px center,right 8px center; background-size:4px 4px,4px 4px; background-repeat:no-repeat; }
+    .zest-sidebar-graph-bar > .zest-sidebar-graph-button { display:inline-flex; align-items:center; justify-content:center; padding:0; }
+    .zest-sidebar-graph-button:hover:not(:disabled) { background:var(--fill-quinary); }
+    .zest-sidebar-graph-button:focus-visible,.zest-sidebar-graph-mode:focus-visible { outline:2px solid var(--color-focus-border, var(--fill-primary)); outline-offset:2px; }
     .zest-sidebar-graph-canvas { box-sizing:border-box; height:clamp(260px,44vh,420px); width:100%; min-width:0; border:1px solid var(--fill-quinary); border-radius:9px; overflow:hidden; background:var(--material-background); }
     .zest-sidebar-graph-status,.zest-sidebar-graph-detail { font-size:.92em; line-height:1.5; color:var(--fill-secondary); margin:8px 0; overflow-wrap:anywhere; }
     .zest-sidebar-graph-open { font-size:.92em !important; }
@@ -44,6 +47,7 @@ export function mountSidebarGraph(
   const bar = doc.createElement("div");
   bar.className = "zest-sidebar-graph-bar";
   const modes = doc.createElement("select");
+  modes.className = "zest-sidebar-graph-mode";
   modes.setAttribute("aria-label", getString("graph-filter-modes"));
   for (const value of ["related", "author", "tag", "collection"] as const) {
     const option = doc.createElement("option");
@@ -51,8 +55,18 @@ export function mountSidebarGraph(
     option.textContent = getString(`graph-mode-${value}`);
     modes.append(option);
   }
-  const refresh = iconButton(doc, "refresh", getString("graph-reanalyse"));
-  const fit = iconButton(doc, "expand", getString("graph-fit"));
+  const refresh = iconButton(
+    doc,
+    "refresh",
+    getString("graph-reanalyse"),
+    "zest-sidebar-graph-button",
+  );
+  const fit = iconButton(
+    doc,
+    "expand",
+    getString("graph-fit"),
+    "zest-sidebar-graph-button",
+  );
   refresh.type = fit.type = "button";
   bar.append(modes, refresh, fit);
   const canvas = doc.createElement("div");
@@ -66,7 +80,7 @@ export function mountSidebarGraph(
   detail.textContent = getString("sidebar-graph-select");
   const open = doc.createElement("button");
   open.type = "button";
-  open.className = "zest-sidebar-graph-open";
+  open.className = "zest-sidebar-graph-button zest-sidebar-graph-open";
   open.textContent = getString("sidebar-graph-open");
   open.hidden = true;
   root.append(style, bar, canvas, status, detail, open);

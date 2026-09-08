@@ -252,6 +252,14 @@ pref-column-remark =
     .label = Remark column — a one-line note kept in Extra
 pref-panel-hint = The reading strip in the panel is clickable: each segment opens the reader at that page.
 
+pref-group-sidebar = Sidebar tools
+pref-sidebar-stats =
+    .label = Show reading progress rings
+pref-sidebar-matrix =
+    .label = Show annotation matrix
+pref-sidebar-graph =
+    .label = Show library relationship graph
+pref-sidebar-hint = Changes apply immediately. Hidden tools remain available from the Zest menu; click the reading rings for full statistics and achievements.
 pref-group-tabs = Vertical tabs
 pref-tabs-sidebar =
     .label = Show the vertical tab sidebar

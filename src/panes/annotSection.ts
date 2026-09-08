@@ -2,7 +2,7 @@ import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { guard } from "../utils/guard";
 import { openAttachmentAt } from "../utils/items";
-import { readableTextColor } from "../ui/color";
+import { setReadableColorVariants } from "../ui/color";
 import { hexToRgb } from "../reading/heat";
 import { selectedTagNames, onTagSelectionChange } from "../tags/nestedTree";
 import { iconButton } from "../ui/icons";
@@ -250,9 +250,7 @@ function renderCards(props: any) {
     return;
   }
 
-  const dark = !!doc.defaultView?.matchMedia?.("(prefers-color-scheme: dark)")
-    ?.matches;
-  for (const card of shown) body.appendChild(renderCard(doc, card, dark));
+  for (const card of shown) body.appendChild(renderCard(doc, card));
 }
 
 function emptyState(doc: Document, text: string): HTMLElement {
@@ -262,17 +260,13 @@ function emptyState(doc: Document, text: string): HTMLElement {
   return div;
 }
 
-function renderCard(
-  doc: Document,
-  card: CardAnnotation,
-  dark: boolean,
-): HTMLElement {
+function renderCard(doc: Document, card: CardAnnotation): HTMLElement {
   const el = doc.createElement("div");
   el.className = "zest-annot-card";
   const rgb = hexToRgb(card.color);
   if (rgb) {
     el.style.setProperty("--zest-annot-rgb", `${rgb[0]},${rgb[1]},${rgb[2]}`);
-    el.style.setProperty("--zest-annot-line", readableTextColor(rgb, dark));
+    setReadableColorVariants(el, rgb);
   }
 
   const head = doc.createElement("div");

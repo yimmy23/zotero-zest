@@ -101,6 +101,9 @@ declare namespace _ZoteroTypes {
       "info.enable": boolean;
       "info.affiliations.autoFetch": boolean;
       "info.abstract": boolean;
+      "sidebar.stats": boolean;
+      "sidebar.matrix": boolean;
+      "sidebar.graph": boolean;
       "tabs.sidebar": boolean;
       "tabs.width": number;
       "tabs.hideNative": boolean;

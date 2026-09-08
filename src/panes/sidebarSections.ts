@@ -1,10 +1,12 @@
 import { config } from "../../package.json";
 import { getString, getLocaleID } from "../utils/locale";
 import { guard } from "../utils/guard";
+import { getPref } from "../utils/prefs";
 import { mountMatrix, openMatrix, type MatrixSource } from "./annotMatrix";
 import { mountStats, openStatsDialog } from "./statsDialog";
 import { showGraphPane } from "../graph/pane";
 import { mountSidebarGraph } from "./sidebarGraph";
+import { bindSidebarTheme } from "../ui/dialogTheme";
 
 type Kind = "stats" | "matrix" | "graph";
 interface Controller {
@@ -41,6 +43,7 @@ interface State {
   status?: HTMLElement;
   frame?: HTMLIFrameElement;
   controller?: Controller;
+  theme?: ReturnType<typeof bindSidebarTheme>;
   observer?: IntersectionObserver;
   load?: () => void;
   visibility: () => void;
@@ -101,6 +104,7 @@ function dispose(state: State) {
   state.win.removeEventListener("unload", state.unload);
   if (state.load) state.frame?.removeEventListener("load", state.load, true);
   state.controller?.dispose();
+  state.theme?.dispose();
   state.frame?.remove();
   state.shell?.remove();
   states.delete(state.body);
@@ -115,7 +119,10 @@ function getState(props: Props, kind: Kind) {
     body: props.body,
     win,
     enabled: false,
-    requested: false,
+    // A rapid preference off/on can be coalesced by Zotero's async registry
+    // notifications, leaving a native body whose render cache is still warm.
+    requested:
+      props.body.getAttribute("data-zest-sidebar-requested") === "true",
     active: false,
     visible: false,
     disposed: false,
@@ -150,6 +157,7 @@ function sync(state: State) {
     isOpen(state) &&
     !state.win.document.hidden;
   state.active = active;
+  state.theme?.setActive(active);
   state.controller?.setActive(active);
   if (active && !state.controller) ensureContent(state);
 }
@@ -164,7 +172,8 @@ function renderShell(state: State) {
     .zest-sidebar-shell { position:relative; min-width:0; color:var(--fill-primary); }
     .zest-sidebar-scope { font-size:.92em; color:var(--fill-secondary); line-height:1.5; margin:0 0 8px; overflow-wrap:anywhere; }
     .zest-sidebar-content { min-width:0; }
-    .zest-sidebar-shell[data-kind=stats] .zest-sidebar-content,.zest-sidebar-shell[data-kind=matrix] .zest-sidebar-content { height:clamp(360px,72vh,700px); }
+    .zest-sidebar-shell[data-kind=stats] .zest-sidebar-content { height:190px; }
+    .zest-sidebar-shell[data-kind=matrix] .zest-sidebar-content { height:clamp(360px,72vh,700px); }
     .zest-sidebar-shell[data-kind=graph] .zest-sidebar-content { min-height:calc(clamp(260px,44vh,420px) + 104px); }
     .zest-sidebar-frame { display:block; width:100%; height:100%; border:0; border-radius:8px; background:transparent; }
     .zest-sidebar-message { position:absolute; margin:0; padding:8px; color:var(--fill-secondary); font-size:.92em; pointer-events:none; }
@@ -186,7 +195,7 @@ function renderShell(state: State) {
 }
 function updateScope(state: State) {
   if (!state.note) return;
-  state.note.hidden = state.kind === "matrix";
+  state.note.hidden = state.kind !== "graph";
   state.note.textContent = getString(
     state.kind === "stats"
       ? "sidebar-stats-scope"
@@ -220,6 +229,8 @@ function graphSource(state: State) {
 function failed(state: State, error: unknown) {
   ztoolkit.log("[sidebar] content load failed", error);
   if (state.disposed || !state.content || !state.status) return;
+  state.theme?.dispose();
+  state.theme = undefined;
   state.status.hidden = false;
   state.status.textContent = getString("sidebar-load-failed");
   if (state.load) state.frame?.removeEventListener("load", state.load, true);
@@ -260,7 +271,10 @@ function ensureContent(state: State) {
       )
         return;
       try {
-        if (state.kind === "stats") state.controller = mountStats(win);
+        state.theme?.dispose();
+        state.theme = bindSidebarTheme(win, state.body);
+        if (state.kind === "stats")
+          state.controller = mountStats(win, () => open(state));
         else
           state.controller = mountMatrix(win, state.win, {
             allowViewScope: sidebarMatrixSource(
@@ -309,6 +323,16 @@ export function registerSidebarSections() {
   const manager = (Zotero as any).ItemPaneManager;
   if (typeof manager?.registerSection !== "function") return;
   for (const kind of ["stats", "matrix", "graph"] as const) {
+    if (getPref(`sidebar.${kind}`) === false) {
+      for (const state of states.values())
+        if (state.kind === kind) dispose(state);
+      const id = ids.get(kind);
+      if (id) {
+        manager.unregisterSection?.(id);
+        ids.delete(kind);
+      }
+      continue;
+    }
     if (ids.has(kind)) continue;
     const result = manager.registerSection({
       paneID: `workspace-${kind}`,
@@ -345,8 +369,12 @@ export function registerSidebarSections() {
         const contextChanged = state.tabType !== props.tabType;
         state.item = props.item;
         state.tabType = props.tabType;
-        state.enabled = supports(props.item);
+        state.enabled =
+          getPref(`sidebar.${kind}`) !== false && supports(props.item);
         props.setEnabled?.(state.enabled);
+        // A retained native body can skip onRender after a fast off/on. Restore
+        // its cheap shell first: an empty, zero-height body cannot intersect.
+        if (state.enabled && state.requested) renderShell(state);
         props.setSectionButtonStatus?.("zest-popout", {
           disabled: kind === "graph" && !(state.win as any).ZoteroPane,
         });
@@ -368,6 +396,10 @@ export function registerSidebarSections() {
       onAsyncRender: guard("sidebar visible", (props: Props) => {
         const state = getState(props, kind);
         state.requested = true;
+        state.body.dataset.zestSidebarRequested = "true";
+        // A never-visible retained body may have lost its cached shell. Give
+        // it layout before measuring; expensive content still waits for sync.
+        renderShell(state);
         const r = state.body.getBoundingClientRect();
         state.visible = r.width > 0 && r.height > 0;
         sync(state);

@@ -86,8 +86,9 @@ function setup({ maximum = 250, scope } = {}) {
         },
       },
       "src/ui/icons.ts": {
-        iconButton(doc, name, title) {
+        iconButton(doc, name, title, className = "") {
           const button = doc.createElement("button");
+          button.className = className;
           button.setAttribute("data-icon", name);
           button.setAttribute("aria-label", title);
           return button;
@@ -156,6 +157,45 @@ function setup({ maximum = 250, scope } = {}) {
     },
   };
 }
+
+test("graph toolbar keeps one native select with scoped controls and a non-overlapping compact layout", () => {
+  const app = setup();
+  const modes = app.doc.querySelector(".zest-sidebar-graph-mode");
+  assert.equal(modes.tagName, "select");
+  assert.equal(modes.getAttribute("aria-label"), "graph-filter-modes");
+  assert.deepEqual(
+    modes.children.map((option) => [option.value, option.textContent]),
+    ["related", "author", "tag", "collection"].map((mode) => [
+      mode,
+      `graph-mode-${mode}`,
+    ]),
+  );
+  const bar = app.doc.querySelector(".zest-sidebar-graph-bar");
+  assert.equal(bar.children.length, 3);
+  for (const button of bar.children.slice(1)) {
+    assert.equal(button.tagName, "button");
+    assert.equal(button.classList.contains("zest-sidebar-graph-button"), true);
+  }
+  assert.equal(
+    app.doc
+      .querySelector(".zest-sidebar-graph-open")
+      .classList.contains("zest-sidebar-graph-button"),
+    true,
+  );
+  const css = app.doc.querySelector("style").textContent;
+  // A broad button selector also styles Gecko's anonymous select dropmarker.
+  assert.doesNotMatch(css, /\.zest-sidebar-graph\s+(?:button|select)\b/);
+  assert.doesNotMatch(css, /appearance\s*:\s*auto/);
+  assert.match(css, /grid-template-columns:minmax\(0,1fr\) 30px 30px/);
+  assert.match(css, /\.zest-sidebar-graph-mode[^{}]*\{[^}]*appearance:none/);
+  assert.match(
+    css,
+    /\.zest-sidebar-graph-mode\s*\{[^}]*padding-inline-end:28px/,
+  );
+  assert.match(css, /background-size:4px 4px,4px 4px/);
+  assert.match(css, /\.zest-sidebar-graph-mode:focus-visible/);
+  app.mount.dispose();
+});
 
 test("sidebar graph builds local current context with a bounded node budget and explicit author roles", async () => {
   for (const [maximum, expected] of [

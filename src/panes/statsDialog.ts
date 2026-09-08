@@ -26,6 +26,8 @@ type StatsState = {
   dirty: boolean;
   range: StatsRange;
   snapshot?: ReturnType<typeof collectStats>;
+  compactSnapshot?: ReadingStats;
+  onOpenDetails?: () => void;
   root?: HTMLElement;
   style?: HTMLElement;
 };
@@ -51,6 +53,8 @@ function disposeState(win: Window, state: StatsState) {
   state.dirty = false;
   state.range = 30;
   state.snapshot = undefined;
+  state.compactSnapshot = undefined;
+  state.onOpenDetails = undefined;
   state.root?.remove();
   state.style?.remove();
   state.root = undefined;
@@ -59,8 +63,9 @@ function disposeState(win: Window, state: StatsState) {
 }
 
 /** Mount only after the sidebar's dedicated panel.xhtml frame is visible. */
-export function mountStats(win: Window) {
+export function mountStats(win: Window, onOpenDetails?: () => void) {
   const state = createState(win, true);
+  state.onOpenDetails = onOpenDetails || (() => openStatsDialog());
   const ownsState = () => states.get(win) === state && !win.closed;
   renderStats(win);
   return {
@@ -72,6 +77,7 @@ export function mountStats(win: Window) {
     setActive(active: boolean) {
       if (!ownsState() || state.active === active) return;
       state.active = active;
+      if (!active) state.dirty = true;
       if (active && state.dirty) renderStats(win);
     },
     dispose() {
@@ -260,12 +266,6 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   const focus = doc.activeElement?.getAttribute("data-focus");
   const expanded =
     !!doc.querySelector<HTMLDetailsElement>(".zest-stats-data")?.open;
-  const stats =
-    (!refreshSnapshot && !state.dirty && state.snapshot) || collectStats();
-  state.snapshot = stats;
-  state.dirty = false;
-  const range = state.range;
-  const period = readingPeriod(stats, range);
   doc.title = label("stats-title");
   body.textContent = "";
   state.style = element(doc, "style", "", statsCSS());
@@ -282,6 +282,24 @@ export function renderStats(win: Window, refreshSnapshot = true) {
     state.root === root &&
     !win.closed;
   body.append(root);
+  if (state.embedded) {
+    const stats =
+      (!refreshSnapshot && !state.dirty && state.compactSnapshot) ||
+      aggregateReadingStats(readingStore.entries());
+    state.compactSnapshot = stats;
+    state.dirty = false;
+    root.append(buildCompactGoals(doc, stats, state, isCurrent));
+    if (focus)
+      doc.querySelector<HTMLElement>(`[data-focus="${focus}"]`)?.focus();
+    win.scrollTo(0, 0);
+    return;
+  }
+  const stats =
+    (!refreshSnapshot && !state.dirty && state.snapshot) || collectStats();
+  state.snapshot = stats;
+  state.dirty = false;
+  const range = state.range;
+  const period = readingPeriod(stats, range);
   const header = element(doc, "header", "zest-stats-header");
   const heading = element(doc, "div", "zest-stats-heading");
   const title = element(doc, "h1");
@@ -449,10 +467,10 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   win.scrollTo(0, scroll);
 }
 
-function buildGoals(
+function buildCompactGoals(
   doc: Document,
   stats: ReadingStats,
-  win: Window,
+  state: StatsState,
   isCurrent: () => boolean,
 ) {
   const goals = readingGoals(
@@ -460,10 +478,44 @@ function buildGoals(
     getPref("stats.dailyGoalMinutes"),
     getPref("stats.weeklyGoalDays"),
   );
-  const panel = section(doc, label("stats-goals"), "zest-goals");
-  const layout = element(doc, "div", "zest-goals-layout");
+  const button = element(doc, "button", "zest-stats-open-details");
+  button.type = "button";
+  button.dataset.focus = "open-details";
+  const descriptions = goals.rings.map((ring) => {
+    const current =
+      ring.id === "week-days"
+        ? label("stats-day-count", { days: ring.value })
+        : exactDuration(ring.value);
+    const target =
+      ring.id === "week-days"
+        ? label("stats-day-count", { days: ring.target })
+        : exactDuration(ring.target);
+    return `${label(`stats-ring-${ring.id}` as FluentMessageId)}: ${current} / ${target}`;
+  });
+  const action = getString("sidebar-open-window", "tooltiptext");
+  const description = !readingStore.loaded
+    ? label("stats-not-ready")
+    : descriptions.join("; ");
+  button.title = `${label("stats-title")} · ${action}\n${description}`;
+  button.setAttribute("aria-label", button.title);
+  const rings = buildRings(doc, goals);
+  if (!readingStore.loaded) {
+    rings.querySelector("strong")!.textContent = "—";
+    button.setAttribute("aria-busy", "true");
+  }
+  button.append(rings);
+  button.addEventListener(
+    "click",
+    guard("stats:open-details", () => {
+      if (isCurrent()) state.onOpenDetails?.();
+    }),
+  );
+  return button;
+}
+
+function buildRings(doc: Document, goals: ReturnType<typeof readingGoals>) {
   const ns = "http://www.w3.org/2000/svg";
-  const visual = element(doc, "div", "zest-rings");
+  const visual = element(doc, "span", "zest-rings");
   const svg = doc.createElementNS(ns, "svg");
   svg.setAttribute("viewBox", "0 0 220 220");
   svg.setAttribute("aria-hidden", "true");
@@ -490,12 +542,29 @@ function buildGoals(
       svg.append(circle);
     }
   });
-  const centre = element(doc, "div", "zest-rings-centre");
+  const centre = element(doc, "span", "zest-rings-centre");
   centre.append(
     element(doc, "span", "zest-stats-label", label("stats-today")),
     element(doc, "strong", "", formatDuration(goals.todaySeconds)),
   );
   visual.append(svg, centre);
+  return visual;
+}
+
+function buildGoals(
+  doc: Document,
+  stats: ReadingStats,
+  win: Window,
+  isCurrent: () => boolean,
+) {
+  const goals = readingGoals(
+    stats,
+    getPref("stats.dailyGoalMinutes"),
+    getPref("stats.weeklyGoalDays"),
+  );
+  const panel = section(doc, label("stats-goals"), "zest-goals");
+  const layout = element(doc, "div", "zest-goals-layout");
+  const visual = buildRings(doc, goals);
   const content = element(doc, "div", "zest-goals-content");
   const summary = element(doc, "div", "zest-goal-metrics");
   goals.rings.forEach((ring, i) => {
@@ -930,37 +999,25 @@ function buildAchievements(doc: Document, stats: ReadingStats) {
 }
 
 function medal(doc: Document, metric: string, target: number) {
-  const ns = "http://www.w3.org/2000/svg";
-  const svg = doc.createElementNS(ns, "svg");
-  svg.setAttribute("viewBox", "0 0 72 80");
-  svg.setAttribute("class", "zest-medal");
-  svg.setAttribute("aria-hidden", "true");
-  const add = (tag: string, attrs: Record<string, string>) => {
-    const node = doc.createElementNS(ns, tag);
-    for (const [key, value] of Object.entries(attrs))
-      node.setAttribute(key, value);
-    svg.append(node);
-    return node;
-  };
-  add("path", {
-    d: "M17 48 L11 76 L26 69 L35 77 L39 51 M37 51 L42 77 L51 69 L65 76 L57 48",
-    class: "zest-medal-ribbon",
-  });
-  add("circle", { cx: "36", cy: "32", r: "27", class: "zest-medal-disc" });
-  add("circle", { cx: "36", cy: "32", r: "21", class: "zest-medal-border" });
-  const text = add("text", {
-    x: "36",
-    y: "34",
-    "text-anchor": "middle",
-    "dominant-baseline": "middle",
-  });
+  const medal = element(doc, "span", "zest-medal");
+  medal.setAttribute("aria-hidden", "true");
+  const art = element(doc, "img", "zest-medal-art");
+  const name =
+    metric === "seconds" ? "time" : metric === "items" ? "library" : "streak";
+  art.src = `chrome://${config.addonRef}/content/images/achievements/reading-${name}.webp`;
+  art.alt = "";
+  art.width = art.height = 58;
+  art.loading = "lazy";
+  art.decoding = "async";
+  const text = element(doc, "span", "zest-medal-target");
   text.textContent =
     metric === "seconds"
       ? target < 3600
         ? "5m"
         : `${target / 3600}h`
       : String(target);
-  return svg;
+  medal.append(art, text);
+  return medal;
 }
 
 function statsCSS() {
@@ -978,10 +1035,10 @@ function statsCSS() {
     .zest-stats-subtitle { color:var(--zest-muted); margin:6px 0 0; font-size:.78rem; }
     .zest-flat-btn { appearance:none; background:var(--zest-surface); color:var(--zest-fg); border:1px solid var(--zest-line); border-radius:8px; padding:6px 13px; font:inherit; font-size:.78rem; cursor:pointer; white-space:nowrap; }
     .zest-flat-btn:hover { background:var(--zest-fill); }
-    :focus-visible { outline:2px solid var(--zest-accent); outline-offset:3px; }
+    :focus-visible { outline:2px solid var(--zest-focus); outline-offset:3px; }
     .zest-stats-summary { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); padding:18px 0; margin-top:18px; border-radius:16px; background:var(--zest-surface); box-shadow:var(--zest-shadow); }
     .zest-goals-layout { display:grid; grid-template-columns:220px minmax(0,1fr); align-items:center; gap:36px; }
-    .zest-rings { position:relative; width:220px; height:220px; }
+    .zest-rings { display:block; position:relative; width:220px; height:220px; }
     .zest-rings svg { width:100%; height:100%; transform:rotate(-90deg); }
     .zest-rings circle { fill:none; stroke-width:9; }
     .zest-ring-track { stroke:var(--zest-fill); }
@@ -1055,15 +1112,11 @@ function statsCSS() {
     .zest-achievement-heading { grid-column:2; grid-row:2; display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0; overflow-wrap:anywhere; }
     .zest-achievement-category { grid-column:1 / -1; font-size:.72rem; color:var(--zest-muted); margin-bottom:10px; }
     .zest-achievement.is-next { border-color:color-mix(in srgb,var(--achievement-color) 50%,var(--zest-line)); }
-    .zest-medal { grid-column:1; grid-row:2 / 4; display:block; width:58px; height:65px; margin:3px 0 0; }
-    .zest-medal-ribbon { fill:var(--zest-fill); stroke:var(--zest-line); }
-    .zest-medal-disc { fill:var(--zest-fill); stroke:var(--zest-line); stroke-width:2; }
-    .zest-medal-border { fill:none; stroke:var(--zest-line); stroke-width:1; }
-    .zest-medal text { fill:var(--zest-muted); font:600 17px system-ui,sans-serif; }
-    .is-unlocked .zest-medal-ribbon { fill:color-mix(in srgb,var(--achievement-color) 16%,var(--zest-surface)); stroke:var(--achievement-color); }
-    .is-unlocked .zest-medal-disc { fill:color-mix(in srgb,var(--achievement-color) 8%,var(--zest-surface)); stroke:var(--achievement-color); stroke-width:1.5; }
-    .is-unlocked .zest-medal-border { stroke:color-mix(in srgb,var(--achievement-color) 45%,var(--zest-line)); stroke-width:.75; }
-    .is-unlocked .zest-medal text { fill:var(--zest-fg); }
+    .zest-medal { grid-column:1; grid-row:2 / 4; position:relative; display:block; width:58px; height:70px; margin:3px 0 0; }
+    .zest-medal-art { display:block; width:58px; height:58px; object-fit:contain; filter:grayscale(1); opacity:.5; }
+    .is-unlocked .zest-medal-art { filter:none; opacity:1; }
+    .zest-medal-target { position:absolute; bottom:0; left:50%; transform:translateX(-50%); min-width:30px; padding:1px 5px; border:1px solid var(--zest-line); border-radius:6px; background:var(--zest-surface); color:var(--zest-muted); font:600 11px system-ui,sans-serif; text-align:center; white-space:nowrap; }
+    .is-unlocked .zest-medal-target { color:var(--zest-fg); }
     .zest-achievement-status { font-size:.72rem; color:var(--zest-muted); }
     .is-unlocked .zest-achievement-status { color:var(--zest-fg); }
     .zest-achievement-rule { grid-column:2; grid-row:3; font-size:.73rem; color:var(--zest-muted); margin:0; min-height:3em; line-height:1.5; overflow-wrap:anywhere; }
@@ -1083,52 +1136,13 @@ function statsCSS() {
     @media(max-width:700px) { .zest-goals-layout { grid-template-columns:minmax(0,1fr); gap:16px; } .zest-rings { margin:auto; } }
     @media(max-width:560px) { .zest-stats { padding:16px; } .zest-stats-panel { padding:18px; } .zest-achievements { grid-template-columns:minmax(0,1fr); } .zest-stats-header { align-items:flex-start; } .zest-stats-card { padding:2px 12px; } .zest-stats-value { font-size:1.25rem; } .zest-goal-metrics { grid-template-columns:minmax(0,1fr); gap:18px; } .zest-goal-metric { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); column-gap:12px; } .zest-goal-line { display:contents; } .zest-goal-name { grid-column:1; grid-row:1; align-self:center; } .zest-goal-line strong,.zest-goal-metric progress,.zest-goal-detail { grid-column:2; } .zest-goal-amount { font-size:.94rem; } }
     @media(max-width:380px) { .zest-goal-week { gap:3px; } .zest-goal-day strong { width:26px; height:26px; } }
-    /* Sidebar frames share the dashboard, not the standalone window spacing. */
-    .zest-stats-embedded { max-width:100%; padding:0; overflow-wrap:anywhere; }
-    .zest-stats-embedded .zest-stats-heading { display:none; }
-    .zest-stats-embedded .zest-stats-header { justify-content:flex-end; margin:0 0 8px; gap:0; }
-    .zest-stats-embedded .zest-stats-refresh { min-height:30px; }
-    .zest-stats-embedded h2 { margin-bottom:10px; font-size:.875rem; }
-    .zest-stats-embedded .zest-stats-panel { padding:12px; margin-top:10px; border-radius:12px; box-shadow:none; }
-    .zest-stats-embedded .zest-goals { margin-top:0; }
-    .zest-stats-embedded .zest-goals-layout { grid-template-columns:minmax(0,1fr); gap:12px; }
-    .zest-stats-embedded .zest-rings { width:min(168px,100%); height:auto; aspect-ratio:1; margin:auto; }
-    .zest-stats-embedded .zest-rings-centre strong { font-size:1.25rem; }
-    .zest-stats-embedded .zest-goals-content { min-width:0; }
-    .zest-stats-embedded .zest-goal-metrics { grid-template-columns:minmax(0,1fr); gap:12px; }
-    .zest-stats-embedded .zest-goal-metric { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); column-gap:8px; }
-    .zest-stats-embedded .zest-goal-line { display:contents; }
-    .zest-stats-embedded .zest-goal-name { grid-column:1; grid-row:1; align-self:center; }
-    .zest-stats-embedded .zest-goal-line strong,.zest-stats-embedded .zest-goal-metric progress,.zest-stats-embedded .zest-goal-detail { grid-column:2; }
-    .zest-stats-embedded .zest-goal-amount { font-size:.94rem; }
-    .zest-stats-embedded .zest-goal-week { margin-top:14px; padding-top:12px; gap:3px; }
-    .zest-stats-embedded .zest-goal-day { min-width:0; padding:0; text-align:center; }
-    .zest-stats-embedded .zest-goal-day strong { width:26px; height:26px; }
-    .zest-stats-embedded .zest-goal-controls { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; margin-top:10px; }
-    .zest-stats-embedded .zest-goal-controls label { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); font-size:.8rem; }
-    .zest-stats-embedded .zest-goal-controls select { width:100%; min-width:0; padding:6px 8px; font-size:.8rem; }
-    .zest-stats-embedded .zest-stats-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 0; padding:12px 0; margin-top:10px; border-radius:12px; box-shadow:none; }
-    .zest-stats-embedded .zest-stats-card { padding:0 12px; border-left:0; }
-    .zest-stats-embedded .zest-stats-card:nth-child(even) { border-left:1px solid var(--zest-line); }
-    .zest-stats-embedded .zest-stats-value { font-size:1.15rem; }
-    .zest-stats-embedded .zest-stats-note { margin:8px 0; }
-    .zest-stats-embedded .zest-stats-charts { grid-template-columns:minmax(0,1fr); gap:0; }
-    .zest-stats-embedded .zest-trend-header { gap:8px; }
-    .zest-stats-embedded .zest-trend-header h2 { margin:0; }
-    .zest-stats-embedded .zest-stats-ranges { max-width:100%; flex-wrap:wrap; }
-    .zest-stats-embedded .zest-stats-ranges button { padding:4px 8px; }
-    .zest-stats-embedded .zest-stats-period { gap:8px; margin:16px 0 8px; }
-    .zest-stats-embedded .zest-stats-weekdays { margin-top:12px; }
-    .zest-stats-embedded .zest-weekday { grid-template-columns:minmax(0,.8fr) minmax(0,1fr) minmax(0,1fr); gap:8px; margin:12px 0; }
-    .zest-stats-embedded .zest-cal-wrap { max-width:100%; min-width:0; }
-    .zest-stats-embedded .zest-achievements { grid-template-columns:minmax(0,1fr); gap:8px; margin:12px 0 0; }
-    .zest-stats-embedded .zest-achievement { grid-template-columns:44px minmax(0,1fr); column-gap:10px; padding:12px; }
-    .zest-stats-embedded .zest-achievement-category { margin-bottom:4px; }
-    .zest-stats-embedded .zest-medal { width:44px; height:49px; }
-    .zest-stats-embedded .zest-stats-table { table-layout:fixed; }
-    .zest-stats-embedded .zest-stats-table th,.zest-stats-embedded .zest-stats-table td { padding:8px 4px; overflow-wrap:anywhere; }
-    .zest-stats-embedded .zest-stats-top td:not(:first-child) { white-space:normal; }
-    .zest-stats-embedded .zest-stats-item { width:55%; }
-    .zest-stats-embedded .zest-stats-source { margin-top:12px; }
+    /* The sidebar is an entry point, not a second scrolling dashboard. */
+    .zest-stats-embedded { max-width:100%; padding:4px; display:flex; justify-content:center; }
+    .zest-stats-open-details { appearance:none; display:block; width:min(172px,100%); margin:0; padding:8px; border:1px solid transparent; border-radius:16px; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+    .zest-stats-open-details:hover { background:var(--zest-fill); border-color:var(--zest-line); }
+    .zest-stats-open-details:active { background:var(--zest-surface); }
+    .zest-stats-embedded .zest-rings { width:100%; height:auto; aspect-ratio:1; margin:0; }
+    .zest-stats-embedded .zest-rings-centre strong { font-size:1.05em; font-weight:550; line-height:1.3; letter-spacing:0; }
+    .zest-stats-embedded .zest-rings-centre .zest-stats-label { font-size:.75em; line-height:1.3; margin:0 0 3px; }
   `;
 }

@@ -275,6 +275,7 @@ export class GraphView {
     }
 
     this.theme = this.readTheme();
+    this.win.addEventListener?.("zest-accent-change", this.onThemeChange);
 
     this.svg.addEventListener("wheel", this.onWheel, { passive: false });
     this.svg.addEventListener("pointerdown", this.onBackgroundDown);
@@ -454,6 +455,7 @@ export class GraphView {
       // ignore: view may already be torn down
     }
     this.darkQuery = null;
+    this.win.removeEventListener?.("zest-accent-change", this.onThemeChange);
     this.svg.removeEventListener("wheel", this.onWheel);
     this.svg.removeEventListener("pointerdown", this.onBackgroundDown);
     this.svg.remove();

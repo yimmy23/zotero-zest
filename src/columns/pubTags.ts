@@ -1,7 +1,7 @@
 import { getPref, getNumPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { hexToRgb } from "../reading/heat";
-import { readableTextColor } from "../ui/color";
+import { setReadableColorVariants } from "../ui/color";
 import { HEAT_LEVELS } from "../ui/palette";
 import { accentColor } from "../ui/styles";
 import {
@@ -130,9 +130,6 @@ export function publicationTagsColumn(): ColumnSpec {
       if (!shown.length) return emptyJournalCell(cell, item);
       const wrap = doc.createElement("span");
       wrap.className = "zest-badges";
-      const dark = !!doc.defaultView?.matchMedia?.(
-        "(prefers-color-scheme: dark)",
-      )?.matches;
       const alpha = badgeOpacity();
       const textPref = String(getPref("rank.textColor") || "auto");
       for (const v of shown) {
@@ -151,8 +148,10 @@ export function publicationTagsColumn(): ColumnSpec {
         const rgb = hexToRgb(color);
         if (rgb) {
           badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
-          badge.style.color =
-            textPref === "auto" ? readableTextColor(rgb, dark) : textPref;
+          if (textPref === "auto") {
+            setReadableColorVariants(badge, rgb);
+            badge.classList.add("zest-readable-text");
+          } else badge.style.color = textPref;
         }
         wrap.appendChild(badge);
       }

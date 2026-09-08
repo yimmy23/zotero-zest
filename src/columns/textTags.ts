@@ -2,7 +2,7 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { parseTagRule } from "../tags/match";
 import { hexToRgb } from "../reading/heat";
-import { readableTextColor } from "../ui/color";
+import { setReadableColorVariants } from "../ui/color";
 import { BADGE_COLOR_DEFAULT } from "../ui/palette";
 import { makeCell, rowItem, type ColumnSpec } from "./registry";
 
@@ -75,11 +75,11 @@ export function textTagsColumn(): ColumnSpec {
         b.title = t.tag;
         const rgb = hexToRgb(t.color);
         if (rgb) {
-          const dark = !!doc.defaultView?.matchMedia?.(
-            "(prefers-color-scheme: dark)",
-          )?.matches;
           const tc = (getPref("textTags.textColor") as string) || "auto";
-          b.style.color = tc === "auto" ? readableTextColor(rgb, dark) : tc;
+          if (tc === "auto") {
+            setReadableColorVariants(b, rgb);
+            b.classList.add("zest-readable-text");
+          } else b.style.color = tc;
           b.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.16)`;
         }
         wrap.appendChild(b);

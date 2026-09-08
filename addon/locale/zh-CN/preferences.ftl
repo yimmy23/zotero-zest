@@ -252,6 +252,14 @@ pref-column-remark =
     .label = 简记列——一行备注，保存在 Extra 字段
 pref-panel-hint = 面板里的阅读热力条可以点击：点哪一段就在阅读器里打开对应页码。
 
+pref-group-sidebar = 侧边栏工具
+pref-sidebar-stats =
+    .label = 显示阅读统计圆环
+pref-sidebar-matrix =
+    .label = 显示标注矩阵
+pref-sidebar-graph =
+    .label = 显示文库关系图
+pref-sidebar-hint = 即时生效。关闭后仍可从 Zest 菜单打开对应功能；点击阅读圆环可查看完整统计与成就。
 pref-group-tabs = 垂直标签页
 pref-tabs-sidebar =
     .label = 显示垂直标签页侧栏

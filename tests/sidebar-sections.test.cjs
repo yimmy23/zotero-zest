@@ -125,12 +125,13 @@ function ownerWindow({ reader = false, observer = true } = {}) {
   return win;
 }
 
-function setup({ managerAvailable = true } = {}) {
+function setup({ managerAvailable = true, prefs = {} } = {}) {
   const registrations = [];
   const removed = [];
   const mounted = [];
   const popouts = [];
   const logs = [];
+  const themes = [];
   const knownItems = new Map();
   let failNextMount = false;
   const manager = {
@@ -192,6 +193,25 @@ function setup({ managerAvailable = true } = {}) {
         getString: (id) => id,
         getLocaleID: (id) => `zest-${id}`,
       },
+      "src/utils/prefs.ts": { getPref: (key) => prefs[key] },
+      "src/ui/dialogTheme.ts": {
+        bindSidebarTheme(win, body) {
+          const theme = {
+            win,
+            body,
+            active: true,
+            disposed: false,
+            setActive(active) {
+              theme.active = active;
+            },
+            dispose() {
+              theme.disposed = true;
+            },
+          };
+          themes.push(theme);
+          return theme;
+        },
+      },
       "src/panes/annotMatrix.ts": {
         mountMatrix: (win, host, source) =>
           controller("matrix", win, host, source),
@@ -199,7 +219,11 @@ function setup({ managerAvailable = true } = {}) {
           popouts.push({ kind: "matrix", host, source }),
       },
       "src/panes/statsDialog.ts": {
-        mountStats: (win) => controller("stats", win),
+        mountStats: (win, onOpenDetails) => {
+          const state = controller("stats", win);
+          state.onOpenDetails = onOpenDetails;
+          return state;
+        },
         openStatsDialog: (host) => popouts.push({ kind: "stats", host }),
       },
       "src/graph/pane.ts": {
@@ -266,6 +290,8 @@ function setup({ managerAvailable = true } = {}) {
     mounted,
     popouts,
     logs,
+    themes,
+    prefs,
     knownItems,
     panel,
     begin,
@@ -310,6 +336,28 @@ test("registers three independent native sidebar sections with header, navigatio
   app.registerSidebarSections();
   assert.equal(app.registrations.length, 3, "registration is idempotent");
   assert.equal(setup({ managerAvailable: false }).registrations.length, 0);
+});
+
+test("iframe themes follow sidebar visibility and dispose on failure or removal", () => {
+  const app = setup();
+  const panel = app.begin(app.panel("matrix"));
+  assert.equal(app.themes.length, 0, "an unloaded iframe has no theme work");
+  panel.win.framesCreated.at(-1).finishLoad();
+  const theme = app.themes[0];
+  assert.equal(theme.body, panel.body);
+  assert.equal(theme.win, panel.win.framesCreated.at(-1).contentWindow);
+  panel.win.observers.at(-1).intersect(false);
+  assert.equal(theme.active, false);
+  panel.win.observers.at(-1).intersect(true);
+  assert.equal(theme.active, true);
+  app.prefs["sidebar.matrix"] = false;
+  app.registerSidebarSections();
+  assert.equal(theme.disposed, true);
+
+  const stats = app.begin(app.panel("stats"));
+  app.failMount();
+  stats.win.framesCreated.at(-1).finishLoad();
+  assert.equal(app.themes.at(-1).disposed, true, "failed mounts detach themes");
 });
 
 test("native init and shell render stay lazy; only a visible async render loads the iframe", () => {
@@ -396,8 +444,134 @@ test("stats and matrix use isolated iframe documents and preserve native owner c
     "sidebar-stats-scope",
   );
   assert.equal(matrix.body.querySelector(".zest-sidebar-scope").hidden, true);
+  assert.equal(stats.body.querySelector(".zest-sidebar-scope").hidden, true);
   assert.equal(stats.body.querySelector(".zest-sidebar-message").hidden, true);
   assert.equal(matrix.body.querySelector(".zest-sidebar-message").hidden, true);
+});
+
+test("sidebar preferences independently unregister and dispose panels in every window", () => {
+  const app = setup();
+  const first = app.begin(app.panel("stats"));
+  const second = app.begin(app.panel("stats"));
+  const matrix = app.begin(app.panel("matrix", first.win));
+  first.win.framesCreated.forEach((frame) => frame.finishLoad());
+  second.win.framesCreated.forEach((frame) => frame.finishLoad());
+  const mountedStats = app.mounted.filter((state) => state.kind === "stats");
+  const mountedMatrix = app.mounted.find((state) => state.kind === "matrix");
+  mountedStats[0].onOpenDetails();
+  assert.equal(app.popouts[0].host, first.win);
+  assert.equal(app.popouts[0].kind, "stats");
+  app.prefs["sidebar.stats"] = false;
+  app.registerSidebarSections();
+  assert.deepEqual(app.removed, ["registered-workspace-stats"]);
+  assert.ok(mountedStats.every((state) => state.disposed));
+  assert.equal(first.body.querySelector("iframe"), null);
+  assert.equal(second.body.querySelector("iframe"), null);
+  assert.equal(mountedMatrix.disposed, false);
+  assert.ok(matrix.body.querySelector("iframe"));
+  mountedStats[0].onOpenDetails();
+  assert.equal(app.popouts.length, 1, "disposed rings cannot open a window");
+  app.registerSidebarSections();
+  assert.equal(app.removed.length, 1, "repeated sync is idempotent");
+  app.prefs["sidebar.stats"] = true;
+  app.registerSidebarSections();
+  assert.equal(app.registrations.length, 4);
+  assert.equal(app.registrations[3].paneID, "workspace-stats");
+  assert.equal(mountedMatrix.disposed, false);
+});
+
+test("disabled sidebar tools do not register on startup or after an upgrade sweep", () => {
+  const app = setup({
+    prefs: { "sidebar.stats": false, "sidebar.graph": false },
+  });
+  assert.deepEqual(
+    app.registrations.map((entry) => entry.paneID),
+    ["workspace-matrix"],
+  );
+  app.unregisterSidebarSections();
+  app.registerSidebarSections();
+  assert.deepEqual(
+    app.registrations.map((entry) => entry.paneID),
+    ["workspace-matrix", "workspace-matrix"],
+  );
+  app.prefs["sidebar.matrix"] = false;
+  app.registerSidebarSections();
+  assert.deepEqual(app.removed, [
+    "registered-workspace-matrix",
+    "registered-workspace-matrix",
+  ]);
+});
+
+test("rapid off/on resumes a retained native body even if Zotero skips cached render callbacks", () => {
+  const app = setup();
+  const panel = app.begin(app.panel("stats"));
+  panel.win.framesCreated[0].finishLoad();
+  app.prefs["sidebar.stats"] = false;
+  app.registerSidebarSections();
+  assert.equal(panel.body.children.length, 0);
+  app.prefs["sidebar.stats"] = true;
+  app.registerSidebarSections();
+  const definition = app.registrations.at(-1);
+  definition.onItemChange(panel.props);
+  panel.win.observers.at(-1).intersect(true);
+  assert.ok(panel.body.querySelector("iframe"));
+  panel.win.framesCreated.at(-1).finishLoad();
+  assert.equal(app.mounted.length, 2);
+  assert.equal(app.mounted[0].disposed, true);
+  assert.equal(app.mounted[1].active, true);
+});
+
+test("first async render restores a never-visible retained body without mounting while hidden", () => {
+  for (const kind of ["stats", "matrix", "graph"]) {
+    for (const hidden of [false, true]) {
+      const app = setup();
+      const panel = app.panel(kind);
+      // Unlike the generic DOM fixture, an emptied native body has no height.
+      panel.body.getBoundingClientRect = () => ({
+        width: 340,
+        height: panel.body.querySelector(".zest-sidebar-shell") ? 500 : 0,
+      });
+      panel.definition.onInit(panel.props);
+      panel.definition.onItemChange(panel.props);
+      panel.definition.onRender(panel.props);
+      assert.equal(app.mounted.length, 0);
+      assert.equal(panel.win.framesCreated.length, 0);
+      app.prefs[`sidebar.${kind}`] = false;
+      app.registerSidebarSections();
+      app.prefs[`sidebar.${kind}`] = true;
+      app.registerSidebarSections();
+      const definition = app.registrations.at(-1);
+      // Zotero retains the body and its synchronous-render cache, but this
+      // off-screen panel has never received an async-render request.
+      definition.onItemChange(panel.props);
+      assert.equal(panel.body.children.length, 0);
+      panel.win.document.hidden = hidden;
+      definition.onAsyncRender(panel.props);
+      assert.ok(panel.body.querySelector(".zest-sidebar-content"));
+      assert.equal(
+        panel.body.getAttribute("data-zest-sidebar-requested"),
+        "true",
+      );
+      if (hidden) {
+        assert.equal(panel.win.framesCreated.length, 0);
+        assert.equal(app.mounted.length, 0);
+        assert.equal(panel.win.viewReads, 0);
+        panel.win.document.hidden = false;
+        panel.win.document.dispatch("visibilitychange");
+      }
+      panel.win.framesCreated.forEach((frame) => frame.finishLoad());
+      assert.equal(app.mounted.length, 1);
+      assert.equal(app.mounted[0].kind, kind);
+      definition.onAsyncRender(panel.props);
+      assert.equal(app.mounted.length, 1, "repeated requests reuse content");
+      assert.equal(
+        panel.body.querySelectorAll(".zest-sidebar-shell").length,
+        1,
+      );
+      assert.deepEqual(app.logs, []);
+      app.unregisterSidebarSections();
+    }
+  }
 });
 
 test("source uses the pane item rather than library selection and forbids hidden reader view reads", () => {

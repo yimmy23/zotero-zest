@@ -170,6 +170,9 @@ try {
     // Verified Zotero 10 getter: { updateID, options }, without registration writes.
     const options = Zotero.ItemPaneManager?.customSectionData?.options;
     const kinds = ["stats", "matrix", "graph"];
+    const enabledKinds = kinds.filter(
+      (kind) => Zotero.Prefs.get(prefKey(`sidebar.${kind}`), true) !== false,
+    );
     const sectionOptions = Array.isArray(options)
       ? options.filter(
           (option) =>
@@ -178,13 +181,13 @@ try {
         )
       : [];
     check(
-      "sidebar.threeNativeSectionsRegistered",
-      sectionOptions.length === 3 &&
+      "sidebar.nativeSectionRegistrationMatchesPreferences",
+      sectionOptions.length === enabledKinds.length &&
         kinds.every(
           (kind) =>
             sectionOptions.filter((option) =>
               option.paneID.endsWith(`-workspace-${kind}`),
-            ).length === 1,
+            ).length === (enabledKinds.includes(kind) ? 1 : 0),
         ),
     );
     const iconNames = {
@@ -194,7 +197,7 @@ try {
     };
     check(
       "sidebar.nativeIconsAndLazyHooks",
-      sectionOptions.length === 3 &&
+      sectionOptions.length === enabledKinds.length &&
         sectionOptions.every((option) => {
           const kind = kinds.find((value) =>
             option.paneID.endsWith(`-workspace-${value}`),

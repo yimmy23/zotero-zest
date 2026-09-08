@@ -183,7 +183,7 @@ if (statsWin) {
         (day) => day.getAttribute("role") === "img",
       ),
   );
-  check("stats.medals", d.querySelectorAll("svg.zest-medal").length === 9);
+  check("stats.medals", d.querySelectorAll(".zest-medal img").length === 9);
   check("stats.trend", !!d.querySelector("svg.zest-stats-trend"));
   check(
     "stats.weekdays",

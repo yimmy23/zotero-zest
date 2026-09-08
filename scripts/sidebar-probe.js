@@ -85,6 +85,12 @@ const standalone = (kind) =>
 async function resetSections() {
   dev.sidebarSections.unregisterSidebarSections();
   details.renderCustomSections();
+  // Wait for Zotero's queued registration notifications before changing
+  // locale. Rapid/coalesced toggles are tested separately by controls-probe.
+  await until(
+    "old sections removed",
+    () => !sections().some((node) => node.paneID?.includes("workspace-")),
+  );
   dev.sidebarSections.registerSidebarSections();
   await details.render();
   nav.render();
@@ -108,6 +114,7 @@ async function show(kind) {
       detail: 1,
     }),
   );
+  await details.scrollToPane(section.paneID, "instant");
   const content = await until(kind + " content", () =>
     section.querySelector(".zest-sidebar-content"),
   );
@@ -216,18 +223,22 @@ try {
         change(ui.win, scope, "selected");
         await until("current paper", ui.ready);
       } else if (kind === "stats") {
+        const button = q(ui.d, ".zest-stats-open-details");
         check(
           locale + " stats action language",
-          q(ui.d, ".zest-stats-refresh").textContent ===
-            (chinese ? "刷新" : "Refresh"),
+          button?.title.includes(chinese ? "独立窗口" : "window"),
         );
-        for (const days of [7, 90, 30]) {
-          q(ui.d, `[data-range="${days}"]`).click();
-          check(
-            locale + " stats range " + days,
-            q(ui.d, `[data-period-days="${days}"]`),
-          );
-        }
+        check(
+          locale + " only three compact rings",
+          ui.d.querySelectorAll(".zest-ring-progress").length === 3,
+        );
+        check(
+          locale + " no embedded dashboard",
+          !q(
+            ui.d,
+            ".zest-achievements,.zest-stats-charts,.zest-stats-summary,.zest-goal-controls",
+          ),
+        );
       } else {
         const modes = ui.content.querySelector("select");
         for (const mode of ["author", "tag", "collection", "related"]) {
@@ -275,6 +286,34 @@ try {
               ui.d.documentElement.scrollWidth <=
                 ui.d.documentElement.clientWidth + 1,
             );
+          if (kind === "stats") {
+            check(
+              name + " compact height",
+              ui.content.getBoundingClientRect().height <= 190,
+            );
+            check(
+              name + " no nested vertical scroll",
+              ui.d.documentElement.scrollHeight <=
+                ui.d.documentElement.clientHeight + 1,
+            );
+          }
+          if (kind === "graph") {
+            const bar = q(ui.content, ".zest-sidebar-graph-bar");
+            const controls = [...bar.children].map((node) =>
+              node.getBoundingClientRect(),
+            );
+            check(
+              name + " toolbar controls do not overlap",
+              controls.every(
+                (rect, i) => !i || rect.left >= controls[i - 1].right + 5,
+              ),
+            );
+            check(
+              name + " one custom select arrow",
+              host.getComputedStyle(bar.querySelector("select")).appearance ===
+                "none",
+            );
+          }
           if (kind === "matrix") {
             const tag = ui.d.querySelector(".zest-matrix-tag-chip");
             check(
