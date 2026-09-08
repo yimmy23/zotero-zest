@@ -75,7 +75,7 @@ export async function buildGraph(
   opts: {
     maxNodes: number;
     centerItemID?: number;
-    /** author mode: every author, or only first + last (corresponding slot) */
+    /** author mode: every author, or first + last by position, not correspondence */
     authorRoles?: "all" | "firstlast";
     /** bipartite modes: category must be shared by at least this many items */
     minShared?: number;

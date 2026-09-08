@@ -849,3 +849,296 @@ test("copy Markdown keeps each window's filters and feedback isolated", async ()
   assert.equal(app.pickers.length, 0);
   assert.equal(app.writes.length, 0);
 });
+
+test("embedded matrices isolate the current reader source from the background library", async () => {
+  const app = setup();
+  const frame = windowFixture();
+  const readerItems = [{ rows: [row(800), row(801)] }];
+  const requested = [];
+  const readerHost = {
+    closed: false,
+    get ZoteroPane() {
+      throw new Error("Reader source must not inspect the hidden library");
+    },
+  };
+  const mount = app.mountMatrix(frame, readerHost, {
+    getItems(scope) {
+      requested.push(scope);
+      return readerItems;
+    },
+    selectedLabel: "matrix-scope-current",
+  });
+  await settle();
+  assert.deepEqual(requested, ["selected"]);
+  assert.equal(app.loads[0].items, readerItems);
+  assert.equal(rendered(frame).length, 2);
+  assert.equal(find(frame, ".zest-matrix-scope").disabled, true);
+  assert.equal(
+    find(frame, ".zest-matrix-scope option").textContent,
+    "matrix-scope-current",
+  );
+  assert.ok(find(frame, ".zest-matrix-embedded"));
+  assert.equal(app.logs.length, 0);
+  mount.dispose();
+  assert.equal(frame.closed, false);
+  assert.equal(frame.listeners.get("unload").size, 0);
+});
+
+test("mounting refuses the owner document or an unloaded or unrelated iframe", () => {
+  const app = setup();
+  const owner = windowFixture();
+  const source = { getItems: () => [] };
+  for (const [win, host] of [
+    [owner, owner],
+    [windowFixture({ url: "about:blank" }), owner],
+    [windowFixture({ body: false }), owner],
+    [windowFixture({ url: "chrome://zotero/content/zoteroPane.xhtml" }), owner],
+  ]) {
+    assert.throws(() => app.mountMatrix(win, host, source), /panel iframe/);
+    assert.equal(win.document.querySelector(".zest-matrix"), null);
+  }
+  assert.equal(app.loads.length, 0);
+});
+
+test("embedded scope choices are explicit and never fall through to a library source", async () => {
+  const app = setup();
+  const frame = windowFixture();
+  const selected = [{ rows: [row(1)] }];
+  const view = [{ rows: [row(2), row(3)] }];
+  app.mountMatrix(frame, app.host, {
+    allowViewScope: true,
+    getItems: (scope) => (scope === "view" ? view : selected),
+  });
+  await settle();
+  assert.equal(find(frame, ".zest-matrix-scope").value, "selected");
+  assert.equal(find(frame, ".zest-matrix-scope").children.length, 2);
+  assert.equal(app.loads[0].items, selected);
+  change(frame, ".zest-matrix-scope", "view");
+  await settle();
+  assert.equal(app.loads[1].items, view);
+  assert.equal(rendered(frame).length, 2);
+});
+
+test("hiding cancels an embedded scan; inactive refresh coalesces into one resume scan", async () => {
+  const app = setup({ manualLoads: true });
+  const frame = windowFixture();
+  const source = { getItems: () => app.host.selectedItems };
+  const mount = app.mountMatrix(frame, app.host, source);
+  const original = app.loads[0];
+  mount.setActive(false);
+  const writes = frame.document.writes;
+  assert.equal(original.cancelled(), true);
+  mount.refresh();
+  mount.refresh();
+  original.resolve([row(700)]);
+  await settle();
+  assert.equal(app.loads.length, 1);
+  assert.equal(frame.document.writes, writes);
+  mount.setActive(true);
+  assert.equal(app.loads.length, 2);
+  app.loads[1].resolve([row(701)]);
+  await settle();
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 701"));
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(
+    app.loads.length,
+    2,
+    "a settled, unchanged snapshot needs no scan",
+  );
+  mount.dispose();
+  mount.refresh();
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(app.loads.length, 2);
+  assert.equal(frame.closed, false);
+});
+
+test("hiding and resuming preserves matrix filters and page without recollection", async () => {
+  const rows = Array.from({ length: 250 }, (_, i) => row(i + 1));
+  const app = setup({ rows });
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => [{ rows }],
+  });
+  await settle();
+  const search = find(frame, ".zest-matrix-search");
+  search.value = "annotation";
+  search.dispatch("input");
+  frame.flushTimers();
+  find(frame, ".zest-matrix-next").click();
+  const firstText = rendered(frame)[0].textContent;
+  assert.ok(firstText.includes("Unique annotation 101"));
+  mount.setActive(false);
+  const writes = frame.document.writes;
+  mount.setActive(true);
+  assert.equal(frame.document.writes, writes);
+  assert.equal(search.value, "annotation");
+  assert.equal(rendered(frame)[0].textContent, firstText);
+  assert.equal(app.loads.length, 1);
+});
+
+test("hidden search debounce is cancelled and its pending filter paints only on resume", async () => {
+  const app = setup();
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.viewItems,
+  });
+  await settle();
+  const search = find(frame, ".zest-matrix-search");
+  search.value = '"annotation 2"';
+  search.dispatch("input");
+  const late = [...frame.timers.values()][0].fn;
+  mount.setActive(false);
+  const writes = frame.document.writes;
+  assert.equal(frame.timers.size, 0);
+  late();
+  assert.equal(frame.document.writes, writes);
+  assert.equal(rendered(frame).length, 2);
+  mount.setActive(true);
+  assert.equal(rendered(frame).length, 1);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 2"));
+  const resumedWrites = frame.document.writes;
+  late();
+  assert.equal(frame.document.writes, resumedWrites);
+  assert.equal(app.loads.length, 1);
+});
+
+test("closing standalone matrices never closes embedded frames or the owner window", async () => {
+  const standalone = windowFixture();
+  const owner = windowFixture({
+    url: "chrome://zotero/content/zoteroPane.xhtml",
+  });
+  const frame = windowFixture();
+  frame.frameElement = {};
+  const app = setup({ windows: [standalone, owner, frame] });
+  owner.document.body.append(owner.document.createElement("div"));
+  owner.document.body.children[0].className = "zest-matrix";
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.selectedItems,
+  });
+  app.openMatrix(app.host);
+  await settle();
+  app.closeMatrix();
+  assert.equal(standalone.closed, true);
+  assert.equal(owner.closed, false);
+  assert.equal(frame.closed, false);
+  mount.refresh();
+  await settle();
+  assert.equal(rendered(frame).length, 1);
+  mount.dispose();
+  assert.equal(owner.closed, false);
+  assert.equal(frame.closed, false);
+});
+
+test("matrix sidebar instances and standalone filters remain independent with full Markdown export", async () => {
+  const app = setup();
+  const first = windowFixture();
+  const second = windowFixture();
+  const rows = Array.from({ length: 251 }, (_, i) => row(i + 1));
+  const mount = app.mountMatrix(first, app.host, {
+    getItems: () => [{ rows }],
+  });
+  app.mountMatrix(second, app.host, {
+    getItems: () => [{ rows: [row(900)] }],
+  });
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(first, ".zest-matrix-search");
+  search.value = "annotation -251";
+  search.dispatch("input");
+  first.flushTimers();
+  find(first, ".zest-matrix-next").click();
+  find(first, ".zest-matrix-copy-md").click();
+  const markdown = app.copies[0];
+  assert.equal((markdown.match(/^## Paper /gm) || []).length, 250);
+  assert.ok(markdown.includes(rows[0].sourceURL));
+  assert.ok(markdown.includes(rows[249].sourceURL));
+  assert.ok(!markdown.includes(rows[250].sourceURL));
+  assert.equal(find(second, ".zest-matrix-search").value, "");
+  assert.equal(find(app.win, ".zest-matrix-search").value, "");
+  assert.equal(rendered(second).length, 1);
+  assert.equal(rendered(app.win).length, 2);
+  const writes = first.document.writes;
+  mount.dispose();
+  find(first, ".zest-matrix-next").click();
+  assert.equal(first.document.writes, writes);
+  assert.equal(second.closed, false);
+  assert.equal(app.win.closed, false);
+});
+
+test("pop-out keeps an explicit frozen current-item source and can return to normal library scope", async () => {
+  const app = setup();
+  const frozen = [{ rows: [row(950)] }];
+  const requested = [];
+  const source = {
+    getItems(scope) {
+      requested.push(scope);
+      return frozen;
+    },
+    selectedLabel: "matrix-scope-current",
+  };
+  app.openMatrix(app.host, source);
+  await settle();
+  app.host.selectedItems = [{ rows: [row(960)] }];
+  find(app.win, ".zest-matrix-refresh").click();
+  await settle();
+  assert.equal(app.loads[1].items, frozen);
+  assert.deepEqual(requested, ["selected", "selected"]);
+  assert.ok(rendered(app.win)[0].textContent.includes("Unique annotation 950"));
+  assert.equal(find(app.win, ".zest-matrix-scope").children.length, 1);
+  app.openMatrix(app.host);
+  await settle();
+  assert.equal(app.openCalls.length, 1);
+  assert.equal(find(app.win, ".zest-matrix-scope").value, "view");
+  assert.equal(find(app.win, ".zest-matrix-scope").children.length, 2);
+  assert.equal(app.loads[2].items, app.host.viewItems);
+});
+
+test("disposing an embedded matrix cancels late scans without closing or repainting the iframe", async () => {
+  const app = setup({ manualLoads: true });
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.selectedItems,
+  });
+  const pending = app.loads[0];
+  mount.dispose();
+  const writes = frame.document.writes;
+  assert.equal(pending.cancelled(), true);
+  pending.resolve([row(4)]);
+  await settle();
+  assert.equal(frame.document.writes, writes);
+  assert.equal(frame.closed, false);
+  assert.equal(frame.listeners.get("unload").size, 0);
+  mount.refresh();
+  assert.equal(app.loads.length, 1);
+});
+
+test("a cancelled file picker while hidden does not repaint and restores actions on the same page", async () => {
+  const rows = Array.from({ length: 201 }, (_, i) => row(i + 1));
+  const app = setup({ rows });
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => [{ rows }],
+  });
+  await settle();
+  find(frame, ".zest-matrix-next").click();
+  let finish;
+  app.picker(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  find(frame, ".zest-matrix-export-md").click();
+  assert.equal(find(frame, ".zest-matrix-copy-md").disabled, true);
+  mount.setActive(false);
+  const writes = frame.document.writes;
+  finish(false);
+  await settle();
+  assert.equal(frame.document.writes, writes);
+  mount.setActive(true);
+  assert.equal(find(frame, ".zest-matrix-copy-md").disabled, false);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 101"));
+  assert.equal(app.loads.length, 1);
+  assert.equal(app.writes.length, 0);
+});

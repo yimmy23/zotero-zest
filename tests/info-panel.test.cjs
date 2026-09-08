@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { createHarness } = require("./helpers.cjs");
-const { nameTokens } = createHarness({
+const { nameTokens, matchAuthorships } = createHarness({
   mocks: { "src/core/storage.ts": { cache: {} } },
 }).load("src/graph/authorIdentity.ts");
 
@@ -310,6 +310,7 @@ function setup({
         cachedAuthorships: (item) => authorshipCache.get(item.id),
         findCachedAuthor: () => undefined,
         nameTokens,
+        matchAuthorships,
       },
       "src/authors/authorMenu.ts": {
         openAuthorMenu: (...args) => authorMenus.push(args),

@@ -14,6 +14,7 @@ export default zotero({
         "scripts/matrix-probe.js",
         "scripts/tags-probe.js",
         "scripts/native-select-probe.js",
+        "scripts/sidebar-probe.js",
       ],
     },
   ],

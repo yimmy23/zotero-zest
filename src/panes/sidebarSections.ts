@@ -1,0 +1,400 @@
+import { config } from "../../package.json";
+import { getString, getLocaleID } from "../utils/locale";
+import { guard } from "../utils/guard";
+import { mountMatrix, openMatrix, type MatrixSource } from "./annotMatrix";
+import { mountStats, openStatsDialog } from "./statsDialog";
+import { showGraphPane } from "../graph/pane";
+import { mountSidebarGraph } from "./sidebarGraph";
+
+type Kind = "stats" | "matrix" | "graph";
+interface Controller {
+  refresh(): void;
+  setActive(active: boolean): void;
+  dispose(): void;
+}
+interface Props {
+  body: HTMLElement;
+  doc?: Document;
+  item?: Zotero.Item;
+  tabType?: string;
+  setEnabled?: (enabled: boolean) => void;
+  setSectionSummary?: (summary: string) => void;
+  setSectionButtonStatus?: (
+    type: string,
+    status: { disabled?: boolean },
+  ) => void;
+}
+interface State {
+  kind: Kind;
+  body: HTMLElement;
+  win: Window;
+  item?: Zotero.Item;
+  tabType?: string;
+  enabled: boolean;
+  requested: boolean;
+  active: boolean;
+  visible: boolean;
+  disposed: boolean;
+  shell?: HTMLElement;
+  content?: HTMLElement;
+  note?: HTMLElement;
+  status?: HTMLElement;
+  frame?: HTMLIFrameElement;
+  controller?: Controller;
+  observer?: IntersectionObserver;
+  load?: () => void;
+  visibility: () => void;
+  unload: () => void;
+}
+const HOST_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
+const ids = new Map<Kind, string>();
+const states = new Map<HTMLElement, State>();
+const icons: Record<Kind, string> = {
+  stats: "reading-stats",
+  matrix: "matrix",
+  graph: "local-graph",
+};
+
+/** Explicit context source: a reader must never borrow the hidden library selection. */
+export function sidebarMatrixSource(
+  item: Zotero.Item | undefined,
+  tabType: string | undefined,
+  win: Window,
+): MatrixSource {
+  const allowViewScope =
+    tabType !== "reader" &&
+    typeof (win as any).ZoteroPane?.itemsView?.getSortedItems === "function";
+  return {
+    allowViewScope,
+    selectedLabel: "matrix-scope-current",
+    getItems: (scope) => {
+      if (scope === "view" && allowViewScope) {
+        const rows = (win as any).ZoteroPane.itemsView.getSortedItems();
+        if (!Array.isArray(rows)) throw new Error("Library view unavailable");
+        return rows;
+      }
+      return item ? [item] : [];
+    },
+  };
+}
+
+function supports(item?: Zotero.Item) {
+  return (
+    !!item && !item.deleted && (item.isRegularItem?.() || item.isAttachment?.())
+  );
+}
+function open(state: State) {
+  if (state.disposed || !state.enabled) return;
+  if (state.kind === "stats") openStatsDialog(state.win);
+  else if (state.kind === "matrix")
+    openMatrix(
+      state.win,
+      sidebarMatrixSource(state.item, state.tabType, state.win),
+    );
+  else if ((state.win as any).ZoteroPane) showGraphPane(state.win);
+}
+function dispose(state: State) {
+  if (state.disposed) return;
+  state.disposed = true;
+  state.observer?.disconnect();
+  state.win.document.removeEventListener("visibilitychange", state.visibility);
+  state.win.removeEventListener("unload", state.unload);
+  if (state.load) state.frame?.removeEventListener("load", state.load, true);
+  state.controller?.dispose();
+  state.frame?.remove();
+  state.shell?.remove();
+  states.delete(state.body);
+}
+function getState(props: Props, kind: Kind) {
+  let state = states.get(props.body);
+  if (state) return state;
+  const win = props.body.ownerDocument?.defaultView as Window | null;
+  if (!win) throw new Error("Sidebar container has no window");
+  state = {
+    kind,
+    body: props.body,
+    win,
+    enabled: false,
+    requested: false,
+    active: false,
+    visible: false,
+    disposed: false,
+    visibility: () => sync(state!),
+    unload: () => dispose(state!),
+  };
+  states.set(props.body, state);
+  const IO = (win as any).IntersectionObserver;
+  if (IO) {
+    state.observer = new IO((entries: IntersectionObserverEntry[]) => {
+      if (state!.disposed) return;
+      state!.visible = entries.some((entry) => entry.isIntersecting);
+      sync(state!);
+    });
+    state.observer!.observe(props.body);
+  }
+  win.document.addEventListener("visibilitychange", state.visibility);
+  win.addEventListener("unload", state.unload, { once: true });
+  return state;
+}
+function isOpen(state: State) {
+  const section = state.body.closest("collapsible-section") as
+    (HTMLElement & { open: boolean }) | null;
+  return section?.open !== false;
+}
+function sync(state: State) {
+  if (state.disposed) return;
+  const active =
+    state.enabled &&
+    state.requested &&
+    state.visible &&
+    isOpen(state) &&
+    !state.win.document.hidden;
+  state.active = active;
+  state.controller?.setActive(active);
+  if (active && !state.controller) ensureContent(state);
+}
+function renderShell(state: State) {
+  if (state.shell) return;
+  const doc = state.win.document;
+  const shell = doc.createElement("div");
+  shell.className = "zest-sidebar-shell";
+  shell.dataset.kind = state.kind;
+  const style = doc.createElement("style");
+  style.textContent = `
+    .zest-sidebar-shell { position:relative; min-width:0; color:var(--fill-primary); }
+    .zest-sidebar-scope { font-size:.92em; color:var(--fill-secondary); line-height:1.5; margin:0 0 8px; overflow-wrap:anywhere; }
+    .zest-sidebar-content { min-width:0; }
+    .zest-sidebar-shell[data-kind=stats] .zest-sidebar-content,.zest-sidebar-shell[data-kind=matrix] .zest-sidebar-content { height:clamp(360px,72vh,700px); }
+    .zest-sidebar-shell[data-kind=graph] .zest-sidebar-content { min-height:calc(clamp(260px,44vh,420px) + 104px); }
+    .zest-sidebar-frame { display:block; width:100%; height:100%; border:0; border-radius:8px; background:transparent; }
+    .zest-sidebar-message { position:absolute; margin:0; padding:8px; color:var(--fill-secondary); font-size:.92em; pointer-events:none; }
+    .zest-sidebar-message[hidden],.zest-sidebar-scope[hidden] { display:none; }
+    .zest-sidebar-retry { appearance:none; font:inherit; color:var(--fill-primary); background:var(--fill-quinary); padding:5px 10px; margin-top:38px; border:0; border-radius:6px; }
+  `;
+  const note = doc.createElement("p");
+  note.className = "zest-sidebar-scope";
+  const status = doc.createElement("p");
+  status.className = "zest-sidebar-message";
+  status.textContent = getString("sidebar-loading");
+  status.setAttribute("role", "status");
+  const content = doc.createElement("div");
+  content.className = "zest-sidebar-content";
+  shell.append(style, note, status, content);
+  state.body.append(shell);
+  Object.assign(state, { shell, note, status, content });
+  updateScope(state);
+}
+function updateScope(state: State) {
+  if (!state.note) return;
+  state.note.hidden = state.kind === "matrix";
+  state.note.textContent = getString(
+    state.kind === "stats"
+      ? "sidebar-stats-scope"
+      : state.tabType === "reader"
+        ? "sidebar-graph-item"
+        : "sidebar-graph-view",
+  );
+}
+function graphSource(state: State) {
+  const current = state.item?.isRegularItem?.() ? state.item : undefined;
+  const rows = sidebarMatrixSource(current, state.tabType, state.win).getItems(
+    "view",
+  );
+  const items = rows.filter((item) => item?.isRegularItem?.() && !item.deleted);
+  if (state.tabType === "reader" && current) {
+    for (const key of current.relatedItems || []) {
+      const item = Zotero.Items.getByLibraryAndKey(current.libraryID, key);
+      if (
+        item &&
+        item.isRegularItem() &&
+        !item.deleted &&
+        !items.some((row) => row.id === item.id)
+      )
+        items.push(item);
+    }
+  }
+  if (current && !items.some((item) => item.id === current.id))
+    items.push(current);
+  return { items, itemID: current?.id, host: state.win };
+}
+function failed(state: State, error: unknown) {
+  ztoolkit.log("[sidebar] content load failed", error);
+  if (state.disposed || !state.content || !state.status) return;
+  state.status.hidden = false;
+  state.status.textContent = getString("sidebar-load-failed");
+  if (state.load) state.frame?.removeEventListener("load", state.load, true);
+  state.frame?.remove();
+  state.frame = undefined;
+  state.content.replaceChildren();
+  const button = state.win.document.createElement("button");
+  button.type = "button";
+  button.className = "zest-sidebar-retry";
+  button.textContent = getString("sidebar-retry");
+  button.addEventListener(
+    "click",
+    guard("sidebar retry", () => {
+      button.remove();
+      sync(state);
+    }),
+  );
+  state.content.append(button);
+}
+function ensureContent(state: State) {
+  if (state.disposed || !state.active || state.controller) return;
+  renderShell(state);
+  try {
+    if (state.kind === "graph") {
+      state.controller = mountSidebarGraph(state.content!, () =>
+        graphSource(state),
+      );
+      state.status!.hidden = true;
+      return;
+    }
+    const ready = () => {
+      if (state.disposed || !state.active || state.controller) return;
+      const win = state.frame?.contentWindow;
+      if (
+        !win ||
+        win.location.href !== HOST_URL ||
+        win.document.readyState !== "complete"
+      )
+        return;
+      try {
+        if (state.kind === "stats") state.controller = mountStats(win);
+        else
+          state.controller = mountMatrix(win, state.win, {
+            allowViewScope: sidebarMatrixSource(
+              state.item,
+              state.tabType,
+              state.win,
+            ).allowViewScope,
+            selectedLabel: "matrix-scope-current",
+            getItems: (scope) =>
+              sidebarMatrixSource(
+                state.item,
+                state.tabType,
+                state.win,
+              ).getItems(scope),
+          });
+        state.status!.hidden = true;
+      } catch (e) {
+        failed(state, e);
+      }
+    };
+    if (state.frame) {
+      ready();
+      return;
+    }
+    const frame = state.win.document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "iframe",
+    ) as HTMLIFrameElement;
+    frame.className = "zest-sidebar-frame";
+    frame.title = getString(
+      state.kind === "stats" ? "stats-title" : "matrix-title",
+    );
+    state.frame = frame;
+    state.load = ready;
+    // Privileged chrome documents deliver their load through capture here.
+    frame.addEventListener("load", ready, true);
+    frame.src = HOST_URL;
+    state.content!.append(frame);
+    ready();
+  } catch (e) {
+    failed(state, e);
+  }
+}
+
+export function registerSidebarSections() {
+  const manager = (Zotero as any).ItemPaneManager;
+  if (typeof manager?.registerSection !== "function") return;
+  for (const kind of ["stats", "matrix", "graph"] as const) {
+    if (ids.has(kind)) continue;
+    const result = manager.registerSection({
+      paneID: `workspace-${kind}`,
+      pluginID: config.addonID,
+      header: {
+        l10nID: getLocaleID(`sidebar-${kind}-header`),
+        l10nArgs: "{}",
+        icon: `chrome://${config.addonRef}/content/icons/${icons[kind]}.svg`,
+      },
+      sidenav: {
+        l10nID: getLocaleID(`sidebar-${kind}-sidenav`),
+        l10nArgs: "{}",
+        icon: `chrome://${config.addonRef}/content/icons/20/${icons[kind]}.svg`,
+      },
+      sectionButtons: [
+        {
+          type: "zest-popout",
+          icon: `chrome://${config.addonRef}/content/icons/open-window.svg`,
+          l10nID: getLocaleID(
+            kind === "graph" ? "sidebar-open-graph" : "sidebar-open-window",
+          ),
+          onClick: guard("sidebar popout", (props: Props) =>
+            open(getState(props, kind)),
+          ),
+        },
+      ],
+      onInit: guard("sidebar init", (props: Props) => {
+        getState(props, kind);
+      }),
+      onItemChange: guard("sidebar item", (props: Props) => {
+        const state = getState(props, kind);
+        const changed =
+          state.item !== props.item || state.tabType !== props.tabType;
+        const contextChanged = state.tabType !== props.tabType;
+        state.item = props.item;
+        state.tabType = props.tabType;
+        state.enabled = supports(props.item);
+        props.setEnabled?.(state.enabled);
+        props.setSectionButtonStatus?.("zest-popout", {
+          disabled: kind === "graph" && !(state.win as any).ZoteroPane,
+        });
+        // Cancel a previous item's scan before exposing this item's context.
+        if (contextChanged && kind === "matrix" && state.controller) {
+          state.controller.dispose();
+          state.controller = undefined;
+        } else if (changed && kind !== "stats" && state.controller) {
+          state.controller.setActive(false);
+          state.controller.refresh();
+        }
+        updateScope(state);
+        sync(state);
+        return true;
+      }),
+      onRender: guard("sidebar shell", (props: Props) =>
+        renderShell(getState(props, kind)),
+      ),
+      onAsyncRender: guard("sidebar visible", (props: Props) => {
+        const state = getState(props, kind);
+        state.requested = true;
+        const r = state.body.getBoundingClientRect();
+        state.visible = r.width > 0 && r.height > 0;
+        sync(state);
+      }),
+      onToggle: guard("sidebar toggle", (props: Props) =>
+        sync(getState(props, kind)),
+      ),
+      onDestroy: guard("sidebar destroy", (props: Props) => {
+        const state = states.get(props.body);
+        if (state) dispose(state);
+      }),
+    });
+    if (typeof result === "string") ids.set(kind, result);
+    else ztoolkit.log(`[sidebar] ${kind} registration rejected`);
+  }
+}
+export function closeSidebarSectionsForWindow(win: Window) {
+  for (const state of states.values()) if (state.win === win) dispose(state);
+}
+export function unregisterSidebarSections() {
+  for (const state of states.values()) dispose(state);
+  for (const id of ids.values()) {
+    try {
+      (Zotero as any).ItemPaneManager?.unregisterSection?.(id);
+    } catch (e) {
+      ztoolkit.log("[sidebar] unregister failed", e);
+    }
+  }
+  ids.clear();
+}

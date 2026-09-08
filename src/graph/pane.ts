@@ -180,7 +180,7 @@ export function showGraphPane(win: Window) {
   }
   header.appendChild(modeWrap);
 
-  // author mode: every author, or only first + last (the corresponding slot)
+  // Author mode: every author, or first + last by position, not correspondence.
   const roleButtons = new Map<string, HTMLElement>();
   const rolesWrap = doc.createElement("div");
   rolesWrap.className = "zest-graph-modes zest-graph-roles";

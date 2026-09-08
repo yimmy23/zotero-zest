@@ -5,6 +5,11 @@
 Zest 记录你**读了多久、真的看过哪些页**，把阅读状态、评级、期刊分区、被引数、标注分布直接摆在条目列表里，
 并配上图谱、阅读统计和标注矩阵三个视图。
 
+右侧原生侧栏也提供**阅读统计、标注矩阵、文库关系图**三个入口，文库与阅读器均可使用。
+矩阵默认当前文献，文库中可切换到当前视图；统计汇总全部本地阅读历史。
+空选 / 多选时 Zotero 不显示这些自定义区域，可继续从 Z 菜单打开原有窗口。
+Zest 的文库关系图展示已收藏条目的关联、作者、标签和分类；Refs 的引文图谱负责引文脉络与库外文献发现。
+
 <img width="4098" height="2464" alt="2026-08-21 精读 Must-Read - Zotero 001173" src="https://github.com/user-attachments/assets/e0f74c95-d707-4da9-9e75-b18559bbd1ce" />
 
 ---
@@ -324,6 +329,13 @@ The same button opens the **graph**, the **reading statistics** window, the **an
 the settings. The graph's author mode disambiguates names: same-surname authors cluster by full
 given name (Wang Lei ≠ Wang Li, an ambiguous "Wang L." stays its own node), cached OpenAlex author
 IDs merge spelling variants, and hovering a node shows the institution when known.
+
+The native right sidebar also provides **Reading statistics**, **Annotation matrix**, and
+**Library relations**, in both the library and reader. The matrix defaults to the current paper;
+the library sidebar can switch to the current view. Statistics cover all local reading history.
+With no item or multiple items selected, use the existing Z menu windows: Zotero hides custom
+sections in those native selection modes. Zest maps saved item links, authors, tags and collections;
+Refs explores citations and papers beyond the library.
 
 The annotation matrix is a focused reading workspace: choose the current view or selected items,
 search across papers and comments, or narrow by paper, type, colour and tag. Long annotations expand

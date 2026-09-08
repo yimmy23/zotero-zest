@@ -93,6 +93,11 @@ import {
 } from "./panes/infoSection";
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
+import {
+  registerSidebarSections,
+  unregisterSidebarSections,
+  closeSidebarSectionsForWindow,
+} from "./panes/sidebarSections";
 import { stopAuthorshipFetches } from "./graph/authorFetch";
 import { stopAbstractFetches } from "./panes/abstractSource";
 import { stopAbstractTranslations } from "./panes/abstractTranslation";
@@ -177,8 +182,10 @@ function watchPluginSweep() {
           registerAllColumns();
           unregisterInfoSection();
           unregisterAnnotSection();
+          unregisterSidebarSections();
           registerInfoSection();
           registerAnnotSection();
+          registerSidebarSections();
           unregisterMenus();
           registerMenus();
           // The first upgrade from an older release can still run its unowned
@@ -292,6 +299,7 @@ async function onStartup() {
   step("itemPane", () => {
     registerInfoSection();
     registerAnnotSection();
+    registerSidebarSections();
   });
   // `Zotero.Zest.api` — the surface Better Notes templates, Actions & Tags
   // scripts and Tools ▸ Run JavaScript call. Published after the reading store
@@ -534,6 +542,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   hideGraphPane(win, false);
   uninstallToolbarMenu(win);
   hideSidebar(win, false);
+  closeSidebarSectionsForWindow(win);
   clearWindowFilters(win);
   clearAuthorFilter(win);
   uninstallTitleDecor(win);
@@ -565,6 +574,7 @@ async function onShutdown() {
   readingTracker.stop();
   unregisterAnnotSection();
   unregisterInfoSection();
+  unregisterSidebarSections();
   closeStatsDialog();
   closeMatrix();
   uninstallAllTagTrees();

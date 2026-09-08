@@ -1,9 +1,8 @@
-import { nameTokens, type CachedAuthorship } from "../graph/authorIdentity";
-
-interface CreatorName {
-  family: string;
-  given: string;
-}
+import {
+  matchAuthorships,
+  type AuthorshipCreator as CreatorName,
+  type CachedAuthorship,
+} from "../graph/authorIdentity";
 
 export interface CoreAuthor {
   index: number;
@@ -25,84 +24,6 @@ export interface CoreInstitution {
   authors: string[];
 }
 
-const tokens = (value: string) => nameTokens(value.replace(/[,，]/g, " "));
-const joined = (value: string[]) => value.join("");
-
-/** Require every supplied given-name token to agree, not just the first one. */
-function sameGiven(a: string[], b: string[]): boolean {
-  if (!a.length || !b.length) return false;
-  if (joined(a) === joined(b)) return true;
-  // A source may omit middle names. Every token both names actually supply
-  // must agree; the caller still rejects more than one compatible person.
-  const shared = Math.min(a.length, b.length);
-  return a
-    .slice(0, shared)
-    .every(
-      (token, i) =>
-        token === b[i] ||
-        (token.length === 1 && b[i].startsWith(token)) ||
-        (b[i].length === 1 && token.startsWith(b[i])),
-    );
-}
-
-/** Exact full names win. No surname-only or author-position fallback is safe here. */
-function matchStrength(creator: CreatorName, row: CachedAuthorship): number {
-  const family = tokens(creator.family);
-  const given = tokens(creator.given);
-  const display = tokens(row.n);
-  if (!family.length || !display.length) return 0;
-  const full = joined(display);
-  if (
-    full === joined([...given, ...family]) ||
-    full === joined([...family, ...given])
-  ) {
-    // An exact initials-only spelling is not stronger evidence than another
-    // compatible full name in this same author list.
-    return given.length && given.every((token) => token.length === 1) ? 1 : 2;
-  }
-  if (!given.length) return 0;
-  const surname = joined(family);
-  for (let length = 1; length < display.length; length++) {
-    if (
-      (joined(display.slice(0, length)) === surname &&
-        sameGiven(given, display.slice(length))) ||
-      (joined(display.slice(-length)) === surname &&
-        sameGiven(given, display.slice(0, -length)))
-    ) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
-function matchedRows(
-  creators: CreatorName[],
-  rows: CachedAuthorship[],
-): Array<CachedAuthorship | undefined> {
-  const scores = creators.map((creator) =>
-    rows.map((row) => matchStrength(creator, row)),
-  );
-  // One provider author may belong to only one local creator. This also rejects
-  // ambiguous initials and duplicate local names before assigning a role.
-  const owners = rows.map((_, index) => {
-    const best = Math.max(0, ...scores.map((score) => score[index]));
-    const candidates = scores.flatMap((score, creator) =>
-      best > 0 && score[index] === best ? [creator] : [],
-    );
-    return candidates.length === 1 ? candidates[0] : -1;
-  });
-  return scores.map((score, creator) => {
-    const best = Math.max(
-      0,
-      ...score.map((strength, row) => (owners[row] === creator ? strength : 0)),
-    );
-    const candidates = rows.filter(
-      (_, row) => best > 0 && owners[row] === creator && score[row] === best,
-    );
-    return candidates.length === 1 ? candidates[0] : undefined;
-  });
-}
-
 function rowInstitutions(row: CachedAuthorship) {
   return row.af?.length ? row.af : row.a ? [{ n: row.a }] : [];
 }
@@ -118,7 +39,7 @@ export function selectCoreAuthors(
   needsDetails: boolean;
 } {
   const available = rows || [];
-  const matches = matchedRows(creators, available);
+  const matches = matchAuthorships(creators, available);
   const explicitFirst = matches.flatMap((row, index) =>
     row?.p === "first" ? [index] : [],
   );

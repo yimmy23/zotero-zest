@@ -21,9 +21,19 @@ export { matchesQuery, toCSV, toMarkdown } from "../annots/matrixModel";
 const PAGE_SIZE = 100;
 const HOST_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
 type Scope = "view" | "selected";
+export interface MatrixSource {
+  getItems(scope: Scope): Zotero.Item[];
+  allowViewScope?: boolean;
+  selectedLabel?: FluentMessageId;
+}
 interface MatrixState {
   win: Window;
   host: Window;
+  source?: MatrixSource;
+  embedded: boolean;
+  active: boolean;
+  dirty: boolean;
+  pendingPaint: boolean;
   rows: MatrixRow[];
   filters: Filters;
   scope: Scope;
@@ -34,7 +44,9 @@ interface MatrixState {
   disposed: boolean;
   loading: boolean;
   load?: EventListener;
+  unload?: EventListener;
   refresh?: () => Promise<void>;
+  repaint?: () => void;
 }
 const windows = new Map<Window, MatrixState>();
 
@@ -43,12 +55,15 @@ function label(id: FluentMessageId, args?: Record<string, string | number>) {
 }
 
 function dispose(state: MatrixState) {
+  if (state.disposed) return;
   state.disposed = true;
   state.generation++;
+  state.feedback++;
   state.win.clearTimeout(state.timer);
   if (state.load) state.win.removeEventListener("load", state.load);
+  if (state.unload) state.win.removeEventListener("unload", state.unload);
   state.rows = [];
-  windows.delete(state.win);
+  if (windows.get(state.win) === state) windows.delete(state.win);
 }
 
 export function closeMatrix() {
@@ -63,21 +78,30 @@ export function closeMatrix() {
   // Also recover windows left by an older plugin copy.
   for (const win of (Services.wm as any).getEnumerator("") as any) {
     try {
-      if (win?.document?.querySelector?.(".zest-matrix")) win.close();
+      if (
+        win?.location?.href === HOST_URL &&
+        !win.frameElement &&
+        win.document?.querySelector?.(".zest-matrix")
+      )
+        win.close();
     } catch {
       /* Already closing. */
     }
   }
 }
 
-export function openMatrix(parent?: Window) {
+export function openMatrix(parent?: Window, source?: MatrixSource) {
   const host = (parent || Zotero.getMainWindow()) as Window | null;
   if (!host?.openDialog) return;
   for (const state of windows.values()) {
     if (state.win.closed) dispose(state);
     else if (state.host === host) {
       state.win.focus();
-      void state.refresh?.();
+      if (state.source !== source) {
+        state.source = source;
+        state.scope = source ? "selected" : "view";
+        render(state.win);
+      } else void state.refresh?.();
       return;
     }
   }
@@ -88,19 +112,7 @@ export function openMatrix(parent?: Window) {
     "chrome,centerscreen,resizable,width=1100,height=780",
   ) as Window | null;
   if (!win) return;
-  const state: MatrixState = {
-    win,
-    host,
-    rows: [],
-    filters: emptyFilters(),
-    scope: "view",
-    page: 0,
-    generation: 0,
-    feedback: 0,
-    timer: 0,
-    disposed: false,
-    loading: false,
-  };
+  const state = createState(win, host, source);
   windows.set(win, state);
   const load = guard("matrix load", () => {
     if (
@@ -113,13 +125,71 @@ export function openMatrix(parent?: Window) {
     win.removeEventListener("load", load);
     state.load = undefined;
     // about:blank unload must not cancel the actual dialog's first load.
-    win.addEventListener("unload", () => dispose(state), { once: true });
+    state.unload = () => dispose(state);
+    win.addEventListener("unload", state.unload, { once: true });
     render(win);
   });
   state.load = load;
   if (win.document.readyState === "complete" && win.location.href === HOST_URL)
     load();
   else win.addEventListener("load", load);
+}
+
+function createState(
+  win: Window,
+  host: Window,
+  source?: MatrixSource,
+  embedded = false,
+): MatrixState {
+  return {
+    win,
+    host,
+    source,
+    embedded,
+    active: true,
+    dirty: true,
+    pendingPaint: false,
+    rows: [],
+    filters: emptyFilters(),
+    scope: embedded || source ? "selected" : "view",
+    page: 0,
+    generation: 0,
+    feedback: 0,
+    timer: 0,
+    disposed: false,
+    loading: false,
+  };
+}
+
+/** Reuse the matrix inside a dedicated iframe, never the owner's document. */
+export function mountMatrix(win: Window, host: Window, source: MatrixSource) {
+  if (win === host || win.location.href !== HOST_URL || !win.document.body)
+    throw new Error("Matrix embedding requires a loaded panel iframe");
+  const state = createState(win, host, source, true);
+  state.unload = () => dispose(state);
+  win.addEventListener("unload", state.unload, { once: true });
+  renderState(state, win.document.body);
+  return {
+    refresh() {
+      if (state.disposed) return;
+      state.dirty = true;
+      if (state.active) void state.refresh?.();
+    },
+    setActive(active: boolean) {
+      if (state.disposed || state.active === active) return;
+      state.active = active;
+      if (!active) {
+        state.generation++;
+        state.feedback++;
+        win.clearTimeout(state.timer);
+        // An interrupted scan must be retried; a settled snapshot is reusable.
+        state.dirty ||= state.loading;
+        state.loading = false;
+      } else if (state.dirty) void state.refresh?.();
+      else if (state.pendingPaint) state.repaint?.();
+    },
+    dispose: () => dispose(state),
+  };
 }
 
 const TYPE_LABELS: Record<string, FluentMessageId> = {
@@ -177,17 +247,25 @@ function renderState(state: MatrixState, body: HTMLElement) {
       ? iconLabelButton(doc, name, label(id), `zest-flat-btn ${cls}`)
       : el("button", `zest-flat-btn ${cls}`, label(id));
     b.type = "button";
-    b.addEventListener("click", guard(`matrix ${id}`, action));
+    b.addEventListener(
+      "click",
+      guard(`matrix ${id}`, () => {
+        if (state.active && !state.disposed) action();
+      }),
+    );
     return b;
   };
   doc.title = label("matrix-title");
   body.textContent = "";
   const style = el("style");
   style.textContent = matrixCSS();
-  const root = el("main", "zest-matrix");
+  const root = el(
+    "main",
+    `zest-matrix${state.embedded ? " zest-matrix-embedded" : ""}`,
+  );
   body.append(style, root);
   const header = el("header", "zest-matrix-header");
-  const heading = el("div");
+  const heading = el("div", "zest-matrix-heading");
   heading.append(
     el("h1", "", label("matrix-title")),
     el("p", "zest-matrix-subtitle", label("matrix-subtitle")),
@@ -232,19 +310,24 @@ function renderState(state: MatrixState, body: HTMLElement) {
   const bar = el("div", "zest-matrix-bar");
   const scope = el("select", "zest-flat-select zest-matrix-scope");
   scope.setAttribute("aria-label", label("matrix-scope"));
-  for (const [value, text] of [
-    ["view", label("matrix-scope-view")],
-    ["selected", label("matrix-scope-selected")],
-  ]) {
+  const allowViewScope = !state.source || !!state.source.allowViewScope;
+  const scopeOptions = [
+    ...(allowViewScope ? [["view", label("matrix-scope-view")]] : []),
+    ["selected", label(state.source?.selectedLabel || "matrix-scope-selected")],
+  ];
+  for (const [value, text] of scopeOptions) {
     const option = el("option", "", text);
     option.value = value;
     scope.append(option);
   }
+  scope.disabled = !allowViewScope;
   scope.value = state.scope;
   scope.addEventListener(
     "change",
     guard("matrix scope", () => {
-      state.scope = scope.value as Scope;
+      if (!state.active || state.disposed) return;
+      state.scope =
+        allowViewScope && scope.value === "view" ? "view" : "selected";
       void reload();
     }),
   );
@@ -257,9 +340,15 @@ function renderState(state: MatrixState, body: HTMLElement) {
   search.addEventListener(
     "input",
     guard("matrix search", () => {
+      if (!state.active || state.disposed) return;
       state.filters.query = search.value;
+      state.page = 0;
+      state.pendingPaint = true;
       win.clearTimeout(state.timer);
-      state.timer = win.setTimeout(() => updateResults(), 140);
+      const generation = state.generation;
+      state.timer = win.setTimeout(() => {
+        if (state.active && generation === state.generation) updateResults();
+      }, 140);
     }),
   );
   const filterToggle = button(
@@ -294,6 +383,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
     select.addEventListener(
       "change",
       guard(`matrix filter ${key}`, () => {
+        if (!state.active || state.disposed) return;
         state.filters[key] = select.value;
         updateResults();
       }),
@@ -321,6 +411,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
   comments.addEventListener(
     "change",
     guard("matrix comments", () => {
+      if (!state.active || state.disposed) return;
       state.filters.commentsOnly = comments.checked;
       updateResults();
     }),
@@ -340,6 +431,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
   sort.addEventListener(
     "change",
     guard("matrix sort", () => {
+      if (!state.active || state.disposed) return;
       state.filters.sort = sort.value as Filters["sort"];
       updateResults();
     }),
@@ -419,13 +511,14 @@ function renderState(state: MatrixState, body: HTMLElement) {
 
   function updateResults() {
     win.clearTimeout(state.timer);
-    if (state.disposed) return;
+    if (state.disposed || !state.active) return;
+    state.pendingPaint = false;
     state.page = 0;
     visible = filterRows(state.rows, state.filters);
     paint();
   }
   function paint() {
-    if (state.disposed) return;
+    if (state.disposed || !state.active) return;
     const f = state.filters;
     const active = [f.item, f.type, f.color, f.tag].filter(Boolean).length;
     const filterText = filterToggle.querySelector("span");
@@ -641,12 +734,15 @@ function renderState(state: MatrixState, body: HTMLElement) {
     } catch (e) {
       report("matrix-open-failed", e, feedback);
     } finally {
-      button.disabled = false;
+      if (!state.disposed) {
+        if (state.active) button.disabled = false;
+        else state.pendingPaint = true;
+      }
     }
   }
   function report(id: FluentMessageId, e: unknown, feedback = state.feedback) {
     ztoolkit.log(`[matrix] ${id}`, e);
-    if (!state.disposed && feedback === state.feedback)
+    if (state.active && !state.disposed && feedback === state.feedback)
       status.textContent = label(id);
   }
   function markdown(snapshot: MatrixRow[]) {
@@ -658,7 +754,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
     });
   }
   function copyMarkdown() {
-    if (state.disposed || exporting || state.loading) return;
+    if (state.disposed || !state.active || exporting || state.loading) return;
     // A click may precede the search debounce. Never copy the paged DOM.
     const snapshot = filterRows(state.rows, state.filters);
     if (!snapshot.length) return;
@@ -677,7 +773,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
     }
   }
   async function save(kind: "csv" | "md") {
-    if (state.disposed || exporting || state.loading) return;
+    if (state.disposed || !state.active || exporting || state.loading) return;
     // Read the current query even if its debounce has not painted yet.
     const snapshot = filterRows(state.rows, state.filters);
     if (!snapshot.length) return;
@@ -699,7 +795,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
         path,
         kind === "csv" ? toCSV(snapshot) : markdown(snapshot),
       );
-      if (!state.disposed && feedback === state.feedback)
+      if (state.active && !state.disposed && feedback === state.feedback)
         status.textContent = label("matrix-exported", {
           count: snapshot.length,
         });
@@ -707,19 +803,25 @@ function renderState(state: MatrixState, body: HTMLElement) {
       report("matrix-export-failed", e, feedback);
     } finally {
       exporting = false;
-      if (!state.disposed)
+      if (state.active && !state.disposed)
         csv.disabled =
           md.disabled =
           copyMD.disabled =
             state.loading || !visible.length;
+      else if (!state.disposed) state.pendingPaint = true;
     }
   }
   async function reload() {
     if (state.disposed) return;
+    state.dirty = true;
+    if (!state.active) return;
     const generation = ++state.generation;
     state.feedback++;
     const cancelled = () =>
-      state.disposed || win.closed || generation !== state.generation;
+      state.disposed ||
+      !state.active ||
+      win.closed ||
+      generation !== state.generation;
     win.clearTimeout(state.timer);
     state.loading = true;
     loadFailed = false;
@@ -727,11 +829,15 @@ function renderState(state: MatrixState, body: HTMLElement) {
     paint();
     try {
       if (state.host.closed) throw new Error("Source library window closed");
-      const pane = (state.host as any).ZoteroPane;
-      const items =
-        state.scope === "selected"
-          ? pane?.getSelectedItems?.()
-          : pane?.itemsView?.getSortedItems?.();
+      let items: Zotero.Item[] | undefined;
+      if (state.source) items = state.source.getItems(state.scope);
+      else {
+        const pane = (state.host as any).ZoteroPane;
+        items =
+          state.scope === "selected"
+            ? pane?.getSelectedItems?.()
+            : pane?.itemsView?.getSortedItems?.();
+      }
       if (!Array.isArray(items)) throw new Error("Source view unavailable");
       const rows = await collectMatrixAsync(items, cancelled);
       if (cancelled()) return;
@@ -746,12 +852,20 @@ function renderState(state: MatrixState, body: HTMLElement) {
       report("matrix-load-failed", e);
     }
     if (cancelled()) return;
+    state.dirty = false;
     state.loading = false;
     updateResults();
   }
   state.refresh = reload;
+  state.repaint = () => {
+    if (state.disposed || !state.active) return;
+    state.pendingPaint = false;
+    visible = filterRows(state.rows, state.filters);
+    paint();
+  };
   // Cmd/Ctrl+F focuses only this window's search, without changing the library.
   root.addEventListener("keydown", (e) => {
+    if (!state.active || state.disposed) return;
     const event = e as KeyboardEvent;
     if (
       (event.metaKey || event.ctrlKey) &&
@@ -824,9 +938,9 @@ function matrixCSS(): string {
     .zest-matrix-no-text { color:var(--zest-muted); font-size:.84rem; margin:0; }
     .zest-matrix-expand { color:var(--zest-accent); border:0; padding:4px 0; font-size:.76rem; background:none; margin-top:4px; }
     .zest-matrix-row-foot { display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px; align-items:center; margin-top:14px; }
-    .zest-matrix-tags { display:flex; gap:5px; flex-wrap:wrap; min-width:0; flex:1; }
+    .zest-matrix-tags { display:flex; gap:5px; flex-wrap:wrap; min-width:0; flex:1 1 10rem; }
     .zest-matrix-tag-chip { font-size:.69rem; color:var(--zest-muted); padding:2px 7px; border:0; background:var(--zest-fill); border-radius:5px; white-space:normal; overflow-wrap:anywhere; max-width:100%; }
-    .zest-matrix-row-actions { gap:5px; margin-inline-start:auto; }
+    .zest-matrix-row-actions { gap:5px; margin-inline-start:auto; flex-wrap:wrap; max-width:100%; }
     .zest-matrix-row-actions button { font-size:.73rem; padding:4px 8px; }
     .zest-matrix-copy { border-color:transparent; background:transparent; color:var(--zest-muted); }
     .zest-matrix-open { color:var(--zest-accent); }
@@ -857,5 +971,22 @@ function matrixCSS(): string {
       .zest-matrix-pager { flex-wrap:wrap; }
       .zest-matrix-range { flex-basis:100%; }
     }
+    .zest-matrix.zest-matrix-embedded { padding:8px; min-height:0; max-width:none; overflow:auto; }
+    .zest-matrix-embedded .zest-matrix-heading { display:none; }
+    .zest-matrix-embedded .zest-matrix-header { margin-bottom:8px; gap:8px; }
+    .zest-matrix-embedded .zest-matrix-actions { gap:6px; }
+    .zest-matrix-embedded .zest-matrix-tools { padding:8px; border-radius:10px; }
+    .zest-matrix-embedded .zest-matrix-bar { gap:6px; }
+    .zest-matrix-embedded .zest-flat-btn { padding:5px 9px; }
+    .zest-matrix-embedded .zest-matrix-search { padding:8px; }
+    .zest-matrix-embedded .zest-matrix-results-bar { margin:10px 0 8px; gap:6px; }
+    .zest-matrix-embedded .zest-matrix-list { min-height:0; border-radius:10px; }
+    .zest-matrix-embedded .zest-matrix-row { padding:12px; gap:10px; }
+    .zest-matrix-embedded .zest-matrix-source { padding-bottom:8px; }
+    .zest-matrix-embedded .zest-matrix-item-title { padding:0; }
+    .zest-matrix-embedded .zest-matrix-text,.zest-matrix-embedded .zest-matrix-comment p { font-size:.86rem; line-height:1.7; }
+    .zest-matrix-embedded .zest-matrix-comment { padding:8px 10px; }
+    .zest-matrix-embedded .zest-matrix-pager { padding:10px 0 0; gap:6px; }
+    .zest-matrix-embedded .zest-matrix-empty { padding:24px 12px; }
   `;
 }

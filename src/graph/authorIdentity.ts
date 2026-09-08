@@ -227,6 +227,79 @@ export function givensCompatible(a: string[], b: string[]): boolean {
   return true;
 }
 
+export interface AuthorshipCreator {
+  family: string;
+  given: string;
+}
+
+const authorshipTokens = (value: string) =>
+  nameTokens(value.replace(/[,，]/g, " "));
+
+/** Exact full names win; surname-only, position and romanisation guesses do not. */
+function matchStrength(
+  creator: AuthorshipCreator,
+  row: CachedAuthorship,
+): number {
+  const family = authorshipTokens(creator.family);
+  const given = authorshipTokens(creator.given);
+  const display = authorshipTokens(row.n);
+  if (!family.length || !display.length) return 0;
+  const full = joined(display);
+  if (
+    full === joined([...given, ...family]) ||
+    full === joined([...family, ...given])
+  ) {
+    // Exact initials carry no more evidence than a compatible full name.
+    return isInitials(given) ? 1 : 2;
+  }
+  if (!given.length) return 0;
+  const surname = joined(family);
+  for (let length = 1; length < display.length; length++) {
+    if (
+      (joined(display.slice(0, length)) === surname &&
+        givensCompatible(given, display.slice(length))) ||
+      (joined(display.slice(-length)) === surname &&
+        givensCompatible(given, display.slice(0, -length)))
+    )
+      return 1;
+  }
+  return 0;
+}
+
+/** Match the whole author list once, requiring unique evidence in both directions. */
+export function matchAuthorships(
+  creators: AuthorshipCreator[],
+  rows: CachedAuthorship[],
+): Array<CachedAuthorship | undefined> {
+  const scores = creators.map((creator) =>
+    rows.map((row) => matchStrength(creator, row)),
+  );
+  const owners = rows.map((_, index) => {
+    const best = Math.max(0, ...scores.map((score) => score[index]));
+    const candidates = scores.flatMap((score, creator) =>
+      best > 0 && score[index] === best ? [creator] : [],
+    );
+    return candidates.length === 1 ? candidates[0] : -1;
+  });
+  const matches = scores.map((score, creator) => {
+    const best = Math.max(
+      0,
+      ...score.map((strength, row) => (owners[row] === creator ? strength : 0)),
+    );
+    const candidates = rows.filter(
+      (_, row) => best > 0 && owners[row] === creator && score[row] === best,
+    );
+    return candidates.length === 1 ? candidates[0] : undefined;
+  });
+  // Repeated provider IDs under different display names are not two people.
+  const counts = new Map<string, number>();
+  for (const row of matches)
+    if (row) counts.set(row.i, (counts.get(row.i) || 0) + 1);
+  return matches.map((row) =>
+    row && counts.get(row.i) === 1 ? row : undefined,
+  );
+}
+
 // ------------------------------------------------------------- clustering
 
 interface Occ {
@@ -249,63 +322,6 @@ interface Cluster {
 interface Form {
   tokens: string[];
   occs: Occ[];
-}
-
-/** every letter of `short` appears in `long` in order (Mueller ⊃ Muller) */
-function subsequenceOf(short: string, long: string): boolean {
-  if (short.length < 3 || long.length < short.length) return false;
-  let j = 0;
-  for (let i = 0; i < long.length && j < short.length; i++) {
-    if (long[i] === short[j]) j++;
-  }
-  return j === short.length;
-}
-
-function surnameInRow(surKey: string, row: CachedAuthorship): boolean {
-  const t = nameTokens(row.n);
-  return (
-    t.includes(surKey) ||
-    joined(t).endsWith(surKey) ||
-    joined(t).startsWith(surKey) ||
-    // romanisation variants: ue↔u, oe↔o, folded diacritics — one spelling
-    // is a letter-subsequence of the other
-    t.some((x) => subsequenceOf(x, surKey) || subsequenceOf(surKey, x))
-  );
-}
-
-/**
- * Creator ↔ cached OpenAlex authorship. Name-based first; when that finds
- * nothing and the creator list lines up 1:1 with the authorship list, the
- * POSITION decides (OpenAlex keeps author order), still guarded by a loose
- * surname check so a mismatched list cannot bind the wrong person.
- * Only an unambiguous match counts.
- */
-function matchAuthorship(
-  last: string,
-  first: string,
-  rows: CachedAuthorship[],
-  idx: number,
-  total: number,
-): CachedAuthorship | null {
-  const surKey = joined(nameTokens(last));
-  if (!surKey) return null;
-  let candidates = rows.filter((r) => surnameInRow(surKey, r));
-  if (candidates.length > 1 && first) {
-    const g0 = nameTokens(first)[0];
-    if (g0) {
-      const refined = candidates.filter((r) =>
-        nameTokens(r.n)
-          .filter((x) => x !== surKey)
-          .some((x) => tokenCompatible(g0, x)),
-      );
-      if (refined.length) candidates = refined;
-    }
-  }
-  if (candidates.length === 1) return candidates[0];
-  if (!candidates.length && rows.length === total && rows[idx]) {
-    return rows[idx];
-  }
-  return null;
 }
 
 function newCluster(f: Form): Cluster {
@@ -454,9 +470,25 @@ export function findCachedAuthor(
 ): CachedAuthorship | null {
   const rows = cachedAuthorships(item);
   if (!rows) return null;
-  // -1/-1 disables the positional fallback: without a creator index the
-  // name has to speak for itself
-  return matchAuthorship(family, given, rows, -1, -1);
+  let creators: AuthorshipCreator[];
+  try {
+    creators = item.getCreators().map((creator) => ({
+      family: creator.lastName || "",
+      given: creator.firstName || "",
+    }));
+  } catch {
+    return null;
+  }
+  const surname = joined(authorshipTokens(family));
+  const first = joined(authorshipTokens(given));
+  const indices = creators.flatMap((creator, index) =>
+    joined(authorshipTokens(creator.family)) === surname &&
+    joined(authorshipTokens(creator.given)) === first
+      ? [index]
+      : [],
+  );
+  if (indices.length !== 1) return null;
+  return matchAuthorships(creators, rows)[indices[0]] || null;
 }
 
 // ---------------------------------------------------------------- resolver
@@ -474,6 +506,15 @@ function collectOccurrences(item: Zotero.Item, groups: Groups): void {
     }
     if (!creators?.length) return;
     const rows = cachedAuthorships(item);
+    const matches = rows
+      ? matchAuthorships(
+          creators.map((creator) => ({
+            family: creator.lastName || "",
+            given: creator.firstName || "",
+          })),
+          rows,
+        )
+      : [];
     creators.forEach((cr, idx) => {
       const last = (cr.lastName || "").trim();
       if (!last) return;
@@ -485,12 +526,10 @@ function collectOccurrences(item: Zotero.Item, groups: Groups): void {
         first,
         tokens: nameTokens(first),
       };
-      if (rows) {
-        const m = matchAuthorship(last, first, rows, idx, creators.length);
-        if (m) {
-          occ.oaId = m.i;
-          occ.inst = m.a;
-        }
+      const match = matches[idx];
+      if (match) {
+        occ.oaId = match.i;
+        occ.inst = match.a;
       }
       let g = groups.get(surKey);
       if (!g) {

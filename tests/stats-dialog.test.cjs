@@ -665,7 +665,7 @@ test("shutdown closes the tracked and stale statistics windows but leaves other 
   const stale = windowFixture();
   const unrelated = windowFixture();
   const marker = stale.document.createElement("main");
-  marker.className = "zest-stats";
+  marker.className = "zest-stats zest-stats-standalone";
   stale.document.body.append(marker);
   const app = setup({ windows: [current, stale, unrelated] });
   app.openStatsDialog(app.host);
@@ -706,4 +706,206 @@ test("unloaded and empty stores render explicit states without fetching or writi
     );
     app.assertUnchanged();
   }
+});
+
+test("embedded and standalone statistics have independent snapshots and ranges", () => {
+  const standalone = windowFixture();
+  const embedded = windowFixture();
+  const app = setup({ windows: [standalone, embedded] });
+  app.openStatsDialog(app.host);
+  const mount = app.mountStats(embedded);
+  assert.equal(app.reads(), 2);
+  assert.equal(app.opens(), 1, "embedding must not open a second dialog");
+  const standard = standalone.document;
+  const sidebar = embedded.document;
+  assert.ok(standard.querySelector(".zest-stats-standalone"));
+  assert.ok(sidebar.querySelector(".zest-stats-embedded"));
+  standard.querySelector('[data-range="7"]').click();
+  sidebar.querySelector('[data-range="90"]').click();
+  assert.ok(standard.querySelector('[data-period-days="7"]'));
+  assert.ok(sidebar.querySelector('[data-period-days="90"]'));
+  assert.equal(app.reads(), 2, "both ranges reuse their own snapshots");
+  const before = standard.querySelector(".zest-stats-summary").textContent;
+  app.records.set("1/READ0002", record(900));
+  mount.refresh();
+  assert.equal(app.reads(), 3);
+  assert.equal(
+    standard.querySelector(".zest-stats-summary").textContent,
+    before,
+  );
+  assert.notEqual(
+    sidebar.querySelector(".zest-stats-summary").textContent,
+    before,
+  );
+  assert.ok(sidebar.querySelector('[data-period-days="90"]'));
+  app.closeStatsDialog();
+  assert.equal(standalone.closed, true);
+  assert.equal(embedded.closed, false);
+  assert.ok(sidebar.querySelector(".zest-stats-embedded"));
+  mount.refresh();
+  assert.equal(
+    app.reads(),
+    4,
+    "closing the dialog leaves sidebar ownership intact",
+  );
+  assert.deepEqual(app.logs, []);
+  assert.deepEqual(app.prefWrites, []);
+});
+
+test("inactive statistics defer repeated refresh requests and reuse a clean snapshot on resume", () => {
+  const app = setup();
+  const mount = app.mountStats(app.win);
+  const doc = app.win.document;
+  doc.querySelector('[data-range="7"]').click();
+  const before = doc.querySelector(".zest-stats-summary").textContent;
+  mount.setActive(false);
+  const writes = doc.writes;
+  mount.setActive(false);
+  mount.refresh();
+  mount.refresh();
+  app.renderStats(app.win);
+  assert.equal(app.reads(), 1);
+  assert.equal(
+    doc.writes,
+    writes,
+    "hidden refresh requests do no rendering work",
+  );
+  app.records.set("1/READ0002", record(900));
+  mount.setActive(true);
+  assert.equal(
+    app.reads(),
+    2,
+    "all pending requests coalesce into one snapshot",
+  );
+  assert.notEqual(doc.querySelector(".zest-stats-summary").textContent, before);
+  assert.ok(doc.querySelector('[data-period-days="7"]'));
+  const resumedWrites = doc.writes;
+  mount.setActive(true);
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(
+    app.reads(),
+    2,
+    "merely showing a clean snapshot does not recollect",
+  );
+  assert.equal(doc.writes, resumedWrites);
+  assert.deepEqual(app.logs, []);
+  assert.deepEqual(app.prefWrites, []);
+});
+
+test("embedded goal changes are snapshot-backed and inactive controls cannot persist changes", () => {
+  const app = setup();
+  const mount = app.mountStats(app.win);
+  const doc = app.win.document;
+  let daily = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  daily.value = "45";
+  daily.dispatch("change");
+  assert.equal(app.reads(), 1);
+  assert.equal(doc.querySelector(".zest-goal-metric progress").max, 2700);
+  daily = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  const refresh = doc.querySelector(".zest-stats-refresh");
+  const range = doc.querySelector('[data-range="90"]');
+  mount.setActive(false);
+  const writes = doc.writes;
+  daily.value = "60";
+  daily.dispatch("change");
+  refresh.click();
+  range.click();
+  assert.equal(doc.writes, writes);
+  assert.equal(app.reads(), 1);
+  assert.ok(doc.querySelector('[data-period-days="30"]'));
+  app.assertUnchanged([["stats.dailyGoalMinutes", 45]]);
+});
+
+test("disposing an embedded instance clears only its owned content and rejects stale controls", () => {
+  const app = setup();
+  const doc = app.win.document;
+  const head = doc.createElement("head");
+  head.textContent = "native host stylesheet";
+  doc.documentElement.append(head);
+  const mount = app.mountStats(app.win);
+  const oldRefresh = doc.querySelector(".zest-stats-refresh");
+  const oldRange = doc.querySelector('[data-range="7"]');
+  const oldGoal = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  oldRange.click();
+  const latestGoal = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  const unowned = doc.createElement("aside");
+  unowned.textContent = "host-owned node";
+  doc.body.append(unowned);
+  mount.dispose();
+  assert.equal(app.win.closed, false);
+  assert.equal(app.win.closeCount, 0);
+  assert.equal(doc.querySelector(".zest-stats"), null);
+  assert.equal(doc.querySelector("style"), null);
+  assert.equal(doc.querySelector("head"), head);
+  assert.equal(doc.querySelector("aside"), unowned);
+  const writes = doc.writes;
+  oldRefresh.click();
+  oldRange.click();
+  for (const goal of [oldGoal, latestGoal]) {
+    goal.value = "60";
+    goal.dispatch("change");
+  }
+  mount.setActive(false);
+  mount.refresh();
+  mount.setActive(true);
+  mount.dispose();
+  assert.equal(app.reads(), 1);
+  assert.equal(doc.writes, writes);
+  const next = app.mountStats(app.win);
+  assert.equal(app.reads(), 2, "remount does not keep the disposed snapshot");
+  assert.ok(doc.querySelector('[data-period-days="30"]'));
+  mount.dispose();
+  mount.refresh();
+  assert.ok(doc.querySelector(".zest-stats-embedded"));
+  assert.equal(
+    app.reads(),
+    2,
+    "a disposed handle cannot repaint the new instance",
+  );
+  next.dispose();
+  app.assertUnchanged();
+});
+
+test("shutdown ignores main windows and embedded hosts even if they contain statistics markers", () => {
+  const main = windowFixture({
+    url: "chrome://zotero/content/zoteroPane.xhtml",
+  });
+  const embedded = windowFixture();
+  const unrelatedPanel = windowFixture();
+  for (const win of [main, unrelatedPanel]) {
+    const marker = win.document.createElement("main");
+    marker.className =
+      win === main ? "zest-stats zest-stats-standalone" : "zest-stats";
+    win.document.body.append(marker);
+  }
+  const app = setup({ windows: [main, embedded, unrelatedPanel] });
+  const mount = app.mountStats(embedded);
+  app.closeStatsDialog();
+  for (const win of [main, embedded, unrelatedPanel]) {
+    assert.equal(win.closed, false);
+    assert.equal(win.closeCount, 0);
+  }
+  assert.ok(embedded.document.querySelector(".zest-stats-embedded"));
+  mount.dispose();
+  app.assertUnchanged();
+});
+
+test("repainted controls cannot change goals or overwrite the current range", () => {
+  const app = setup();
+  app.mountStats(app.win);
+  const doc = app.win.document;
+  const staleRefresh = doc.querySelector(".zest-stats-refresh");
+  const staleRange = doc.querySelector('[data-range="90"]');
+  const staleGoal = doc.querySelector('[data-focus="stats-dailyGoalMinutes"]');
+  doc.querySelector('[data-range="7"]').click();
+  const writes = doc.writes;
+  staleRefresh.click();
+  staleRange.click();
+  staleGoal.value = "60";
+  staleGoal.dispatch("change");
+  assert.equal(app.reads(), 1);
+  assert.equal(doc.writes, writes);
+  assert.ok(doc.querySelector('[data-period-days="7"]'));
+  app.assertUnchanged();
 });

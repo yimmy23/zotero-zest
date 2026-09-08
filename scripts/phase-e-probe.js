@@ -31,6 +31,72 @@ const mk = async (fields, creators) => {
 };
 const trash = [];
 
+/* ---------- author identity: strict shared matcher, entirely in memory ---------- */
+{
+  const name = (family, given) => ({ family, given });
+  const author = (n, i = "A1") => ({ i, n });
+  try {
+    const match = dev.authorIdentity.matchAuthorships;
+    check(
+      "authors.noSurnameOrPositionIdentityFallback",
+      [name("Smith", "Alice"), name("Jones", "Robert")].every(
+        (creator) => !match([creator], [author("John Smith")])[0],
+      ),
+    );
+    check(
+      "authors.allGivenTokensMustAgree",
+      !match([name("Smith", "John Robert")], [author("John Richard Smith")])[0],
+    );
+    check(
+      "authors.noRomanisationOrSurnameSubstringGuess",
+      !match([name("Muller", "John")], [author("John Mueller")])[0] &&
+        !match([name("Jones", "Robert")], [author("Robert Jones-Smith")])[0],
+    );
+    check(
+      "authors.bidirectionalAmbiguityRemainsUnmatched",
+      !match(
+        [name("Smith", "J")],
+        [author("John Smith"), author("Jane Smith", "A2")],
+      )[0] &&
+        match(
+          [name("Smith", "John Paul"), name("Smith", "John Peter")],
+          [author("John Smith")],
+        ).every((row) => !row) &&
+        match(
+          [name("Smith", "John"), name("Smith", "John")],
+          [author("John Smith")],
+        ).every((row) => !row),
+    );
+    check(
+      "authors.compatibleCJKHyphenAndInitialFormsSurvive",
+      [
+        [name("王", "明"), "王明"],
+        [name("Müller", "Jean-Pierre"), "Muller, Jean Pierre"],
+        [name("Wang", "Xiao-Ming"), "Xiaoming Wang"],
+        [name("Smith", "J. R."), "John Robert Smith"],
+      ].every(
+        ([creator, display]) =>
+          match([creator], [author(display)])[0]?.i === "A1",
+      ),
+    );
+    const local = [name("Smith", "J"), name("Smith", "John")];
+    const preferred = match(local, [author("John Smith")]);
+    check(
+      "authors.exactNameOwnsProviderRow",
+      !preferred[0] && preferred[1]?.i === "A1",
+    );
+    check(
+      "authors.duplicateProviderIDCannotBindTwoCreators",
+      match(
+        [name("Smith", "Alice"), name("Smith", "John")],
+        [author("Alice Smith"), author("John Smith")],
+      ).every((row) => !row),
+    );
+  } catch (e) {
+    check("authors.strictIdentityProbeCompleted", false, String(e));
+  }
+}
+
 /* ---------- matrix: native read-only scope and deduplication ---------- */
 const matrixItems = win.ZoteroPane.itemsView.getSortedItems();
 const matrixRows = dev.matrix.collectMatrix(matrixItems);
@@ -93,6 +159,172 @@ try {
   );
 } finally {
   Zotero.Items.getByLibraryAndKey = statsLookup;
+}
+
+/* ---------- sidebar: native registrations, explicit sources and safe teardown ---------- */
+// No section expansion, selection change, iframe mounting or real window close
+// here. The dedicated sidebar probe exercises rendering and live lifecycle;
+// these read-only invariants also run when the sidebar has never been opened.
+{
+  try {
+    // Verified Zotero 10 getter: { updateID, options }, without registration writes.
+    const options = Zotero.ItemPaneManager?.customSectionData?.options;
+    const kinds = ["stats", "matrix", "graph"];
+    const sectionOptions = Array.isArray(options)
+      ? options.filter(
+          (option) =>
+            option.pluginID === "zest@zotero-zest.app" &&
+            kinds.some((kind) => option.paneID.endsWith(`-workspace-${kind}`)),
+        )
+      : [];
+    check(
+      "sidebar.threeNativeSectionsRegistered",
+      sectionOptions.length === 3 &&
+        kinds.every(
+          (kind) =>
+            sectionOptions.filter((option) =>
+              option.paneID.endsWith(`-workspace-${kind}`),
+            ).length === 1,
+        ),
+    );
+    const iconNames = {
+      stats: "reading-stats",
+      matrix: "matrix",
+      graph: "local-graph",
+    };
+    check(
+      "sidebar.nativeIconsAndLazyHooks",
+      sectionOptions.length === 3 &&
+        sectionOptions.every((option) => {
+          const kind = kinds.find((value) =>
+            option.paneID.endsWith(`-workspace-${value}`),
+          );
+          const name = iconNames[kind];
+          return (
+            option.header?.icon === `chrome://zest/content/icons/${name}.svg` &&
+            option.sidenav?.icon ===
+              `chrome://zest/content/icons/20/${name}.svg` &&
+            ["onAsyncRender", "onItemChange", "onToggle", "onDestroy"].every(
+              (hook) => typeof option[hook] === "function",
+            ) &&
+            option.sectionButtons?.some(
+              (button) =>
+                button.type === "zest-popout" &&
+                button.icon === "chrome://zest/content/icons/open-window.svg",
+            )
+          );
+        }),
+    );
+
+    const current =
+      matrixItems.find((item) => item.isRegularItem?.()) ||
+      matrixRows[0]?.attachment;
+    check("sidebar.currentItemFixtureAvailable", !!current);
+    if (current) {
+      const sourceView = [current];
+      let viewReads = 0;
+      let selectionReads = 0;
+      const sourceOwner = {
+        ZoteroPane: {
+          itemsView: {
+            getSortedItems() {
+              viewReads++;
+              return sourceView;
+            },
+          },
+          getSelectedItems() {
+            selectionReads++;
+            throw new Error("Sidebar must use its pane item, not selection");
+          },
+        },
+      };
+      const library = dev.sidebarSections.sidebarMatrixSource(
+        current,
+        "library",
+        sourceOwner,
+      );
+      const selected = library.getItems("selected");
+      check(
+        "sidebar.currentItemNotLibrarySelection",
+        library.allowViewScope === true &&
+          library.selectedLabel === "matrix-scope-current" &&
+          selected.length === 1 &&
+          selected[0] === current &&
+          viewReads === 0 &&
+          selectionReads === 0,
+      );
+      check(
+        "sidebar.libraryViewIsExplicit",
+        library.getItems("view") === sourceView &&
+          viewReads === 1 &&
+          selectionReads === 0,
+      );
+      const reader = dev.sidebarSections.sidebarMatrixSource(
+        current,
+        "reader",
+        sourceOwner,
+      );
+      const readerView = reader.getItems("view");
+      check(
+        "sidebar.readerNeverReadsBackgroundLibrary",
+        reader.allowViewScope === false &&
+          reader.getItems("selected")[0] === current &&
+          readerView.length === 1 &&
+          readerView[0] === current &&
+          viewReads === 1 &&
+          selectionReads === 0,
+      );
+      const readerOnlyOwner = {
+        get ZoteroPane() {
+          throw new Error("A reader window has no source library pane");
+        },
+      };
+      const readerOnly = dev.sidebarSections.sidebarMatrixSource(
+        current,
+        "reader",
+        readerOnlyOwner,
+      );
+      const emptyReader = dev.sidebarSections.sidebarMatrixSource(
+        undefined,
+        "reader",
+        readerOnlyOwner,
+      );
+      check(
+        "sidebar.readerSourceDoesNotRequireMainWindow",
+        readerOnly.getItems("selected")[0] === current &&
+          readerOnly.getItems("view")[0] === current &&
+          emptyReader.getItems("view").length === 0,
+      );
+    }
+
+    // Like the APP_SHUTDOWN guard below, pin the production close boundaries
+    // without invoking them against another probe's open dialogs. Functional
+    // main/iframe exclusion is tested with isolated owner doubles in unit tests.
+    const matrixClose = String(dev.matrix.closeMatrix);
+    const statsClose = String(dev.stats.closeStatsDialog);
+    check(
+      "sidebar.matrixCloseRequiresStandaloneHost",
+      /\.location\?\.href\s*===\s*HOST_URL\b/.test(matrixClose) &&
+        /!\w+\.frameElement/.test(matrixClose) &&
+        matrixClose.includes('".zest-matrix"'),
+    );
+    check(
+      "sidebar.statsCloseRequiresStandaloneMarker",
+      /\.location\?\.href\s*===\s*panelURL\b/.test(statsClose) &&
+        statsClose.includes('".zest-stats-standalone"') &&
+        !statsClose.includes('".zest-stats"'),
+    );
+    check(
+      "sidebar.embeddingLifecycleExportsAvailable",
+      typeof dev.matrix.mountMatrix === "function" &&
+        typeof dev.stats.mountStats === "function" &&
+        typeof dev.sidebarSections.closeSidebarSectionsForWindow ===
+          "function" &&
+        typeof dev.sidebarSections.unregisterSidebarSections === "function",
+    );
+  } catch (e) {
+    check("sidebar.invariantProbeCompleted", false, String(e));
+  }
 }
 
 /* ---------- 0. app shutdown disables delayed sweep recovery ---------- */

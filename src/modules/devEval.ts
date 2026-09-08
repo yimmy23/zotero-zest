@@ -23,6 +23,7 @@ import * as rankMap from "../rank/map";
 import * as rankNormalize from "../rank/normalize";
 import * as graphPane from "../graph/pane";
 import * as graphBuild from "../graph/build";
+import * as authorIdentity from "../graph/authorIdentity";
 import * as graphView from "../graph/view";
 import * as tagTreeUI from "../tags/nestedTree";
 import * as tagScope from "../tags/scope";
@@ -46,6 +47,7 @@ import * as abstractTranslation from "../panes/abstractTranslation";
 import * as coreAuthors from "../panes/coreAuthors";
 import * as stats from "../panes/statsDialog";
 import * as matrix from "../panes/annotMatrix";
+import * as sidebarSections from "../panes/sidebarSections";
 import * as tabsSidebar from "../tabs/sidebar";
 import * as reveal from "../views/reveal";
 import * as csv from "../utils/csv";
@@ -187,6 +189,7 @@ export function registerDevEval() {
             rankNormalize,
             graphPane,
             graphBuild,
+            authorIdentity,
             graphView,
             tagTreeUI,
             tagScope,
@@ -210,6 +213,7 @@ export function registerDevEval() {
             coreAuthors,
             stats,
             matrix,
+            sidebarSections,
             tabsSidebar,
             reveal,
             csv,

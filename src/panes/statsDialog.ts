@@ -20,9 +20,65 @@ import { dialogThemeCSS } from "../ui/dialogTheme";
 // A snapshot on open / explicit refresh: no tracker subscription or hidden
 // window work. All statistics and achievements are derived, never persisted.
 let openWindow: Window | null = null;
-const ranges = new WeakMap<Window, StatsRange>();
-const snapshots = new WeakMap<Window, ReturnType<typeof collectStats>>();
+type StatsState = {
+  embedded: boolean;
+  active: boolean;
+  dirty: boolean;
+  range: StatsRange;
+  snapshot?: ReturnType<typeof collectStats>;
+  root?: HTMLElement;
+  style?: HTMLElement;
+};
+const states = new WeakMap<Window, StatsState>();
 const pendingLoads = new WeakMap<Window, EventListener>();
+const panelURL = `chrome://${config.addonRef}/content/panel.xhtml`;
+
+function createState(win: Window, embedded = false): StatsState {
+  const previous = states.get(win);
+  if (previous) disposeState(win, previous);
+  const state: StatsState = {
+    embedded,
+    active: true,
+    dirty: true,
+    range: 30,
+  };
+  states.set(win, state);
+  return state;
+}
+
+function disposeState(win: Window, state: StatsState) {
+  state.active = false;
+  state.dirty = false;
+  state.range = 30;
+  state.snapshot = undefined;
+  state.root?.remove();
+  state.style?.remove();
+  state.root = undefined;
+  state.style = undefined;
+  if (states.get(win) === state) states.delete(win);
+}
+
+/** Mount only after the sidebar's dedicated panel.xhtml frame is visible. */
+export function mountStats(win: Window) {
+  const state = createState(win, true);
+  const ownsState = () => states.get(win) === state && !win.closed;
+  renderStats(win);
+  return {
+    refresh() {
+      if (!ownsState()) return;
+      state.dirty = true;
+      if (state.active) renderStats(win);
+    },
+    setActive(active: boolean) {
+      if (!ownsState() || state.active === active) return;
+      state.active = active;
+      if (active && state.dirty) renderStats(win);
+    },
+    dispose() {
+      disposeState(win, state);
+    },
+  };
+}
 
 export function collectStats(now = new Date()) {
   const stats = aggregateReadingStats(readingStore.entries(), now);
@@ -49,6 +105,8 @@ export function closeStatsDialog() {
     const pending = pendingLoads.get(current);
     if (pending) current.removeEventListener("load", pending);
     pendingLoads.delete(current);
+    const state = states.get(current);
+    if (state) disposeState(current, state);
   }
   // Also close a window that has not loaded its marker yet.
   try {
@@ -58,7 +116,16 @@ export function closeStatsDialog() {
   }
   for (const win of (Services.wm as any).getEnumerator("") as any) {
     try {
-      if (win?.document?.querySelector?.(".zest-stats")) win.close();
+      // Main item panes may now contain statistics too. Only a marked,
+      // standalone chrome host belongs to the statistics window lifecycle.
+      if (
+        win?.location?.href === panelURL &&
+        win?.document?.querySelector?.(".zest-stats-standalone")
+      ) {
+        const state = states.get(win);
+        if (state) disposeState(win, state);
+        win.close();
+      }
     } catch {
       /* Already closing. */
     }
@@ -66,7 +133,7 @@ export function closeStatsDialog() {
 }
 
 export function openStatsDialog(parent?: Window) {
-  const url = `chrome://${config.addonRef}/content/panel.xhtml`;
+  const url = panelURL;
   if (openWindow && !openWindow.closed) {
     if (
       openWindow.document.readyState === "complete" &&
@@ -94,8 +161,8 @@ export function openStatsDialog(parent?: Window) {
     win.addEventListener(
       "unload",
       () => {
-        ranges.delete(win);
-        snapshots.delete(win);
+        const state = states.get(win);
+        if (state) disposeState(win, state);
         if (openWindow === win) openWindow = null;
       },
       { once: true },
@@ -184,21 +251,39 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   const doc = win.document;
   const body = doc.body;
   if (!body || win.closed) return;
+  const state = states.get(win) || createState(win);
+  if (!state.active) {
+    if (refreshSnapshot) state.dirty = true;
+    return;
+  }
   const scroll = win.scrollY;
   const focus = doc.activeElement?.getAttribute("data-focus");
   const expanded =
     !!doc.querySelector<HTMLDetailsElement>(".zest-stats-data")?.open;
-  const stats = (!refreshSnapshot && snapshots.get(win)) || collectStats();
-  snapshots.set(win, stats);
-  const range = ranges.get(win) ?? 30;
+  const stats =
+    (!refreshSnapshot && !state.dirty && state.snapshot) || collectStats();
+  state.snapshot = stats;
+  state.dirty = false;
+  const range = state.range;
   const period = readingPeriod(stats, range);
   doc.title = label("stats-title");
   body.textContent = "";
-  body.append(element(doc, "style", "", statsCSS()));
-  const root = element(doc, "main", "zest-stats");
+  state.style = element(doc, "style", "", statsCSS());
+  body.append(state.style);
+  const root = element(
+    doc,
+    "main",
+    `zest-stats zest-stats-${state.embedded ? "embedded" : "standalone"}`,
+  );
+  state.root = root;
+  const isCurrent = () =>
+    states.get(win) === state &&
+    state.active &&
+    state.root === root &&
+    !win.closed;
   body.append(root);
   const header = element(doc, "header", "zest-stats-header");
-  const heading = element(doc, "div");
+  const heading = element(doc, "div", "zest-stats-heading");
   const title = element(doc, "h1");
   title.append(icon(doc, "chart"), doc.createTextNode(label("stats-title")));
   heading.append(
@@ -214,7 +299,9 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   refresh.dataset.focus = "refresh";
   refresh.addEventListener(
     "click",
-    guard("stats:refresh", () => renderStats(win)),
+    guard("stats:refresh", () => {
+      if (isCurrent()) renderStats(win);
+    }),
   );
   header.append(heading, refresh);
   root.append(header);
@@ -225,7 +312,7 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   } else if (!stats.totalSeconds && !stats.datedSeconds) {
     root.append(element(doc, "p", "zest-stats-notice", label("stats-empty")));
   }
-  root.append(buildGoals(doc, stats, win));
+  root.append(buildGoals(doc, stats, win, isCurrent));
   const cards = element(doc, "div", "zest-stats-summary");
   const summaries: [FluentMessageId, string][] = [
     ["stats-total", formatDuration(stats.totalSeconds)],
@@ -277,7 +364,8 @@ export function renderStats(win: Window, refreshSnapshot = true) {
     button.addEventListener(
       "click",
       guard("stats:range", () => {
-        ranges.set(win, days);
+        if (!isCurrent()) return;
+        state.range = days;
         renderStats(win, false);
       }),
     );
@@ -361,7 +449,12 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   win.scrollTo(0, scroll);
 }
 
-function buildGoals(doc: Document, stats: ReadingStats, win: Window) {
+function buildGoals(
+  doc: Document,
+  stats: ReadingStats,
+  win: Window,
+  isCurrent: () => boolean,
+) {
   const goals = readingGoals(
     stats,
     getPref("stats.dailyGoalMinutes"),
@@ -512,6 +605,7 @@ function buildGoals(doc: Document, stats: ReadingStats, win: Window) {
     select.addEventListener(
       "change",
       guard("stats:goal", () => {
+        if (!isCurrent()) return;
         const value = Number(select.value);
         if (!values.includes(value)) return;
         setPref(key, value);
@@ -989,5 +1083,52 @@ function statsCSS() {
     @media(max-width:700px) { .zest-goals-layout { grid-template-columns:minmax(0,1fr); gap:16px; } .zest-rings { margin:auto; } }
     @media(max-width:560px) { .zest-stats { padding:16px; } .zest-stats-panel { padding:18px; } .zest-achievements { grid-template-columns:minmax(0,1fr); } .zest-stats-header { align-items:flex-start; } .zest-stats-card { padding:2px 12px; } .zest-stats-value { font-size:1.25rem; } .zest-goal-metrics { grid-template-columns:minmax(0,1fr); gap:18px; } .zest-goal-metric { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); column-gap:12px; } .zest-goal-line { display:contents; } .zest-goal-name { grid-column:1; grid-row:1; align-self:center; } .zest-goal-line strong,.zest-goal-metric progress,.zest-goal-detail { grid-column:2; } .zest-goal-amount { font-size:.94rem; } }
     @media(max-width:380px) { .zest-goal-week { gap:3px; } .zest-goal-day strong { width:26px; height:26px; } }
+    /* Sidebar frames share the dashboard, not the standalone window spacing. */
+    .zest-stats-embedded { max-width:100%; padding:0; overflow-wrap:anywhere; }
+    .zest-stats-embedded .zest-stats-heading { display:none; }
+    .zest-stats-embedded .zest-stats-header { justify-content:flex-end; margin:0 0 8px; gap:0; }
+    .zest-stats-embedded .zest-stats-refresh { min-height:30px; }
+    .zest-stats-embedded h2 { margin-bottom:10px; font-size:.875rem; }
+    .zest-stats-embedded .zest-stats-panel { padding:12px; margin-top:10px; border-radius:12px; box-shadow:none; }
+    .zest-stats-embedded .zest-goals { margin-top:0; }
+    .zest-stats-embedded .zest-goals-layout { grid-template-columns:minmax(0,1fr); gap:12px; }
+    .zest-stats-embedded .zest-rings { width:min(168px,100%); height:auto; aspect-ratio:1; margin:auto; }
+    .zest-stats-embedded .zest-rings-centre strong { font-size:1.25rem; }
+    .zest-stats-embedded .zest-goals-content { min-width:0; }
+    .zest-stats-embedded .zest-goal-metrics { grid-template-columns:minmax(0,1fr); gap:12px; }
+    .zest-stats-embedded .zest-goal-metric { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); column-gap:8px; }
+    .zest-stats-embedded .zest-goal-line { display:contents; }
+    .zest-stats-embedded .zest-goal-name { grid-column:1; grid-row:1; align-self:center; }
+    .zest-stats-embedded .zest-goal-line strong,.zest-stats-embedded .zest-goal-metric progress,.zest-stats-embedded .zest-goal-detail { grid-column:2; }
+    .zest-stats-embedded .zest-goal-amount { font-size:.94rem; }
+    .zest-stats-embedded .zest-goal-week { margin-top:14px; padding-top:12px; gap:3px; }
+    .zest-stats-embedded .zest-goal-day { min-width:0; padding:0; text-align:center; }
+    .zest-stats-embedded .zest-goal-day strong { width:26px; height:26px; }
+    .zest-stats-embedded .zest-goal-controls { display:grid; grid-template-columns:minmax(0,1fr); gap:8px; margin-top:10px; }
+    .zest-stats-embedded .zest-goal-controls label { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); font-size:.8rem; }
+    .zest-stats-embedded .zest-goal-controls select { width:100%; min-width:0; padding:6px 8px; font-size:.8rem; }
+    .zest-stats-embedded .zest-stats-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 0; padding:12px 0; margin-top:10px; border-radius:12px; box-shadow:none; }
+    .zest-stats-embedded .zest-stats-card { padding:0 12px; border-left:0; }
+    .zest-stats-embedded .zest-stats-card:nth-child(even) { border-left:1px solid var(--zest-line); }
+    .zest-stats-embedded .zest-stats-value { font-size:1.15rem; }
+    .zest-stats-embedded .zest-stats-note { margin:8px 0; }
+    .zest-stats-embedded .zest-stats-charts { grid-template-columns:minmax(0,1fr); gap:0; }
+    .zest-stats-embedded .zest-trend-header { gap:8px; }
+    .zest-stats-embedded .zest-trend-header h2 { margin:0; }
+    .zest-stats-embedded .zest-stats-ranges { max-width:100%; flex-wrap:wrap; }
+    .zest-stats-embedded .zest-stats-ranges button { padding:4px 8px; }
+    .zest-stats-embedded .zest-stats-period { gap:8px; margin:16px 0 8px; }
+    .zest-stats-embedded .zest-stats-weekdays { margin-top:12px; }
+    .zest-stats-embedded .zest-weekday { grid-template-columns:minmax(0,.8fr) minmax(0,1fr) minmax(0,1fr); gap:8px; margin:12px 0; }
+    .zest-stats-embedded .zest-cal-wrap { max-width:100%; min-width:0; }
+    .zest-stats-embedded .zest-achievements { grid-template-columns:minmax(0,1fr); gap:8px; margin:12px 0 0; }
+    .zest-stats-embedded .zest-achievement { grid-template-columns:44px minmax(0,1fr); column-gap:10px; padding:12px; }
+    .zest-stats-embedded .zest-achievement-category { margin-bottom:4px; }
+    .zest-stats-embedded .zest-medal { width:44px; height:49px; }
+    .zest-stats-embedded .zest-stats-table { table-layout:fixed; }
+    .zest-stats-embedded .zest-stats-table th,.zest-stats-embedded .zest-stats-table td { padding:8px 4px; overflow-wrap:anywhere; }
+    .zest-stats-embedded .zest-stats-top td:not(:first-child) { white-space:normal; }
+    .zest-stats-embedded .zest-stats-item { width:55%; }
+    .zest-stats-embedded .zest-stats-source { margin-top:12px; }
   `;
 }
