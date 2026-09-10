@@ -37,6 +37,7 @@ interface State {
   active: boolean;
   visible: boolean;
   disposed: boolean;
+  failed: boolean;
   shell?: HTMLElement;
   content?: HTMLElement;
   note?: HTMLElement;
@@ -46,10 +47,16 @@ interface State {
   theme?: ReturnType<typeof bindSidebarTheme>;
   observer?: IntersectionObserver;
   load?: () => void;
+  error?: () => void;
+  frameError?: boolean;
+  timeout?: number;
+  frameWindow?: Window;
+  frameUnload?: () => void;
   visibility: () => void;
   unload: () => void;
 }
 const HOST_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
+const FRAME_LOAD_TIMEOUT = 10_000;
 const ids = new Map<Kind, string>();
 const states = new Map<HTMLElement, State>();
 const icons: Record<Kind, string> = {
@@ -102,10 +109,7 @@ function dispose(state: State) {
   state.observer?.disconnect();
   state.win.document.removeEventListener("visibilitychange", state.visibility);
   state.win.removeEventListener("unload", state.unload);
-  if (state.load) state.frame?.removeEventListener("load", state.load, true);
-  state.controller?.dispose();
-  state.theme?.dispose();
-  state.frame?.remove();
+  clearContent(state);
   state.shell?.remove();
   states.delete(state.body);
 }
@@ -126,6 +130,7 @@ function getState(props: Props, kind: Kind) {
     active: false,
     visible: false,
     disposed: false,
+    failed: false,
     visibility: () => sync(state!),
     unload: () => dispose(state!),
   };
@@ -152,13 +157,19 @@ function sync(state: State) {
   if (state.disposed) return;
   const active =
     state.enabled &&
-    state.requested &&
     state.visible &&
     isOpen(state) &&
     !state.win.document.hidden;
   state.active = active;
   state.theme?.setActive(active);
   state.controller?.setActive(active);
+  // Native async-render callbacks can be consumed before a section reaches the
+  // viewport. Our own observer must be able to initialize it independently.
+  if (active && !state.requested) {
+    state.requested = true;
+    state.body.dataset.zestSidebarRequested = "true";
+  }
+  if (!active) stopDeadline(state);
   if (active && !state.controller) ensureContent(state);
 }
 function renderShell(state: State) {
@@ -167,6 +178,7 @@ function renderShell(state: State) {
   const shell = doc.createElement("div");
   shell.className = "zest-sidebar-shell";
   shell.dataset.kind = state.kind;
+  shell.dataset.loadState = "loading";
   const style = doc.createElement("style");
   style.textContent = `
     .zest-sidebar-shell { position:relative; min-width:0; color:var(--fill-primary); }
@@ -226,16 +238,41 @@ function graphSource(state: State) {
     items.push(current);
   return { items, itemID: current?.id, host: state.win };
 }
-function failed(state: State, error: unknown) {
-  ztoolkit.log("[sidebar] content load failed", error);
-  if (state.disposed || !state.content || !state.status) return;
+function stopDeadline(state: State) {
+  if (state.timeout === undefined) return;
+  state.win.clearTimeout(state.timeout);
+  state.timeout = undefined;
+}
+function stopLoading(state: State) {
+  stopDeadline(state);
+  if (state.load) state.frame?.removeEventListener("load", state.load, true);
+  if (state.error) state.frame?.removeEventListener("error", state.error, true);
+  state.load = undefined;
+  state.error = undefined;
+}
+function clearContent(state: State) {
+  stopLoading(state);
+  if (state.frameUnload)
+    state.frameWindow?.removeEventListener("unload", state.frameUnload);
+  state.frameUnload = undefined;
+  state.frameWindow = undefined;
+  state.controller?.dispose();
+  state.controller = undefined;
   state.theme?.dispose();
   state.theme = undefined;
+  const frame = state.frame;
+  state.frame = undefined;
+  state.frameError = false;
+  frame?.remove();
+}
+function failed(state: State, error: unknown) {
+  if (state.disposed || state.failed || !state.content || !state.status) return;
+  ztoolkit.log("[sidebar] content load failed", error);
+  state.failed = true;
+  clearContent(state);
+  state.shell!.dataset.loadState = "failed";
   state.status.hidden = false;
   state.status.textContent = getString("sidebar-load-failed");
-  if (state.load) state.frame?.removeEventListener("load", state.load, true);
-  state.frame?.remove();
-  state.frame = undefined;
   state.content.replaceChildren();
   const button = state.win.document.createElement("button");
   button.type = "button";
@@ -244,14 +281,24 @@ function failed(state: State, error: unknown) {
   button.addEventListener(
     "click",
     guard("sidebar retry", () => {
+      if (
+        state.disposed ||
+        !state.failed ||
+        button.parentElement !== state.content
+      )
+        return;
       button.remove();
+      state.failed = false;
+      state.shell!.dataset.loadState = "loading";
+      state.status!.textContent = getString("sidebar-loading");
       sync(state);
     }),
   );
   state.content.append(button);
 }
 function ensureContent(state: State) {
-  if (state.disposed || !state.active || state.controller) return;
+  if (state.disposed || !state.active || state.controller || state.failed)
+    return;
   renderShell(state);
   try {
     if (state.kind === "graph") {
@@ -259,18 +306,39 @@ function ensureContent(state: State) {
         graphSource(state),
       );
       state.status!.hidden = true;
+      state.shell!.dataset.loadState = "ready";
       return;
     }
+    if (state.frame) {
+      state.load?.();
+      startDeadline(state);
+      return;
+    }
+    const frame = state.win.document.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "iframe",
+    ) as HTMLIFrameElement;
+    frame.className = "zest-sidebar-frame";
+    frame.title = getString(
+      state.kind === "stats" ? "stats-title" : "matrix-title",
+    );
+    state.frame = frame;
     const ready = () => {
-      if (state.disposed || !state.active || state.controller) return;
-      const win = state.frame?.contentWindow;
       if (
-        !win ||
-        win.location.href !== HOST_URL ||
-        win.document.readyState !== "complete"
+        state.disposed ||
+        state.frame !== frame ||
+        !state.active ||
+        state.controller ||
+        state.failed
       )
         return;
       try {
+        if (state.frameError) throw new Error("Sidebar iframe failed to load");
+        const win = frame.contentWindow;
+        if (!win || win.document.readyState !== "complete") return;
+        if (win.location.href === "about:blank") return;
+        if (win.location.href !== HOST_URL)
+          throw new Error("Sidebar iframe loaded an unexpected document");
         state.theme?.dispose();
         state.theme = bindSidebarTheme(win, state.body);
         if (state.kind === "stats")
@@ -290,33 +358,63 @@ function ensureContent(state: State) {
                 state.win,
               ).getItems(scope),
           });
+        stopLoading(state);
+        const controller = state.controller;
+        // The embedded controllers dispose themselves when their document
+        // unloads. Do not retain that dead controller after an iframe reload.
+        state.frameWindow = win;
+        state.frameUnload = () => {
+          if (state.frame === frame && state.controller === controller)
+            failed(state, new Error("Sidebar iframe document unloaded"));
+        };
+        win.addEventListener("unload", state.frameUnload, { once: true });
         state.status!.hidden = true;
+        state.shell!.dataset.loadState = "ready";
       } catch (e) {
         failed(state, e);
       }
     };
-    if (state.frame) {
-      ready();
-      return;
-    }
-    const frame = state.win.document.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "iframe",
-    ) as HTMLIFrameElement;
-    frame.className = "zest-sidebar-frame";
-    frame.title = getString(
-      state.kind === "stats" ? "stats-title" : "matrix-title",
-    );
-    state.frame = frame;
     state.load = ready;
+    state.error = () => {
+      if (state.disposed || state.frame !== frame || state.controller) return;
+      state.frameError = true;
+      // Hidden sections stay idle; surface the pending error when reopened.
+      if (state.active)
+        failed(state, new Error("Sidebar iframe failed to load"));
+    };
     // Privileged chrome documents deliver their load through capture here.
     frame.addEventListener("load", ready, true);
+    frame.addEventListener("error", state.error, true);
     frame.src = HOST_URL;
     state.content!.append(frame);
     ready();
+    startDeadline(state);
   } catch (e) {
     failed(state, e);
   }
+}
+function startDeadline(state: State) {
+  if (
+    state.disposed ||
+    !state.active ||
+    state.controller ||
+    state.failed ||
+    !state.frame ||
+    state.timeout !== undefined
+  )
+    return;
+  const frame = state.frame;
+  const timer = state.win.setTimeout(() => {
+    if (state.timeout !== timer || state.frame !== frame || state.disposed)
+      return;
+    state.timeout = undefined;
+    if (!state.active || !isOpen(state) || state.win.document.hidden) return;
+    // The host document may already be complete even if its load event was lost.
+    state.load?.();
+    if (state.frame === frame && !state.controller && !state.failed)
+      failed(state, new Error("Sidebar iframe load timed out"));
+  }, FRAME_LOAD_TIMEOUT);
+  state.timeout = timer;
 }
 
 export function registerSidebarSections() {
@@ -374,14 +472,16 @@ export function registerSidebarSections() {
         props.setEnabled?.(state.enabled);
         // A retained native body can skip onRender after a fast off/on. Restore
         // its cheap shell first: an empty, zero-height body cannot intersect.
-        if (state.enabled && state.requested) renderShell(state);
+        if (state.enabled) renderShell(state);
         props.setSectionButtonStatus?.("zest-popout", {
           disabled: kind === "graph" && !(state.win as any).ZoteroPane,
         });
         // Cancel a previous item's scan before exposing this item's context.
         if (contextChanged && kind === "matrix" && state.controller) {
-          state.controller.dispose();
-          state.controller = undefined;
+          clearContent(state);
+          state.shell!.dataset.loadState = "loading";
+          state.status!.hidden = false;
+          state.status!.textContent = getString("sidebar-loading");
         } else if (changed && kind !== "stats" && state.controller) {
           state.controller.setActive(false);
           state.controller.refresh();

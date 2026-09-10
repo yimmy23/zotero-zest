@@ -163,8 +163,8 @@ try {
 
 /* ---------- sidebar: native registrations, explicit sources and safe teardown ---------- */
 // No section expansion, selection change, iframe mounting or real window close
-// here. The dedicated sidebar probe exercises rendering and live lifecycle;
-// these read-only invariants also run when the sidebar has never been opened.
+// here. Detached bodies exercise cheap lifecycle hooks only; the dedicated
+// sidebar-loading probe verifies visible startup with native callbacks withheld.
 {
   try {
     // Verified Zotero 10 getter: { updateID, options }, without registration writes.
@@ -224,6 +224,33 @@ try {
       matrixRows[0]?.attachment;
     check("sidebar.currentItemFixtureAvailable", !!current);
     if (current) {
+      for (const kind of ["stats", "matrix"]) {
+        const option = sectionOptions.find((entry) =>
+          entry.paneID.endsWith(`-workspace-${kind}`),
+        );
+        if (!option) continue;
+        const body = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+        const props = { body, doc, item: current, tabType: "reader" };
+        try {
+          option.onInit(props);
+          option.onItemChange(props);
+          option.onRender(props);
+          option.onToggle(props);
+          check(
+            `sidebar.${kind}HiddenShellDoesNotNeedAsyncRenderOrMountContent`,
+            body.querySelector(".zest-sidebar-shell")?.dataset.loadState ===
+              "loading" &&
+              !body.querySelector("iframe") &&
+              !body.hasAttribute("data-zest-sidebar-requested"),
+          );
+        } finally {
+          option.onDestroy({ body, doc });
+        }
+        check(
+          `sidebar.${kind}DetachedBodyTeardownClearsShell`,
+          !body.querySelector(".zest-sidebar-shell"),
+        );
+      }
       const sourceView = [current];
       let viewReads = 0;
       let selectionReads = 0;

@@ -360,17 +360,16 @@ test("iframe themes follow sidebar visibility and dispose on failure or removal"
   assert.equal(app.themes.at(-1).disposed, true, "failed mounts detach themes");
 });
 
-test("native init and shell render stay lazy; only a visible async render loads the iframe", () => {
+test("visible intersection starts the iframe even when the first native async render never arrives", () => {
   const app = setup();
   const state = app.panel("matrix");
   const { definition, props, win } = state;
   definition.onInit(props);
   definition.onItemChange(props);
   definition.onRender(props);
-  win.observers[0].intersect(true);
   assert.equal(win.framesCreated.length, 0);
   assert.equal(app.mounted.length, 0);
-  definition.onAsyncRender(props);
+  win.observers[0].intersect(true);
   assert.equal(win.framesCreated.length, 1);
   assert.equal(win.framesCreated[0].src, PANEL_URL);
   assert.equal(app.mounted.length, 0, "about:blank must not mount a renderer");
@@ -385,6 +384,237 @@ test("native init and shell render stay lazy; only a visible async render loads 
   definition.onAsyncRender(props);
   assert.equal(app.mounted.length, 1);
   assert.equal(app.logs.length, 0);
+});
+
+test("visible initialization recovery stays lazy while collapsed, hidden, disabled or unsupported", () => {
+  for (const kind of ["stats", "matrix", "graph"]) {
+    for (const gate of ["collapsed", "hidden", "unsupported", "preference"]) {
+      const app = setup();
+      const state = app.panel(kind);
+      state.definition.onInit(state.props);
+      if (gate === "collapsed") state.section.open = false;
+      if (gate === "hidden") state.win.document.hidden = true;
+      if (gate === "unsupported") state.props.item = item(5, { type: "note" });
+      if (gate === "preference") app.prefs[`sidebar.${kind}`] = false;
+      state.definition.onItemChange(state.props);
+      state.definition.onRender(state.props);
+      state.win.observers[0].intersect(true);
+      assert.equal(app.mounted.length, 0, `${kind}/${gate} stays lazy`);
+      assert.equal(state.win.framesCreated.length, 0);
+      assert.equal(state.win.timers.size, 0);
+      assert.equal(state.win.viewReads, 0);
+      state.section.open = true;
+      state.win.document.hidden = false;
+      state.props.item = item(6);
+      app.prefs[`sidebar.${kind}`] = true;
+      state.definition.onItemChange(state.props);
+      state.definition.onToggle(state.props);
+      state.win.document.dispatch("visibilitychange");
+      state.win.framesCreated.forEach((frame) => frame.finishLoad());
+      assert.equal(
+        app.mounted.length,
+        1,
+        `${kind}/${gate} resumes without async`,
+      );
+      app.unregisterSidebarSections();
+    }
+  }
+});
+
+test("a loading frame has one visible-only deadline and fails with explicit retry instead of auto-remount", () => {
+  const app = setup();
+  const state = app.begin(app.panel("matrix"));
+  const frame = state.win.framesCreated[0];
+  assert.equal(state.win.timers.size, 1);
+  assert.equal([...state.win.timers.values()][0].delay, 10000);
+  const staleTimeout = [...state.win.timers.values()][0].fn;
+  state.win.observers[0].intersect(false);
+  assert.equal(state.win.timers.size, 0, "hidden frames have no timer");
+  staleTimeout();
+  assert.equal(state.body.querySelector(".zest-sidebar-retry"), null);
+  state.win.observers[0].intersect(true);
+  state.definition.onToggle(state.props);
+  state.win.document.dispatch("visibilitychange");
+  assert.equal(
+    state.win.timers.size,
+    1,
+    "repeated sync does not extend deadline",
+  );
+  state.win.flushTimers();
+  assert.equal(state.win.timers.size, 0);
+  assert.equal(frame.parentElement, null);
+  assert.equal(frame.listeners.get("load").size, 0);
+  assert.equal(frame.listeners.get("error").size, 0);
+  assert.equal(
+    state.body
+      .querySelector(".zest-sidebar-shell")
+      .getAttribute("data-load-state"),
+    "failed",
+  );
+  for (let i = 0; i < 3; i++) {
+    state.props.item = item(100 + i);
+    state.definition.onItemChange(state.props);
+    state.definition.onAsyncRender(state.props);
+    state.win.observers[0].intersect(true);
+  }
+  assert.equal(
+    state.win.framesCreated.length,
+    1,
+    "only explicit retry leaves failed state",
+  );
+  assert.equal(state.body.querySelectorAll(".zest-sidebar-retry").length, 1);
+  state.body.querySelector(".zest-sidebar-retry").click();
+  assert.equal(state.win.framesCreated.length, 2);
+  assert.equal(
+    state.body.querySelector(".zest-sidebar-message").textContent,
+    "sidebar-loading",
+  );
+  assert.equal(
+    state.body
+      .querySelector(".zest-sidebar-shell")
+      .getAttribute("data-load-state"),
+    "loading",
+  );
+  state.win.framesCreated[1].finishLoad();
+  assert.equal(app.mounted.length, 1);
+  assert.equal(app.mounted[0].snapshots[0][0], state.props.item);
+  assert.equal(state.win.timers.size, 0);
+  assert.equal(
+    state.body
+      .querySelector(".zest-sidebar-shell")
+      .getAttribute("data-load-state"),
+    "ready",
+  );
+});
+
+test("load and error callbacks from failed frames cannot fail or mount their replacement", () => {
+  const app = setup();
+  const state = app.begin(app.panel("matrix"));
+  const frame = state.win.framesCreated[0];
+  const lateLoad = [...frame.listeners.get("load").keys()][0];
+  const lateError = [...(frame.listeners.get("error") || new Map()).keys()][0];
+  const lateTimeout = [...state.win.timers.values()][0]?.fn;
+  frame.dispatch("error");
+  const retry = state.body.querySelector(".zest-sidebar-retry");
+  assert.ok(retry, "iframe errors expose retry immediately");
+  retry.click();
+  const next = state.win.framesCreated[1];
+  frame.finishLoad();
+  lateLoad();
+  lateError();
+  lateTimeout();
+  assert.equal(app.mounted.length, 0);
+  assert.equal(
+    next.parentElement,
+    state.body.querySelector(".zest-sidebar-content"),
+  );
+  assert.equal(state.body.querySelector(".zest-sidebar-retry"), null);
+  next.finishLoad();
+  assert.equal(app.mounted.length, 1);
+  assert.equal(next.listeners.get("load").size, 0);
+  assert.equal(next.listeners.get("error").size, 0);
+  assert.equal(state.win.timers.size, 0);
+});
+
+test("complete unexpected documents fail rather than leaving an endless loading placeholder", () => {
+  for (const kind of ["stats", "matrix"]) {
+    const app = setup();
+    const state = app.begin(app.panel(kind));
+    const frame = state.win.framesCreated[0];
+    frame.contentWindow.location.href = "about:neterror?e=connectionFailure";
+    frame.contentWindow.document.readyState = "complete";
+    frame.dispatch("load");
+    assert.equal(app.mounted.length, 0);
+    assert.ok(state.body.querySelector(".zest-sidebar-retry"));
+    assert.equal(state.win.timers.size, 0);
+  }
+});
+
+test("missed load events recover at the deadline and on resume without reading a hidden item", () => {
+  for (const gate of [
+    "deadline",
+    "intersection",
+    "collapsed",
+    "hidden",
+    "unsupported",
+  ]) {
+    const app = setup();
+    const state = app.begin(app.panel("matrix"));
+    const frame = state.win.framesCreated[0];
+    if (gate === "intersection") state.win.observers[0].intersect(false);
+    if (gate === "collapsed") {
+      state.section.open = false;
+      state.definition.onToggle(state.props);
+    }
+    if (gate === "hidden") {
+      state.win.document.hidden = true;
+      state.win.document.dispatch("visibilitychange");
+    }
+    if (gate === "unsupported") {
+      state.props.item = item(3, { type: "note" });
+      state.definition.onItemChange(state.props);
+    }
+    if (gate !== "deadline") assert.equal(state.win.timers.size, 0);
+    // Zotero reports item changes through this hook, not by mutating an old
+    // callback's props after it has returned. Update before the frame completes
+    // so the deadline branch still exercises a genuinely missed load event.
+    state.props.item = item(200);
+    state.definition.onItemChange(state.props);
+    // The document completed but its iframe load callback was never delivered.
+    frame.contentWindow.finishLoad();
+    assert.equal(app.mounted.length, 0);
+    if (gate === "deadline") state.win.flushTimers();
+    else {
+      state.section.open = true;
+      state.win.document.hidden = false;
+      state.win.observers[0].intersect(true);
+      state.definition.onItemChange(state.props);
+      state.definition.onToggle(state.props);
+      state.win.document.dispatch("visibilitychange");
+    }
+    assert.equal(app.mounted.length, 1, gate);
+    assert.equal(
+      app.mounted[0].source.getItems("selected")[0],
+      state.props.item,
+    );
+    assert.equal(state.win.timers.size, 0);
+  }
+});
+
+test("pending deadlines are window-scoped and are removed on teardown", () => {
+  const app = setup();
+  const first = app.begin(app.panel("matrix"));
+  const second = app.begin(app.panel("matrix"));
+  const lateTimeout = [...first.win.timers.values()][0]?.fn;
+  assert.equal(first.win.timers.size, 1);
+  assert.equal(second.win.timers.size, 1);
+  app.closeSidebarSectionsForWindow(first.win);
+  assert.equal(first.win.timers.size, 0);
+  assert.equal(second.win.timers.size, 1);
+  lateTimeout();
+  assert.equal(first.body.children.length, 0);
+  second.win.framesCreated[0].finishLoad();
+  assert.equal(app.mounted.length, 1);
+  assert.equal(app.mounted[0].host, second.win);
+  assert.equal(second.win.timers.size, 0);
+});
+
+test("a mounted iframe unload clears its controller reference and requires explicit retry", () => {
+  const app = setup();
+  const state = app.begin(app.panel("matrix"));
+  const frame = state.win.framesCreated[0];
+  frame.finishLoad();
+  const first = app.mounted[0];
+  frame.contentWindow.dispatch("unload");
+  assert.equal(first.disposed, true);
+  assert.equal(app.themes[0].disposed, true);
+  assert.ok(state.body.querySelector(".zest-sidebar-retry"));
+  state.definition.onToggle(state.props);
+  assert.equal(state.win.framesCreated.length, 1);
+  state.body.querySelector(".zest-sidebar-retry").click();
+  state.win.framesCreated.at(-1).finishLoad();
+  assert.equal(app.mounted.length, 2);
+  assert.equal(app.mounted[1].active, true);
 });
 
 test("chrome iframe loads mount during capture and teardown removes the same event phase", () => {
@@ -521,7 +751,7 @@ test("rapid off/on resumes a retained native body even if Zotero skips cached re
   assert.equal(app.mounted[1].active, true);
 });
 
-test("first async render restores a never-visible retained body without mounting while hidden", () => {
+test("a never-visible retained body restores its cheap shell before async render without mounting while hidden", () => {
   for (const kind of ["stats", "matrix", "graph"]) {
     for (const hidden of [false, true]) {
       const app = setup();
@@ -544,7 +774,9 @@ test("first async render restores a never-visible retained body without mounting
       // Zotero retains the body and its synchronous-render cache, but this
       // off-screen panel has never received an async-render request.
       definition.onItemChange(panel.props);
-      assert.equal(panel.body.children.length, 0);
+      assert.ok(panel.body.querySelector(".zest-sidebar-content"));
+      assert.equal(panel.win.framesCreated.length, 0);
+      assert.equal(app.mounted.length, 0);
       panel.win.document.hidden = hidden;
       definition.onAsyncRender(panel.props);
       assert.ok(panel.body.querySelector(".zest-sidebar-content"));
