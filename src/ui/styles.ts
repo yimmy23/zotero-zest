@@ -329,6 +329,11 @@ export function registerStyles(win: Window) {
     .zest-info-stars.disabled .zest-info-star { cursor: default; }
     .zest-info-stars.disabled { opacity: .7; }
     .zest-info { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; line-height: 1.5; }
+    /* Native collapsible-section keeps the direct body in the layout while it
+       closes. Keep our horizontal inset, but remove only our vertical inset so
+       the collapsed section ends at the native header. */
+    collapsible-section:not([open]) > [data-type="body"].zest-info,
+    collapsible-section:not([open]) > [data-type="body"].zest-annot-cards { padding-block: 0; }
     .zest-info-card { min-width: 0; box-sizing: border-box; padding: 10px 12px;
       border: 1px solid var(--fill-quinary); border-radius: 9px;
       background-color: var(--material-background, transparent); }

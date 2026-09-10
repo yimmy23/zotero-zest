@@ -268,6 +268,32 @@ test("badge and annotation CSS select contrast with media rules, not a render-ti
   );
 });
 
+test("collapsed native section bodies lose only Zest vertical padding", () => {
+  const source = fs.readFileSync(
+    path.join(path.dirname(module.filename), "../src/ui/styles.ts"),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /collapsible-section:not\(\[open\]\)\s*>\s*\[data-type="body"\]\.zest-info,\s*\n\s*collapsible-section:not\(\[open\]\)\s*>\s*\[data-type="body"\]\.zest-annot-cards\s*\{\s*padding-block:\s*0;\s*\}/,
+  );
+  assert.doesNotMatch(
+    source,
+    /collapsible-section:not\(\[open\]\)\s+[^{}]*\{[^}]*padding:\s*0/,
+    "the collapsed rule must not reset horizontal padding or other layout",
+  );
+  assert.match(
+    source,
+    /\.zest-info\s*\{[^}]*padding:\s*4px 8px 12px;/,
+    "expanded info padding remains unchanged",
+  );
+  assert.match(
+    source,
+    /\.zest-annot-cards\s*\{[^}]*padding:\s*6px 12px 14px;/,
+    "expanded annotation-card padding remains unchanged",
+  );
+});
+
 test("accent changes repaint only mounted graph colours, deduplicate events, and detach on destroy", () => {
   const win = dom(),
     other = dom();
