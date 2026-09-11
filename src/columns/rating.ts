@@ -15,6 +15,24 @@ import { makeCell, rowItem, isPlainClick, type ColumnSpec } from "./registry";
  *  already has the other one (upsert keeps the existing key) */
 export const RATING_KEYS = ["rate", "Rating"];
 
+export type RatingDisplayMode = "column" | "title" | "both";
+
+/** Unknown/legacy values keep the original column-only presentation. */
+export function ratingDisplayMode(): RatingDisplayMode {
+  const mode = getPref("rating.display");
+  return mode === "title" || mode === "both" ? mode : "column";
+}
+
+/** The master list switch gates both non-editing list presentations. */
+export function ratingListDisplayEnabled(): boolean {
+  return getPref("column.rating.enable") !== false;
+}
+
+export function ratingTitleDisplayEnabled(): boolean {
+  const mode = ratingDisplayMode();
+  return ratingListDisplayEnabled() && (mode === "title" || mode === "both");
+}
+
 export function ratingWriteKeys(): string[] {
   const k =
     (getPref("rating.extraKey") as string) === "Rating" ? "Rating" : "rate";
@@ -23,8 +41,8 @@ export function ratingWriteKeys(): string[] {
 
 export function getRating(item: Zotero.Item): number {
   const v = getExtraLine(item, RATING_KEYS)?.value;
-  const n = v ? parseInt(v, 10) : 0;
-  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : 0;
+  // A partial number (e.g. "3.5" or "3 notes") is user text, not a rating.
+  return v && /^[1-5]$/.test(v.trim()) ? Number(v.trim()) : 0;
 }
 
 export async function setRating(item: Zotero.Item, n: number): Promise<void> {

@@ -75,6 +75,33 @@
       ></html:input>
     </hbox>
     <hbox align="center">
+      <html:label data-l10n-id="pref-rating-display"></html:label>
+      <menulist
+        id="zest-pref-rating-display"
+        preference="rating.display"
+        native="true"
+      >
+        <menupopup>
+          <menuitem data-l10n-id="pref-rating-display-column" value="column" />
+          <menuitem data-l10n-id="pref-rating-display-title" value="title" />
+          <menuitem data-l10n-id="pref-rating-display-both" value="both" />
+        </menupopup>
+      </menulist>
+      <button
+        id="zest-pref-rating-import"
+        data-l10n-id="pref-rating-import"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('rating-import', {
+            window,
+          })
+        "
+      />
+    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-rating-display-hint"
+    ></description>
+    <hbox align="center">
       <html:label data-l10n-id="pref-rating-mark"></html:label>
       <html:input
         type="text"

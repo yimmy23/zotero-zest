@@ -23,6 +23,16 @@ pref-rating-mark = 评级符号
 pref-rating-option = 空位符号
 pref-rating-color = 颜色（留空 = 主题强调色）
 pref-rating-key = Extra 键名
+pref-rating-display = 列表中的评级位置
+pref-rating-display-column =
+    .label = 仅评级列
+pref-rating-display-title =
+    .label = 仅标题
+pref-rating-display-both =
+    .label = 评级列与标题
+pref-rating-import =
+    .label = 从所选文献的星级标签导入…
+pref-rating-display-hint = 标题与评级列使用同一评级，不改论文标题。与评级一致的纯星级标签仅隐藏重复展示；其他标签保留。导入需预览确认，不覆盖已有评级或删除标签。
 pref-extra-strip =
     .label = 导出文献（BibTeX、RIS 等）时不带 Read_Status / 评级行
 

@@ -51,6 +51,7 @@ pref("rating.mark", "★");
 pref("rating.option", "★");
 pref("rating.color", "");
 pref("rating.extraKey", "rate");
+pref("rating.display", "column");
 
 // Network (used by ranking / citation sources)
 pref("network.email", "");

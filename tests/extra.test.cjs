@@ -11,6 +11,15 @@ test("adding an owned Extra key preserves trailing user-authored whitespace", ()
   );
 });
 
+test("appending an owned key leaves mixed LF and CRLF text byte-for-byte intact", () => {
+  const { upsertExtraText } = createHarness().load("src/utils/extra.ts");
+  const before = "User note\r\nCitation Key: demo\n\nOther: preserve";
+  assert.equal(
+    upsertExtraText(before, ["rate", "Rating"], "3"),
+    before + "\r\nrate: 3",
+  );
+});
+
 test("translated abstracts retain structured headings and stop at a real Extra field", () => {
   const { getExtraBlockText } = createHarness().load("src/utils/extra.ts");
   const headings = [

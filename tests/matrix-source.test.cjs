@@ -7,6 +7,7 @@ function setup() {
   const lookups = new Map();
   const reads = new Map();
   const titles = new Map();
+  const groupLookups = new Map();
   let yieldCount = 0;
   const make = (id, type, values = {}) => {
     const item = {
@@ -54,6 +55,7 @@ function setup() {
   });
   const harness = createHarness({
     globals: {
+      Date: { now: () => Date.now() },
       Zotero: {
         Items: {
           get(id) {
@@ -64,6 +66,7 @@ function setup() {
         Libraries: { userLibraryID: 1 },
         Groups: {
           getGroupIDFromLibraryID(id) {
+            groupLookups.set(id, (groupLookups.get(id) || 0) + 1);
             return id === 8 ? 24680 : false;
           },
         },
@@ -100,6 +103,8 @@ function setup() {
     lookups,
     reads,
     titles,
+    groupLookups,
+    context: harness.context,
     yieldCount: () => yieldCount,
   };
 }
@@ -167,6 +172,7 @@ test("cross-library equal keys are distinct and group links use group IDs", () =
     "zotero://open-pdf/groups/24680/items/KEY00002?page=4&annotation=KEY00004",
   );
   assert.notEqual(rows[0].itemIdentity, rows[2].itemIdentity);
+  assert.equal(s.groupLookups.get(8), 1);
 });
 
 test("native links carry PDF positions, EPUB CFI, snapshot selectors and exact keys", () => {
@@ -270,6 +276,8 @@ test("async and sync snapshots agree and large attachments yield without databas
   }
   const initial = JSON.stringify(s.pdf.annotations);
   const sync = s.collectMatrix([s.pdf]);
+  let clock = 0;
+  s.context.Date.now = () => (clock += 9);
   const asyncRows = await s.collectMatrixAsync([s.pdf], () => false);
   assert.deepEqual(
     Array.from(asyncRows, (r) => r.key),
@@ -285,6 +293,8 @@ test("cancellation discards partial results and avoids later attachment reads", 
     s.make(index, "annotation", { parentItemID: 2 });
     s.pdf.annotations.push(index);
   }
+  let clock = 0;
+  s.context.Date.now = () => (clock += 9);
   const rows = await s.collectMatrixAsync([s.parent], () => s.yieldCount() > 0);
   assert.equal(rows.length, 0);
   assert.equal(s.yieldCount(), 1);

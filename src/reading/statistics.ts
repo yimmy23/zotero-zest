@@ -85,6 +85,12 @@ export interface ReadingGoals {
   rings: GoalRing[];
 }
 
+/** The smallest view of the reading index needed to render current goals. */
+export interface ReadingGoalsStats {
+  today: string;
+  byDay: ReadonlyMap<string, number>;
+}
+
 /** Local calendar date: never derive a reading day through UTC conversion. */
 export function isoDay(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -286,11 +292,41 @@ export function readingPeriod(
 }
 
 /**
+ * Aggregate only the current calendar week for the compact sidebar.
+ *
+ * This intentionally probes each record's day map by the at-most seven dates
+ * in the current week. It must not touch totals, pages, or historical keys:
+ * those are only needed by the complete statistics window.
+ */
+export function aggregateReadingGoals(
+  entries: Iterable<[string, Pick<ItemReading, "days">]>,
+  now = new Date(),
+): ReadingGoalsStats {
+  const today = isoDay(now);
+  const todayDate = dateOf(today);
+  const monday = addDays(todayDate, -((todayDate.getDay() + 6) % 7));
+  const byDay = new Map<string, number>();
+  const days: string[] = [];
+  for (let offset = 0; offset < 7; offset++) {
+    const day = isoDay(addDays(monday, offset));
+    if (day > today) break;
+    days.push(day);
+  }
+  for (const [, record] of entries) {
+    for (const day of days) {
+      const value = positiveSeconds(record.days?.get(day) ?? 0);
+      if (value) byDay.set(day, (byDay.get(day) ?? 0) + value);
+    }
+  }
+  return { today, byDay };
+}
+
+/**
  * Current goals use dated activity only. Changing them never changes historical
  * achievements, whose five-minute thresholds are fixed in the aggregate model.
  */
 export function readingGoals(
-  stats: ReadingStats,
+  stats: ReadingGoalsStats,
   dailyMinutes = 30,
   weeklyDays = 5,
 ): ReadingGoals {

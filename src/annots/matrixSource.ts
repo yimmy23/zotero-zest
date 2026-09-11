@@ -28,23 +28,39 @@ function encodePosition(value: string): string {
   );
 }
 
-function sourceURL(annotation: Zotero.Item, attachment: Zotero.Item): string {
+type LibraryScope = string | false;
+
+function sourceURL(
+  annotation: Zotero.Item,
+  attachment: Zotero.Item,
+  libraryScopes: Map<number, LibraryScope>,
+): string {
   try {
     if (
       !/^[A-Z0-9]+$/.test(attachment.key) ||
       !/^[A-Z0-9]+$/.test(annotation.key)
     )
       return "";
-    let scope: string;
-    if (attachment.libraryID === Zotero.Libraries.userLibraryID)
-      scope = "library";
-    else {
-      const groupID = Zotero.Groups.getGroupIDFromLibraryID(
-        attachment.libraryID,
-      );
-      if (!Number.isInteger(groupID) || groupID <= 0) return "";
-      scope = `groups/${groupID}`;
+    const libraryID = attachment.libraryID;
+    let scope = libraryScopes.get(libraryID);
+    if (scope === undefined) {
+      if (libraryID === Zotero.Libraries.userLibraryID) scope = "library";
+      else {
+        const groupID = (() => {
+          try {
+            return Zotero.Groups.getGroupIDFromLibraryID(libraryID) as number;
+          } catch {
+            return Number.NaN;
+          }
+        })();
+        scope =
+          Number.isInteger(groupID) && groupID > 0
+            ? `groups/${groupID}`
+            : false;
+      }
+      libraryScopes.set(libraryID, scope);
     }
+    if (!scope) return "";
     const params: string[] = [];
     const raw = safely(() => annotation.annotationPosition, "");
     const position = safely(() => JSON.parse(raw), null);
@@ -74,6 +90,9 @@ function* scan(items: Zotero.Item[]): Generator<MatrixRow | null> {
   const cachedItems = new Map<number, Zotero.Item | undefined>();
   const titles = new Map<string, string>();
   const scopes = new Map<string, AttachmentScope>();
+  // A scan can contain many annotations in one library. Group identity is
+  // stable for the scan, so resolve it once while retaining every source link.
+  const libraryScopes = new Map<number, LibraryScope>();
   const parents = new Set<string>();
   const seen = new Set<string>();
   const getItem = (id: number): Zotero.Item | undefined => {
@@ -205,7 +224,7 @@ function* scan(items: Zotero.Item[]): Generator<MatrixRow | null> {
           itemID: owner.id,
           itemIdentity: identity(owner),
           attachmentTitle,
-          sourceURL: sourceURL(annotation, attachment),
+          sourceURL: sourceURL(annotation, attachment, libraryScopes),
           searchText: [
             text,
             comment,
@@ -238,13 +257,20 @@ export async function collectMatrixAsync(
 ): Promise<MatrixRow[]> {
   if (cancelled()) return [];
   const rows: MatrixRow[] = [];
+  const sliceMs = 8;
+  const clockCheckInterval = 64;
   let work = 0;
+  let deadline = Date.now() + sliceMs;
   for (const row of scan(items)) {
     if (cancelled()) return [];
     if (row) rows.push(row);
-    if (++work % 200 === 0) {
+    // Keep cancellation responsive on every checkpoint, but avoid paying for
+    // a clock read on every annotation. The deadline bounds a busy scan while
+    // small views complete without an artificial Promise turn.
+    if (++work % clockCheckInterval === 0 && Date.now() >= deadline) {
       await Zotero.Promise.delay(0);
       if (cancelled()) return [];
+      deadline = Date.now() + sliceMs;
     }
   }
   return cancelled() ? [] : rows;

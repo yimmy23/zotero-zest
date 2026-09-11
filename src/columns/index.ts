@@ -2,7 +2,11 @@ import { config } from "../../package.json";
 import { readingStore, splitKey } from "../reading/store";
 import { readingColumn } from "./reading";
 import { statusColumn } from "./status";
-import { ratingColumn } from "./rating";
+import {
+  ratingColumn,
+  ratingDisplayMode,
+  ratingListDisplayEnabled,
+} from "./rating";
 import { tagsColumn } from "./tags";
 import { textTagsColumn } from "./textTags";
 import { annotationsColumn } from "./annotations";
@@ -43,7 +47,6 @@ import { installTitleDecor, uninstallTitleDecor } from "./titleDecor";
 const SPECS: Array<() => ColumnSpec> = [
   readingColumn,
   statusColumn,
-  ratingColumn,
   tagsColumn,
   textTagsColumn,
   annotationsColumn,
@@ -132,9 +135,34 @@ export function registerAllColumns() {
       ),
     );
   };
+
+  // Rating is the one list surface that can move into the native Title cell.
+  // Register/unregister only our column and let Zotero retain the user's
+  // persisted width, ordinal and hidden state; never rewrite tree prefs here.
+  const syncRatingDisplayColumn = () => {
+    const showColumn =
+      ratingListDisplayEnabled() &&
+      (ratingDisplayMode() === "column" || ratingDisplayMode() === "both");
+    if (showColumn && !isRegistered("rating")) registerColumn(ratingColumn());
+    else if (!showColumn && isRegistered("rating")) unregisterColumn("rating");
+  };
+  syncRatingDisplayColumn();
   watchEnable(readingColumn, "column.reading.enable");
   watchEnable(statusColumn, "column.status.enable");
-  watchEnable(ratingColumn, "column.rating.enable");
+  for (const p of ["column.rating.enable", "rating.display"]) {
+    prefObservers.push(
+      Zotero.Prefs.registerObserver(
+        `${P}.${p}`,
+        () => {
+          syncRatingDisplayColumn();
+          // The Title renderer reads this pref directly, so it needs a paint
+          // even when no plugin column is currently registered.
+          redrawAll();
+        },
+        true,
+      ),
+    );
+  }
   watchEnable(tagsColumn, "column.tags.enable");
   watchEnable(textTagsColumn, "column.textTags.enable");
   watchEnable(annotationsColumn, "column.annots.enable");

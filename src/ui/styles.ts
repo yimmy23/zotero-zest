@@ -152,6 +152,13 @@ export function registerStyles(win: Window) {
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:hover,
     .virtualized-table .cell.zest-rating .zest-stars:hover .zest-star:has(~ .zest-star:hover) { color: var(--zest-star-color, var(--accent-yellow)); }
 
+    /* Title rating: display-only and deliberately independent from native
+       selection/icon/tag/title styles. The duplicate class is only put on a
+       native emoji swatch after its RAW tag was proved to be a legacy rating. */
+    .virtualized-table .cell.primary .zest-title-rating { display: inline-flex; flex: 0 0 auto; gap: 0; margin-inline-end: 4px; line-height: 1; letter-spacing: 0; }
+    .virtualized-table .cell.primary .zest-title-rating .zest-title-rating-star { color: var(--zest-star-color, var(--accent-yellow)); font-size: calc(var(--zotero-font-size, 13px) * .9); }
+    .virtualized-table .cell.primary .tag-swatch.emoji.zest-title-rating-duplicate { display: none !important; }
+
     /* Annotations: histogram / colour stack / dots */
     .virtualized-table .cell.zest-annots .zest-annot-bars {
       flex: 0 0 auto; width: 44px; height: 11px; margin-inline-end: 5px; overflow: visible;

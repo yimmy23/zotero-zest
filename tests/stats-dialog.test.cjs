@@ -51,6 +51,7 @@ function setup({
   entries = [["1/READ0001", record()]],
   windows,
   loaded = true,
+  dateClass = FixedDate,
 } = {}) {
   const records = new Map(entries);
   const source = JSON.stringify(
@@ -74,6 +75,7 @@ function setup({
   ]);
   const allowedPrefs = new Set(prefs.keys());
   const openCalls = [];
+  const listeners = new Set();
   const unexpected = () => {
     throw new Error("statistics must not write, subscribe or schedule work");
   };
@@ -83,7 +85,10 @@ function setup({
       reads++;
       return records.entries();
     },
-    onChange: unexpected,
+    onChange(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
     addSample: unexpected,
     mergeRecord: unexpected,
     flush: unexpected,
@@ -101,7 +106,7 @@ function setup({
   };
   const h = createHarness({
     globals: {
-      Date: FixedDate,
+      Date: dateClass,
       setTimeout: unexpected,
       setInterval: unexpected,
       ztoolkit: { log: (...args) => logs.push(args) },
@@ -170,6 +175,10 @@ function setup({
     windows: allWindows,
     opens: () => opens,
     reads: () => reads,
+    emitChange() {
+      for (const listener of [...listeners]) listener([]);
+    },
+    listenerCount: () => listeners.size,
     assertUnchanged(expectedPrefWrites = []) {
       assert.equal(
         JSON.stringify(
@@ -475,6 +484,7 @@ test("reading changes remain a snapshot until an explicit refresh", () => {
   const original = doc.querySelector(".zest-stats-summary").textContent;
   const writes = doc.writes;
   app.records.set("1/READ0002", record(900));
+  app.emitChange();
   assert.equal(app.reads(), 1);
   assert.equal(doc.writes, writes);
   assert.equal(doc.querySelector(".zest-stats-summary").textContent, original);
@@ -763,7 +773,8 @@ test("unloaded embedded statistics show an unknown value instead of a false zero
   assert.equal(button.getAttribute("aria-busy"), "true");
   assert.equal(button.querySelector("strong").textContent, "—");
   app.store.loaded = true;
-  mount.refresh();
+  app.emitChange();
+  assert.equal(app.reads(), 2);
   assert.equal(
     app.win.document
       .querySelector(".zest-stats-open-details")
@@ -774,6 +785,8 @@ test("unloaded embedded statistics show an unknown value instead of a false zero
     app.win.document.querySelector(".zest-rings-centre strong").textContent,
     "stats-zero-time",
   );
+  mount.refresh();
+  assert.equal(app.reads(), 3);
 });
 
 test("embedded statistics render only clickable rings without resolving document titles", () => {
@@ -938,6 +951,7 @@ test("inactive statistics defer refresh work and collect one fresh snapshot on e
   const previousToday = doc.querySelector(".zest-rings-centre").textContent;
   mount.setActive(false);
   app.records.set("1/READ0003", record(1200));
+  app.emitChange();
   assert.equal(app.reads(), 2, "reading data changes do no work while hidden");
   assert.equal(doc.writes, resumedWrites);
   mount.setActive(true);
@@ -959,10 +973,81 @@ test("inactive statistics defer refresh work and collect one fresh snapshot on e
   assert.deepEqual(app.prefWrites, []);
 });
 
+test("compact reshow with no changes preserves the DOM and performs zero reads", () => {
+  const app = setup();
+  const mount = app.mountStats(app.win);
+  const root = app.win.document.querySelector(".zest-stats");
+  assert.equal(app.reads(), 1);
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(app.reads(), 1);
+  assert.strictEqual(
+    app.win.document.querySelector(".zest-stats"),
+    root,
+    "unchanged compact content is kept in place",
+  );
+  mount.dispose();
+});
+
+test("compact reshow refreshes after a calendar day boundary without polling", () => {
+  class MovingDate extends Date {
+    constructor(...args) {
+      super(...(args.length ? args : [MovingDate.current]));
+    }
+    static now() {
+      return MovingDate.current;
+    }
+  }
+  MovingDate.current = new Date("2026-09-07T12:00:00").getTime();
+  const app = setup({ dateClass: MovingDate });
+  const mount = app.mountStats(app.win);
+  const root = app.win.document.querySelector(".zest-stats");
+  MovingDate.current = new Date("2026-09-08T00:01:00").getTime();
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(app.reads(), 2);
+  assert.notStrictEqual(app.win.document.querySelector(".zest-stats"), root);
+  mount.dispose();
+});
+
+test("compact reshow refreshes for a changed goal preference", () => {
+  const app = setup();
+  const mount = app.mountStats(app.win);
+  const root = app.win.document.querySelector(".zest-stats");
+  app.prefs.set("stats.dailyGoalMinutes", 45);
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(app.reads(), 2);
+  assert.notStrictEqual(app.win.document.querySelector(".zest-stats"), root);
+  assert.match(
+    app.win.document
+      .querySelector(".zest-stats-open-details")
+      .getAttribute("aria-label"),
+    /45 min/,
+  );
+  mount.dispose();
+});
+
+test("active store changes only dirty the compact panel until resume", () => {
+  const app = setup();
+  const mount = app.mountStats(app.win);
+  const root = app.win.document.querySelector(".zest-stats");
+  app.records.set("1/READ0002", record(900));
+  app.emitChange();
+  assert.equal(app.reads(), 1);
+  assert.strictEqual(app.win.document.querySelector(".zest-stats"), root);
+  mount.setActive(false);
+  mount.setActive(true);
+  assert.equal(app.reads(), 2);
+  assert.notStrictEqual(app.win.document.querySelector(".zest-stats"), root);
+  mount.dispose();
+});
+
 test("inactive or repainted ring buttons cannot open details", () => {
   const app = setup();
   let opens = 0;
   const mount = app.mountStats(app.win, () => opens++);
+  assert.equal(app.listenerCount(), 1);
   const doc = app.win.document;
   const original = doc.querySelector(".zest-stats-open-details");
   mount.setActive(false);
@@ -973,10 +1058,10 @@ test("inactive or repainted ring buttons cannot open details", () => {
   assert.equal(app.reads(), 1);
   mount.setActive(true);
   original.click();
-  assert.equal(opens, 0, "a button from before reshow is stale");
+  assert.equal(opens, 1, "unchanged DOM remains valid across a reshow");
   const resumed = doc.querySelector(".zest-stats-open-details");
   resumed.click();
-  assert.equal(opens, 1);
+  assert.equal(opens, 2);
   resumed.focus();
   mount.refresh();
   const current = doc.querySelector(".zest-stats-open-details");
@@ -987,9 +1072,9 @@ test("inactive or repainted ring buttons cannot open details", () => {
   );
   original.click();
   resumed.click();
-  assert.equal(opens, 1, "replaced ring button cannot open details");
+  assert.equal(opens, 2, "replaced ring button cannot open details");
   current.click();
-  assert.equal(opens, 2);
+  assert.equal(opens, 3);
   app.assertUnchanged();
 });
 
@@ -1006,6 +1091,7 @@ test("disposing an embedded instance clears only its owned content and rejects s
   unowned.textContent = "host-owned node";
   doc.body.append(unowned);
   mount.dispose();
+  assert.equal(app.listenerCount(), 0, "dispose removes the store listener");
   assert.equal(app.win.closed, false);
   assert.equal(app.win.closeCount, 0);
   assert.equal(doc.querySelector(".zest-stats"), null);
@@ -1022,6 +1108,7 @@ test("disposing an embedded instance clears only its owned content and rejects s
   assert.equal(app.reads(), 1);
   assert.equal(doc.writes, writes);
   const next = app.mountStats(app.win);
+  assert.equal(app.listenerCount(), 1);
   assert.equal(app.reads(), 2, "remount does not keep the disposed snapshot");
   assert.ok(doc.querySelector(".zest-stats-open-details"));
   mount.dispose();
@@ -1033,7 +1120,32 @@ test("disposing an embedded instance clears only its owned content and rejects s
     "a disposed handle cannot repaint the new instance",
   );
   next.dispose();
+  assert.equal(app.listenerCount(), 0);
   app.assertUnchanged();
+});
+
+test("a disposed compact listener cannot dirty or repaint a replacement mount", () => {
+  const app = setup();
+  const first = app.mountStats(app.win);
+  first.dispose();
+  const second = app.mountStats(app.win);
+  const reads = app.reads();
+  assert.equal(app.listenerCount(), 1);
+  app.emitChange();
+  assert.equal(
+    app.reads(),
+    reads,
+    "change notification alone does not repaint",
+  );
+  second.setActive(false);
+  second.setActive(true);
+  assert.equal(
+    app.reads(),
+    reads + 1,
+    "only the replacement listener refreshes on resume",
+  );
+  second.dispose();
+  assert.equal(app.listenerCount(), 0);
 });
 
 test("shutdown ignores main windows and embedded hosts even if they contain statistics markers", () => {

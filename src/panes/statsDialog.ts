@@ -6,12 +6,14 @@ import { getPref, setPref } from "../utils/prefs";
 import { readingStore, splitKey } from "../reading/store";
 import {
   aggregateReadingStats,
+  aggregateReadingGoals,
   readingPeriod,
   readingGoals,
   addDays,
   isoDay,
   type StatsRange,
   type ReadingStats,
+  type ReadingGoalsStats,
   type PeriodStats,
 } from "../reading/statistics";
 import { icon, ICON_CSS } from "../ui/icons";
@@ -26,7 +28,10 @@ type StatsState = {
   dirty: boolean;
   range: StatsRange;
   snapshot?: ReturnType<typeof collectStats>;
-  compactSnapshot?: ReadingStats;
+  compactGoalsSnapshot?: ReadingGoalsStats;
+  compactGoalSignature?: string;
+  loaded: boolean;
+  unsubscribe?: () => void;
   onOpenDetails?: () => void;
   root?: HTMLElement;
   style?: HTMLElement;
@@ -43,8 +48,20 @@ function createState(win: Window, embedded = false): StatsState {
     active: true,
     dirty: true,
     range: 30,
+    loaded: readingStore.loaded,
   };
   states.set(win, state);
+  if (embedded) {
+    state.unsubscribe = readingStore.onChange(() => {
+      if (states.get(win) !== state) return;
+      const wasLoaded = state.loaded;
+      state.loaded = readingStore.loaded;
+      state.dirty = true;
+      // Loading is the one live transition that must not leave a previously
+      // unavailable panel showing the permanent "not ready" state.
+      if (state.active && !wasLoaded && state.loaded) renderStats(win);
+    });
+  }
   return state;
 }
 
@@ -53,7 +70,10 @@ function disposeState(win: Window, state: StatsState) {
   state.dirty = false;
   state.range = 30;
   state.snapshot = undefined;
-  state.compactSnapshot = undefined;
+  state.compactGoalsSnapshot = undefined;
+  state.compactGoalSignature = undefined;
+  state.unsubscribe?.();
+  state.unsubscribe = undefined;
   state.onOpenDetails = undefined;
   state.root?.remove();
   state.style?.remove();
@@ -77,13 +97,26 @@ export function mountStats(win: Window, onOpenDetails?: () => void) {
     setActive(active: boolean) {
       if (!ownsState() || state.active === active) return;
       state.active = active;
-      if (!active) state.dirty = true;
-      if (active && state.dirty) renderStats(win);
+      if (active && compactNeedsRefresh(state)) renderStats(win);
     },
     dispose() {
       disposeState(win, state);
     },
   };
+}
+
+function goalSignature() {
+  return `${getPref("stats.dailyGoalMinutes")}:${getPref("stats.weeklyGoalDays")}`;
+}
+
+function compactNeedsRefresh(state: StatsState) {
+  return (
+    state.dirty ||
+    !state.compactGoalsSnapshot ||
+    state.compactGoalsSnapshot.today !== isoDay(new Date()) ||
+    state.loaded !== readingStore.loaded ||
+    state.compactGoalSignature !== goalSignature()
+  );
 }
 
 export function collectStats(now = new Date()) {
@@ -284,9 +317,11 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   body.append(root);
   if (state.embedded) {
     const stats =
-      (!refreshSnapshot && !state.dirty && state.compactSnapshot) ||
-      aggregateReadingStats(readingStore.entries());
-    state.compactSnapshot = stats;
+      (!refreshSnapshot && !state.dirty && state.compactGoalsSnapshot) ||
+      aggregateReadingGoals(readingStore.entries());
+    state.compactGoalsSnapshot = stats;
+    state.compactGoalSignature = goalSignature();
+    state.loaded = readingStore.loaded;
     state.dirty = false;
     root.append(buildCompactGoals(doc, stats, state, isCurrent));
     if (focus)
@@ -297,6 +332,7 @@ export function renderStats(win: Window, refreshSnapshot = true) {
   const stats =
     (!refreshSnapshot && !state.dirty && state.snapshot) || collectStats();
   state.snapshot = stats;
+  state.loaded = readingStore.loaded;
   state.dirty = false;
   const range = state.range;
   const period = readingPeriod(stats, range);
@@ -469,7 +505,7 @@ export function renderStats(win: Window, refreshSnapshot = true) {
 
 function buildCompactGoals(
   doc: Document,
-  stats: ReadingStats,
+  stats: ReadingGoalsStats,
   state: StatsState,
   isCurrent: () => boolean,
 ) {

@@ -23,6 +23,37 @@ status-menu-header-manual = Now: { $status }
 status-menu-header-many = { $count } items
 
 rating-tip = Click a star to rate; click the current star again to lower
+rating-title-tip = Rating: { $rating } stars, shared with the rating column and sidebar
+menu-rating-import =
+    .label = Import ratings from star tags…
+rating-import-title = Import star ratings
+rating-import-subtitle = Review pure 1–5-star tags on selected papers. Confirmation writes to Extra without changing titles, deleting tags, or overwriting existing ratings.
+rating-import-summary = { $total } selected · { $eligible } eligible · { $skipped } skipped
+rating-import-col-title = Paper
+rating-import-col-existing = Existing rating
+rating-import-col-tags = Star tags
+rating-import-col-outcome = Outcome
+rating-import-outcome-ready = Ready to import as { $rating } stars
+rating-import-outcome-no-tag = No pure-star tag
+rating-import-outcome-conflict = Conflicting star tags; skipped
+rating-import-outcome-existing = Existing rating field; preserved
+rating-import-outcome-nonregular = Not a regular paper; skipped
+rating-import-outcome-readonly = Read-only paper; skipped
+rating-import-outcome-deleted = Deleted; skipped
+rating-import-outcome-duplicate = Duplicate item; skipped
+rating-import-outcome-changed = Changed since preview; skipped
+rating-import-outcome-failed = Save failed
+rating-import-outcome-imported = Imported
+rating-import-outcome-unavailable = Temporarily unavailable; skipped
+rating-import-empty = Select papers in your library before importing.
+rating-import-range = { $start }–{ $end } of { $total } papers
+rating-import-previous = Previous
+rating-import-next = Next
+rating-import-confirm = Import { $count } papers
+rating-import-cancel = Close
+rating-import-working = Importing…
+rating-import-result = { $imported } imported · { $skipped } skipped · { $failed } failed
+rating-import-closed = Import stopped. Ratings already saved are retained.
 
 # ---- menus ----
 menu-root =

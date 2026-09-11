@@ -46,6 +46,11 @@ import * as abstractText from "../panes/abstractText";
 import * as abstractTranslation from "../panes/abstractTranslation";
 import * as coreAuthors from "../panes/coreAuthors";
 import * as stats from "../panes/statsDialog";
+import * as readingStats from "../reading/statistics";
+import * as rating from "../columns/rating";
+import * as starTags from "../rating/starTags";
+import * as ratingImport from "../rating/tagImport";
+import * as ratingImportUI from "../panes/ratingImport";
 import * as matrix from "../panes/annotMatrix";
 import * as sidebarSections from "../panes/sidebarSections";
 import * as tabsSidebar from "../tabs/sidebar";
@@ -212,6 +217,11 @@ export function registerDevEval() {
             abstractTranslation,
             coreAuthors,
             stats,
+            readingStats,
+            rating,
+            starTags,
+            ratingImport,
+            ratingImportUI,
             matrix,
             sidebarSections,
             tabsSidebar,

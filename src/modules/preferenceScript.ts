@@ -23,6 +23,7 @@ import { accentColor, syncAccent, ACCENT_FALLBACK } from "../ui/styles";
 import { HEAT_COLOR_DEFAULT, BADGE_COLOR_DEFAULT } from "../ui/palette";
 import { DEFAULT_RANK_COLOR } from "../rank/rank";
 import { refreshAllRows } from "../columns";
+import { openRatingImport } from "../panes/ratingImport";
 
 /**
  * Preference pane logic. The pane itself is declarative (preference="…"
@@ -547,6 +548,12 @@ export async function onPrefsCommand(
   data: { [key: string]: any } = {},
 ) {
   switch (type) {
+    case "rating-import": {
+      const host = Zotero.getMainWindow() as unknown as Window;
+      const items = (host as any)?.ZoteroPane?.getSelectedItems?.() || [];
+      if (host) openRatingImport(host, items);
+      break;
+    }
     case "color-auto":
       resetAutoColor(String(data.pref || ""));
       break;

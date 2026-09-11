@@ -157,6 +157,32 @@ try {
     "stats.boundedTitleLookup",
     statsLookups === snapshot.topItems.length && statsLookups <= 12,
   );
+  const now = new Date();
+  const compact = dev.readingStats.aggregateReadingGoals(statsEntries, now);
+  const full = dev.readingStats.aggregateReadingStats(statsEntries, now);
+  check(
+    "stats.compactGoalsMatchFullSnapshot",
+    JSON.stringify(dev.readingStats.readingGoals(compact, 30, 5)) ===
+      JSON.stringify(dev.readingStats.readingGoals(full, 30, 5)),
+  );
+  let dayReads = 0;
+  const boundedDays = {
+    get() {
+      dayReads++;
+      return 60;
+    },
+    [Symbol.iterator]() {
+      throw Error("Compact rings must not traverse reading history");
+    },
+  };
+  const bounded = dev.readingStats.aggregateReadingGoals(
+    [["1/PERFONLY", { days: boundedDays }]],
+    now,
+  );
+  check(
+    "stats.compactUsesAtMostSevenDailyLookupsAndNoPages",
+    dayReads > 0 && dayReads <= 7 && bounded.byDay.size <= 7,
+  );
 } finally {
   Zotero.Items.getByLibraryAndKey = statsLookup;
 }
@@ -334,7 +360,7 @@ try {
     const statsClose = String(dev.stats.closeStatsDialog);
     check(
       "sidebar.matrixCloseRequiresStandaloneHost",
-      /\.location\?\.href\s*===\s*HOST_URL\b/.test(matrixClose) &&
+      /\.location\?\.href\s*===\s*HOST_URL\d*\b/.test(matrixClose) &&
         /!\w+\.frameElement/.test(matrixClose) &&
         matrixClose.includes('".zest-matrix"'),
     );
@@ -874,6 +900,26 @@ check(
   "rating.panelUsesPrefs",
   !!panelStar && panelStar.textContent === "♥",
   panelStar ? panelStar.textContent : "no star",
+);
+check(
+  "rating.strictValueNotNumericPrefix",
+  ["3.5", "3 notes", "0", "6"].every(
+    (value) =>
+      dev.rating.getRating({ getField: () => `Rating: ${value}` }) === 0,
+  ),
+);
+check(
+  "rating.semanticStarTagsNeverImported",
+  dev.starTags.parseStarRatingTag("⭐精读") === undefined &&
+    dev.starTags.parseStarRatingTag("⭐⭐⭐") === 3,
+);
+const ratedBefore = rated.getField("extra");
+const ratingPreview = dev.ratingImport.collectRatingImportPreview([rated]);
+check(
+  "rating.previewPreservesExistingExtra",
+  ratingPreview.eligible === 0 &&
+    ratingPreview.rows[0].status === "existing" &&
+    rated.getField("extra") === ratedBefore,
 );
 
 /* ---------- 9. an empty readerCustomThemes is always cleaned up ---------- */
@@ -2026,6 +2072,14 @@ check(
 );
 
 /* ---------- cleanup ---------- */
+check(
+  "rating.importAppendPreservesMixedLineEndings",
+  dev.extra.upsertExtraText(
+    "User note\r\nCitation Key: demo\n\nOther: preserve",
+    ["rate"],
+    "3",
+  ) === "User note\r\nCitation Key: demo\n\nOther: preserve\r\nrate: 3",
+);
 if (nativeShowAllBefore === undefined || nativeShowAllBefore === null)
   Zotero.Prefs.clear(NATIVE_SHOW_ALL, true);
 else Zotero.Prefs.set(NATIVE_SHOW_ALL, nativeShowAllBefore, true);

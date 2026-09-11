@@ -99,8 +99,8 @@ export function upsertExtraText(
   }
   if (!done && value !== null) {
     // Extra is user-authored text, including intentional trailing blank lines.
-    out.push(`${keys[0]}: ${value}`);
-    changed = true;
+    // Append without normalising existing mixed LF/CRLF line endings.
+    return `${extra}${extra ? eol : ""}${keys[0]}: ${value}`;
   }
   if (!changed) return null;
   return out.join(eol);

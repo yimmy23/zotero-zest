@@ -5,8 +5,14 @@ const process = require("node:process");
 const { execFileSync } = require("node:child_process");
 const { createHarness } = require("./helpers.cjs");
 
-const { aggregateReadingStats, readingPeriod, readingGoals, isoDay, addDays } =
-  createHarness().load("src/reading/statistics.ts");
+const {
+  aggregateReadingStats,
+  aggregateReadingGoals,
+  readingPeriod,
+  readingGoals,
+  isoDay,
+  addDays,
+} = createHarness().load("src/reading/statistics.ts");
 const NOW = new Date("2026-09-07T12:00:00");
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const record = (total = 0, days = [], page = []) => ({
@@ -345,6 +351,75 @@ test("local periods and streaks cross both DST transitions without repeating or 
     env: { ...process.env, TZ: "America/New_York" },
     encoding: "utf8",
   });
+});
+
+test("compact goal aggregation matches full goals without reading history or pages", () => {
+  const now = new Date("2026-09-06T12:00:00");
+  let reads = 0;
+  const days = new Map([
+    ["2026-08-31", 1800],
+    ["2026-09-01", 0],
+    ["2026-09-05", 900],
+    ["2026-09-06", 1800],
+    ["2026-09-07", 9999],
+  ]);
+  const instrumentedDays = {
+    get(day) {
+      reads++;
+      return days.get(day);
+    },
+  };
+  const compactRecord = new Proxy(
+    { days: instrumentedDays },
+    {
+      get(target, key) {
+        if (key === "total" || key === "page")
+          throw new Error(`compact aggregation read ${String(key)}`);
+        return target[key];
+      },
+    },
+  );
+  const compact = aggregateReadingGoals([["1/A", compactRecord]], now);
+  const full = aggregateReadingStats(
+    [["1/A", record(9999, [...days], [[0, 9999]])]],
+    now,
+  );
+  assert.deepEqual(
+    plain(readingGoals(compact, 45, 3)),
+    plain(readingGoals(full, 45, 3)),
+  );
+  assert.deepEqual(plain([...compact.byDay]), [
+    ["2026-08-31", 1800],
+    ["2026-09-05", 900],
+    ["2026-09-06", 1800],
+  ]);
+  assert.equal(reads, 7, "one bounded day lookup per current-week date");
+});
+
+test("compact goals handle Sunday and year-boundary weeks with bad and future values", () => {
+  const input = {
+    days: new Map([
+      ["2026-12-27", 1800],
+      ["2026-12-28", 1800],
+      ["2027-01-01", 1800],
+      ["2027-01-02", NaN],
+      ["2027-01-04", 1800],
+    ]),
+  };
+  const compact = aggregateReadingGoals(
+    [["1/A", input]],
+    new Date("2027-01-01T12:00:00"),
+  );
+  const goals = readingGoals(compact, 30, 5);
+  assert.equal(goals.week[0].day, "2026-12-28");
+  assert.equal(goals.week[6].day, "2027-01-03");
+  assert.equal(goals.weekSeconds, 3600);
+  assert.equal(goals.goalDays, 2);
+  assert.deepEqual(
+    plain(goals.week.filter((day) => day.future).map((day) => day.day)),
+    ["2027-01-02", "2027-01-03"],
+  );
+  assert.equal(goals.week.find((day) => day.day === "2027-01-02").seconds, 0);
 });
 
 test("reading goals start empty with default targets and future days marked", () => {

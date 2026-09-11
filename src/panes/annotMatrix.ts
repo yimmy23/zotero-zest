@@ -18,7 +18,19 @@ import {
 export { collectMatrix } from "../annots/matrixSource";
 export { matchesQuery, toCSV, toMarkdown } from "../annots/matrixModel";
 
-const PAGE_SIZE = 100;
+const STANDALONE_PAGE_SIZE = 100;
+const EMBEDDED_PAGE_SIZE = 25;
+// These are Zotero.Notifier's data-changing events. UI-only redraw/index
+// notifications do not change the annotation snapshot.
+const MATRIX_INVALIDATION_EVENTS = new Set([
+  "add",
+  "modify",
+  "delete",
+  "move",
+  "remove",
+  "refresh",
+  "trash",
+]);
 const HOST_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
 type Scope = "view" | "selected";
 export interface MatrixSource {
@@ -39,8 +51,12 @@ interface MatrixState {
   scope: Scope;
   page: number;
   generation: number;
+  revision: number;
+  dependencies: Set<string>;
   feedback: number;
   timer: number;
+  refreshTimer?: number;
+  notifierID?: string;
   disposed: boolean;
   loading: boolean;
   load?: EventListener;
@@ -60,6 +76,18 @@ function dispose(state: MatrixState) {
   state.generation++;
   state.feedback++;
   state.win.clearTimeout(state.timer);
+  if (state.refreshTimer !== undefined) {
+    state.win.clearTimeout(state.refreshTimer);
+    state.refreshTimer = undefined;
+  }
+  if (state.notifierID !== undefined) {
+    try {
+      (Zotero as any).Notifier?.unregisterObserver?.(state.notifierID);
+    } catch {
+      // The host may be closing; disposal is still complete.
+    }
+    state.notifierID = undefined;
+  }
   if (state.load) state.win.removeEventListener("load", state.load);
   if (state.unload) state.win.removeEventListener("unload", state.unload);
   state.rows = [];
@@ -154,11 +182,185 @@ function createState(
     scope: embedded || source ? "selected" : "view",
     page: 0,
     generation: 0,
+    revision: 0,
+    dependencies: new Set(),
     feedback: 0,
     timer: 0,
     disposed: false,
     loading: false,
   };
+}
+
+function queueRefresh(state: MatrixState) {
+  if (
+    state.disposed ||
+    !state.active ||
+    state.loading ||
+    state.refreshTimer !== undefined
+  )
+    return;
+  state.refreshTimer = state.win.setTimeout(() => {
+    state.refreshTimer = undefined;
+    if (state.disposed || !state.active || state.loading || !state.dirty)
+      return;
+    void state.refresh?.();
+  }, 0);
+}
+
+function markDirty(state: MatrixState) {
+  if (state.disposed) return;
+  state.dirty = true;
+  state.revision++;
+  queueRefresh(state);
+}
+
+function dependencyID(value: unknown): string | undefined {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? String(id) : undefined;
+}
+
+function sourceDependencyIDs(
+  items: Zotero.Item[],
+  rows: MatrixRow[] = [],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const item of items) {
+    const id = dependencyID(item?.id);
+    if (id) ids.add(id);
+    try {
+      // Include trashed children: restoring one emits a child-only modify
+      // notification, while the normal source walk intentionally omits it.
+      const attachments = item?.isRegularItem?.()
+        ? item.getAttachments(true)
+        : [];
+      if (Array.isArray(attachments)) {
+        for (const attachmentID of attachments) {
+          const attachment = dependencyID(attachmentID);
+          if (attachment) ids.add(attachment);
+        }
+      }
+    } catch {
+      // A stale source row must not prevent the matrix from loading.
+    }
+  }
+  for (const row of rows) {
+    const owner = dependencyID(row.itemID);
+    const attachment = dependencyID(row.attachment?.id);
+    const annotation = dependencyID(row.annotation?.id);
+    if (owner) ids.add(owner);
+    if (attachment) ids.add(attachment);
+    if (annotation) ids.add(annotation);
+  }
+  return ids;
+}
+
+function notifierItemIDs(
+  type: string,
+  ids: unknown,
+): { values: Set<string>; unknown: boolean } {
+  const values = new Set<string>();
+  if (!Array.isArray(ids) || !ids.length) return { values, unknown: true };
+  let unknown = false;
+  for (const raw of ids) {
+    const value =
+      type === "item-tag" ? String(raw).split("-", 1)[0] : String(raw);
+    const id = dependencyID(value);
+    if (id) values.add(id);
+    else unknown = true;
+  }
+  return { values, unknown };
+}
+
+function hasScopedParent(
+  state: MatrixState,
+  ids: Set<string>,
+): boolean | undefined {
+  const items = (Zotero as any).Items;
+  const get = items?.get;
+  if (typeof get !== "function") return undefined;
+  for (const value of ids) {
+    let current = value;
+    for (let depth = 0; depth <= 2; depth++) {
+      if (state.dependencies.has(current)) return true;
+      let item: any;
+      let itemID: string | undefined;
+      let parentID: string | undefined;
+      try {
+        item = get.call(items, Number(current));
+        if (!item) return undefined;
+        itemID = dependencyID(item.id);
+        parentID = dependencyID(item.parentItemID);
+      } catch {
+        return undefined;
+      }
+      if (!itemID) return undefined;
+      if (itemID && state.dependencies.has(itemID)) return true;
+      if (!parentID || parentID === current) break;
+      current = parentID;
+    }
+  }
+  return false;
+}
+
+function affectsMatrix(
+  state: MatrixState,
+  event: string,
+  type: string,
+  ids: unknown,
+): boolean {
+  const parsed = notifierItemIDs(type, ids);
+  if ([...parsed.values].some((id) => state.dependencies.has(id))) return true;
+  // Adds/deletes/moves can describe a newly created or already unloaded
+  // annotation, whose ID is not in the settled snapshot. Unknown ranges
+  // therefore invalidate conservatively; unrelated modifies stay cheap.
+  if (parsed.unknown) return true;
+  // While the first/next scan is still building its dependency set, a new or
+  // reparented annotation may not be listed yet. A conservative rerun here
+  // prevents that event from being lost without looking up the item.
+  if (state.loading) return true;
+  if (
+    event === "modify" &&
+    type === "item" &&
+    hasScopedParent(state, parsed.values) !== false
+  )
+    return true;
+  if (type === "item-tag") return false;
+  return event !== "modify";
+}
+
+function watchMatrix(state: MatrixState) {
+  if (state.notifierID !== undefined) return;
+  const notifier = (Zotero as any).Notifier;
+  if (
+    typeof notifier?.registerObserver !== "function" ||
+    typeof notifier?.unregisterObserver !== "function"
+  )
+    return;
+  try {
+    state.notifierID = notifier.registerObserver(
+      {
+        notify: (event: string, type: string, ids: unknown) => {
+          if (
+            (type !== "item" && type !== "item-tag") ||
+            !MATRIX_INVALIDATION_EVENTS.has(event)
+          )
+            return;
+          // Hidden frames do not need scope filtering: keep the callback
+          // cheap and let resume perform one conservative refresh.
+          if (!state.active) {
+            markDirty(state);
+            return;
+          }
+          if (affectsMatrix(state, event, type, ids)) markDirty(state);
+        },
+      },
+      ["item", "item-tag"],
+      `${config.addonRef}-matrix`,
+      60,
+    );
+  } catch (e) {
+    ztoolkit.log("[matrix] notifier unavailable", e);
+  }
 }
 
 /** Reuse the matrix inside a dedicated iframe, never the owner's document. */
@@ -169,11 +371,12 @@ export function mountMatrix(win: Window, host: Window, source: MatrixSource) {
   state.unload = () => dispose(state);
   win.addEventListener("unload", state.unload, { once: true });
   renderState(state, win.document.body);
+  watchMatrix(state);
   return {
     refresh() {
       if (state.disposed) return;
-      state.dirty = true;
-      if (state.active) void state.refresh?.();
+      markDirty(state);
+      if (state.active && !state.loading) void state.refresh?.();
     },
     setActive(active: boolean) {
       if (state.disposed || state.active === active) return;
@@ -182,6 +385,10 @@ export function mountMatrix(win: Window, host: Window, source: MatrixSource) {
         state.generation++;
         state.feedback++;
         win.clearTimeout(state.timer);
+        if (state.refreshTimer !== undefined) {
+          win.clearTimeout(state.refreshTimer);
+          state.refreshTimer = undefined;
+        }
         // An interrupted scan must be retried; a settled snapshot is reusable.
         state.dirty ||= state.loading;
         state.loading = false;
@@ -519,6 +726,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
   }
   function paint() {
     if (state.disposed || !state.active) return;
+    const pageSize = state.embedded ? EMBEDDED_PAGE_SIZE : STANDALONE_PAGE_SIZE;
     const f = state.filters;
     const active = [f.item, f.type, f.color, f.tag].filter(Boolean).length;
     const filterText = filterToggle.querySelector("span");
@@ -549,9 +757,9 @@ function renderState(state: MatrixState, body: HTMLElement) {
     refresh.disabled = state.loading;
     list.setAttribute("aria-busy", String(state.loading));
     list.textContent = "";
-    const pages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+    const pages = Math.max(1, Math.ceil(visible.length / pageSize));
     state.page = Math.max(0, Math.min(state.page, pages - 1));
-    const start = state.page * PAGE_SIZE;
+    const start = state.page * pageSize;
     if (state.loading || !visible.length) {
       const empty = el("div", "zest-matrix-empty");
       empty.append(
@@ -584,14 +792,14 @@ function renderState(state: MatrixState, body: HTMLElement) {
       list.append(empty);
     } else {
       const fragment = doc.createDocumentFragment();
-      for (const row of visible.slice(start, start + PAGE_SIZE))
+      for (const row of visible.slice(start, start + pageSize))
         fragment.append(renderRow(row));
       list.append(fragment);
     }
     pager.hidden = state.loading || !visible.length;
     range.textContent = label("matrix-range", {
       start: visible.length ? start + 1 : 0,
-      end: Math.min(start + PAGE_SIZE, visible.length),
+      end: Math.min(start + pageSize, visible.length),
       total: visible.length,
     });
     prev.disabled = state.page === 0;
@@ -815,7 +1023,12 @@ function renderState(state: MatrixState, body: HTMLElement) {
     if (state.disposed) return;
     state.dirty = true;
     if (!state.active) return;
+    if (state.refreshTimer !== undefined) {
+      win.clearTimeout(state.refreshTimer);
+      state.refreshTimer = undefined;
+    }
     const generation = ++state.generation;
+    const revision = state.revision;
     state.feedback++;
     const cancelled = () =>
       state.disposed ||
@@ -839,12 +1052,34 @@ function renderState(state: MatrixState, body: HTMLElement) {
             : pane?.itemsView?.getSortedItems?.();
       }
       if (!Array.isArray(items)) throw new Error("Source view unavailable");
+      // Capture source identities before the async walk so a refresh emitted
+      // during that walk can still be matched without a callback lookup. This
+      // includes attachments with no annotations in the current snapshot.
+      const dependencies = sourceDependencyIDs(items);
+      for (const id of dependencies) state.dependencies.add(id);
       const rows = await collectMatrixAsync(items, cancelled);
       if (cancelled()) return;
+      if (state.revision !== revision) {
+        // Do not publish a snapshot built before the notifier event. Keep the
+        // loading shell visible and immediately merge one replacement scan.
+        state.loading = false;
+        state.dirty = true;
+        void state.refresh?.();
+        return;
+      }
       state.rows = rows;
+      // Add row-level IDs without walking source attachments a second time.
+      for (const id of sourceDependencyIDs([], rows)) dependencies.add(id);
+      state.dependencies = dependencies;
       syncOptions();
     } catch (e) {
       if (cancelled()) return;
+      if (state.revision !== revision) {
+        state.loading = false;
+        state.dirty = true;
+        void state.refresh?.();
+        return;
+      }
       // Do not present a previous scope's snapshot as the newly requested scope.
       state.rows = [];
       loadFailed = true;
@@ -852,9 +1087,9 @@ function renderState(state: MatrixState, body: HTMLElement) {
       report("matrix-load-failed", e);
     }
     if (cancelled()) return;
-    state.dirty = false;
     state.loading = false;
     updateResults();
+    state.dirty = false;
   }
   state.refresh = reload;
   state.repaint = () => {

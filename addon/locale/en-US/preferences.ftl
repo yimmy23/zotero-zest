@@ -23,6 +23,16 @@ pref-rating-mark = Rating symbol
 pref-rating-option = Empty symbol
 pref-rating-color = Colour (empty = theme accent)
 pref-rating-key = Extra key
+pref-rating-display = Rating position in the item list
+pref-rating-display-column =
+    .label = Rating column only
+pref-rating-display-title =
+    .label = Title only
+pref-rating-display-both =
+    .label = Rating column and title
+pref-rating-import =
+    .label = Import star tags from selected papers…
+pref-rating-display-hint = Both positions use the same rating without changing paper titles. Matching pure-star tags are hidden only to avoid duplicate display; other tags remain. Import requires preview and confirmation, never overwrites existing ratings or deletes tags.
 pref-extra-strip =
     .label = Keep Read_Status / Rating lines out of exported bibliographies (BibTeX, RIS…)
 

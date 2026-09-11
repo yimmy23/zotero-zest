@@ -94,6 +94,7 @@ import {
 } from "./panes/infoSection";
 import { closeStatsDialog } from "./panes/statsDialog";
 import { closeMatrix } from "./panes/annotMatrix";
+import { closeRatingImport, closeAllRatingImports } from "./panes/ratingImport";
 import {
   registerSidebarSections,
   unregisterSidebarSections,
@@ -541,6 +542,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  closeRatingImport(win);
   uninstallCollectionCounts(win);
   uninstallViewMenu(win);
   uninstallViewShortcuts(win);
@@ -585,6 +587,7 @@ async function onShutdown() {
   unregisterSidebarSections();
   closeStatsDialog();
   closeMatrix();
+  closeAllRatingImports();
   uninstallAllTagTrees();
   uninstallAllTagOptionsMenus();
   uninstallAllViewMenus();
@@ -635,6 +638,7 @@ async function onShutdown() {
 
 /** APP_SHUTDOWN: only persist — Zotero closes its DB right after us. */
 async function onAppShutdown() {
+  closeAllRatingImports();
   // APP_SHUTDOWN skips the full UI teardown, but it must still stop every
   // delayed recovery callback before closing persistence. Otherwise our own
   // Zotero.Plugins shutdown sweep schedules registrations against a closed DB

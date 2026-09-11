@@ -40,6 +40,7 @@ declare namespace _ZoteroTypes {
       "rating.option": string;
       "rating.color": string;
       "rating.extraKey": string;
+      "rating.display": string;
       "network.email": string;
       "network.cacheTTLHours": number;
       "statusAuto.markEmpty": boolean;

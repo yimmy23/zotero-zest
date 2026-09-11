@@ -46,6 +46,9 @@ function setup({ rows = [row(1), row(2)], windows, manualLoads = false } = {}) {
   const navigations = [];
   const writes = [];
   const pickers = [];
+  const observers = new Map();
+  const items = new Map();
+  let nextObserver = 0;
   let pickerResult = "/virtual/annotations-export";
   let navigateResult = true;
   const newHost = (viewRows = rows, selectedRows = viewRows.slice(0, 1)) => {
@@ -96,6 +99,22 @@ function setup({ rows = [row(1), row(2)], windows, manualLoads = false } = {}) {
     globals: {
       Zotero: {
         getMainWindow: () => host,
+        Items: {
+          registry: items,
+          get(id) {
+            return this.registry.get(Number(id));
+          },
+        },
+        Notifier: {
+          registerObserver(observer, types) {
+            const id = `matrix-${++nextObserver}`;
+            observers.set(id, { observer, types });
+            return id;
+          },
+          unregisterObserver(id) {
+            observers.delete(id);
+          },
+        },
         logError: (error) => logs.push(error),
         Utilities: {
           Internal: {
@@ -136,6 +155,13 @@ function setup({ rows = [row(1), row(2)], windows, manualLoads = false } = {}) {
     navigations,
     writes,
     pickers,
+    observers,
+    items,
+    notify(event, type, ids = []) {
+      for (const { observer, types } of observers.values()) {
+        if (types.includes(type)) observer.notify(event, type, ids);
+      }
+    },
     zotero: harness.context.Zotero,
     win: allWindows[0],
     picker: (result) => {
@@ -884,6 +910,25 @@ test("embedded matrices isolate the current reader source from the background li
   assert.equal(frame.listeners.get("unload").size, 0);
 });
 
+test("embedded matrices page 25 rows while export and totals stay full-snapshot", async () => {
+  const rows = Array.from({ length: 51 }, (_, i) => row(i + 1));
+  const app = setup({ rows });
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, {
+    getItems: () => [{ rows }],
+  });
+  await settle();
+  assert.equal(rendered(frame).length, 25);
+  assert.ok(
+    find(frame, ".zest-matrix-count").textContent.includes('"total":51'),
+  );
+  find(frame, ".zest-matrix-next").click();
+  assert.equal(rendered(frame).length, 25);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 26"));
+  find(frame, ".zest-matrix-copy-md").click();
+  assert.equal((app.copies[0].match(/^## Paper /gm) || []).length, 51);
+});
+
 test("mounting refuses the owner document or an unloaded or unrelated iframe", () => {
   const app = setup();
   const owner = windowFixture();
@@ -913,8 +958,14 @@ test("embedded scope choices are explicit and never fall through to a library so
   assert.equal(find(frame, ".zest-matrix-scope").value, "selected");
   assert.equal(find(frame, ".zest-matrix-scope").children.length, 2);
   assert.equal(app.loads[0].items, selected);
+  app.notify("modify", "item", [1]);
   change(frame, ".zest-matrix-scope", "view");
   await settle();
+  assert.equal(
+    app.loads.length,
+    2,
+    "scope change absorbs a queued notifier refresh",
+  );
   assert.equal(app.loads[1].items, view);
   assert.equal(rendered(frame).length, 2);
 });
@@ -954,6 +1005,213 @@ test("hiding cancels an embedded scan; inactive refresh coalesces into one resum
   assert.equal(frame.closed, false);
 });
 
+test("matrix notifier dirties active snapshots, coalesces hidden events, and unregisters", async () => {
+  const app = setup();
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.selectedItems,
+  });
+  await settle();
+  assert.equal(app.observers.size, 1);
+  app.host.selectedItems = [{ rows: [row(99)] }];
+  app.notify("add", "item", [1]);
+  app.notify("modify", "item-tag", ["1-7"]);
+  app.notify("delete", "item", [1]);
+  assert.equal(app.loads.length, 1, "events wait for one merged refresh turn");
+  frame.flushTimers();
+  await settle();
+  assert.equal(app.loads.length, 2);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 99"));
+
+  mount.setActive(false);
+  app.notify("modify", "item", [999999]);
+  app.notify("delete", "item-tag", ["1-7"]);
+  app.notify("add", "item", [1]);
+  frame.flushTimers();
+  assert.equal(app.loads.length, 2, "hidden events only set dirty");
+  mount.setActive(true);
+  assert.equal(app.loads.length, 3);
+  await settle();
+
+  mount.dispose();
+  assert.equal(app.observers.size, 0);
+  app.notify("modify", "item", [1]);
+  frame.flushTimers();
+  assert.equal(
+    app.loads.length,
+    3,
+    "late notifications cannot revive a disposed mount",
+  );
+});
+
+test("unrelated item notifications do not reload or reset the embedded page", async () => {
+  const rows = Array.from({ length: 75 }, (_, i) => row(i + 1));
+  const app = setup({ rows });
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, {
+    getItems: () => [{ rows }],
+  });
+  await settle();
+  find(frame, ".zest-matrix-next").click();
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 26"));
+  app.items.set(999999, { id: 999999, parentItemID: 888888 });
+  app.items.set(888888, { id: 888888, parentItemID: 777777 });
+  app.items.set(777777, { id: 777777 });
+  app.notify("modify", "item", [999999]);
+  app.notify("modify", "item-tag", ["999999-7"]);
+  frame.flushTimers();
+  await settle();
+  assert.equal(app.loads.length, 1);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 26"));
+});
+
+test("unknown active modifies conservatively invalidate when lookup is unavailable", async () => {
+  for (const mode of ["missing", "throw", "empty"]) {
+    const app = setup();
+    const frame = windowFixture();
+    app.mountMatrix(frame, app.host, {
+      getItems: () => app.host.selectedItems,
+    });
+    await settle();
+    if (mode === "missing") delete app.zotero.Items.get;
+    else if (mode === "throw")
+      app.zotero.Items.get = function () {
+        throw new Error("lookup failed");
+      };
+    else app.zotero.Items.get = function () {};
+    app.notify("modify", "item", [999999]);
+    frame.flushTimers();
+    await settle();
+    assert.equal(app.loads.length, 2, mode);
+  }
+
+  const app = setup();
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.selectedItems,
+  });
+  await settle();
+  const throwingParent = { id: 999999 };
+  Object.defineProperty(throwingParent, "parentItemID", {
+    get() {
+      throw new Error("stale item");
+    },
+  });
+  app.items.set(999999, throwingParent);
+  app.notify("modify", "item", [999999]);
+  frame.flushTimers();
+  await settle();
+  assert.equal(app.loads.length, 2, "throwing parent getter");
+
+  const hiddenApp = setup();
+  const hiddenFrame = windowFixture();
+  const hiddenMount = hiddenApp.mountMatrix(hiddenFrame, hiddenApp.host, {
+    getItems: () => hiddenApp.host.selectedItems,
+  });
+  await settle();
+  hiddenMount.setActive(false);
+  let getCalls = 0;
+  hiddenApp.zotero.Items.get = function () {
+    getCalls++;
+    return undefined;
+  };
+  hiddenApp.notify("modify", "item", [999999]);
+  assert.equal(getCalls, 0, "hidden notifications do not inspect items");
+});
+
+test("attachment sources do not request regular-item child lists", async () => {
+  let childReads = 0;
+  const attachment = {
+    id: 2,
+    isRegularItem: () => false,
+    getAttachments() {
+      childReads++;
+      throw new Error("getAttachments is only valid for regular items");
+    },
+    rows: [row(1)],
+  };
+  const app = setup();
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, { getItems: () => [attachment] });
+  await settle();
+  assert.equal(childReads, 0);
+  assert.equal(rendered(frame).length, 1);
+});
+
+test("empty scoped attachments invalidate when an annotation is reparented into them", async () => {
+  const paper = {
+    id: 1,
+    isRegularItem: () => true,
+    getAttachments: (includeTrashed) => (includeTrashed ? [2] : []),
+    rows: [],
+  };
+  const app = setup();
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, {
+    getItems: () => [paper],
+  });
+  await settle();
+  paper.rows = [
+    row(100, {
+      annotation: { id: 100, parentItemID: 2 },
+      attachment: { id: 2, parentItemID: 1 },
+      itemID: 1,
+    }),
+  ];
+  app.notify("modify", "item", [100, 2, 9]);
+  frame.flushTimers();
+  await settle();
+  assert.equal(app.loads.length, 2);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 100"));
+});
+
+test("active unmatched annotation changes follow only two parent links", async () => {
+  const paper = {
+    id: 1,
+    isRegularItem: () => true,
+    getAttachments: () => [],
+    rows: [],
+  };
+  const app = setup();
+  const frame = windowFixture();
+  app.mountMatrix(frame, app.host, {
+    getItems: () => [paper],
+  });
+  await settle();
+  app.items.set(100, { id: 100, parentItemID: 2 });
+  app.items.set(2, { id: 2, parentItemID: 1 });
+  paper.rows = [row(100)];
+  app.notify("modify", "item", [100]);
+  frame.flushTimers();
+  await settle();
+  assert.equal(app.loads.length, 2);
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 100"));
+});
+
+test("a notifier during a scan keeps the stale result loading until the replacement settles", async () => {
+  const app = setup({ manualLoads: true });
+  const frame = windowFixture();
+  const mount = app.mountMatrix(frame, app.host, {
+    getItems: () => app.host.selectedItems,
+  });
+  const initial = app.loads[0];
+  initial.resolve([row(1)]);
+  await settle();
+  app.host.selectedItems = [{ rows: [row(2)] }];
+  mount.refresh();
+  const stale = app.loads[1];
+  app.notify("modify", "item", [999999]);
+  stale.resolve([row(1)]);
+  await settle();
+  assert.equal(app.loads.length, 3);
+  assert.equal(rendered(frame).length, 0);
+  assert.equal(find(frame, ".zest-matrix-copy-md").disabled, true);
+  app.loads[2].resolve([row(2)]);
+  await settle();
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 2"));
+  assert.equal(find(frame, ".zest-matrix-copy-md").disabled, false);
+});
+
 test("hiding and resuming preserves matrix filters and page without recollection", async () => {
   const rows = Array.from({ length: 250 }, (_, i) => row(i + 1));
   const app = setup({ rows });
@@ -968,7 +1226,7 @@ test("hiding and resuming preserves matrix filters and page without recollection
   frame.flushTimers();
   find(frame, ".zest-matrix-next").click();
   const firstText = rendered(frame)[0].textContent;
-  assert.ok(firstText.includes("Unique annotation 101"));
+  assert.ok(firstText.includes("Unique annotation 26"));
   mount.setActive(false);
   const writes = frame.document.writes;
   mount.setActive(true);
@@ -1138,7 +1396,7 @@ test("a cancelled file picker while hidden does not repaint and restores actions
   assert.equal(frame.document.writes, writes);
   mount.setActive(true);
   assert.equal(find(frame, ".zest-matrix-copy-md").disabled, false);
-  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 101"));
+  assert.ok(rendered(frame)[0].textContent.includes("Unique annotation 26"));
   assert.equal(app.loads.length, 1);
   assert.equal(app.writes.length, 0);
 });

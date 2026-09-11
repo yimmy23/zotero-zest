@@ -16,7 +16,7 @@ const host = Zotero.getMainWindow(),
   contextPane = doc.querySelector("context-pane"),
   kinds = ["matrix", "stats"],
   prefix = "extensions.zotero.zest.",
-  report = { ok: [], notes: [], screenshots: [], passed: false },
+  report = { ok: [], notes: [], timings: [], screenshots: [], passed: false },
   delay = (ms) => Zotero.Promise.delay(ms);
 if (!libraryDetails || !contextPane || !dev.sidebarSections || !dev.matrix)
   throw Error("Native sidebar development API unavailable");
@@ -99,22 +99,70 @@ async function screenshot(kind, section, name) {
   const frame = frameOf(section),
     win = frame?.contentWindow;
   if (!win || !contentReady(kind, section)) throw Error(name + " is not ready");
-  const canvas = doc.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
-  canvas.width = win.innerWidth;
-  canvas.height = win.innerHeight;
-  canvas
-    .getContext("2d")
-    .drawWindow(win, 0, 0, win.innerWidth, win.innerHeight, "rgb(242,242,242)");
-  const path = PathUtils.join(artifactDir, name + ".png");
-  await IOUtils.write(
-    path,
-    Uint8Array.from(atob(canvas.toDataURL().split(",")[1]), (c) =>
-      c.charCodeAt(0),
-    ),
+  const themePrefs = [
+    "browser.theme.toolbar-theme",
+    "browser.theme.content-theme",
+    "ui.systemUsesDarkTheme",
+  ];
+  const saved = themePrefs.map((pref) =>
+    Services.prefs.prefHasUserValue(pref)
+      ? Services.prefs.getIntPref(pref)
+      : null,
   );
-  report.screenshots.push(path);
+  try {
+    for (const dark of [false, true]) {
+      Services.prefs.setIntPref(themePrefs[0], dark ? 0 : 1);
+      Services.prefs.setIntPref(themePrefs[1], dark ? 0 : 1);
+      Services.prefs.setIntPref(themePrefs[2], dark ? 1 : 0);
+      await until(name + " theme propagated", () => {
+        const native = host
+          .getComputedStyle(doc.documentElement)
+          .getPropertyValue("--fill-primary")
+          .trim();
+        const inner = win
+          .getComputedStyle(win.document.documentElement)
+          .getPropertyValue("--zest-fg")
+          .trim();
+        return /rgba?\(\s*255/.test(native) === dark && inner === native;
+      });
+      const canvas = doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "canvas",
+      );
+      canvas.width = win.innerWidth;
+      canvas.height = win.innerHeight;
+      canvas
+        .getContext("2d")
+        .drawWindow(
+          win,
+          0,
+          0,
+          win.innerWidth,
+          win.innerHeight,
+          dark ? "rgb(48,48,48)" : "rgb(242,242,242)",
+        );
+      const path = PathUtils.join(
+        artifactDir,
+        name + (dark ? "-dark" : "-light") + ".png",
+      );
+      await IOUtils.write(
+        path,
+        Uint8Array.from(atob(canvas.toDataURL().split(",")[1]), (c) =>
+          c.charCodeAt(0),
+        ),
+      );
+      report.screenshots.push(path);
+    }
+  } finally {
+    themePrefs.forEach((pref, index) => {
+      if (saved[index] === null) Services.prefs.clearUserPref(pref);
+      else Services.prefs.setIntPref(pref, saved[index]);
+    });
+  }
 }
 async function navigate(details, kind, wait = true) {
+  const started = host.performance.now();
+  const hadFrame = !!frameOf(sectionIn(details, kind));
   rememberLayout(details);
   details._collapsed = false;
   const section = await until(kind + " native section", () =>
@@ -139,10 +187,43 @@ async function navigate(details, kind, wait = true) {
   section
     .querySelector(".zest-sidebar-content")
     ?.scrollIntoView({ block: "start", behavior: "instant" });
+  if (wait) {
+    try {
+      await until(kind + " visible loaded content", () =>
+        contentReady(kind, section),
+      );
+    } catch (error) {
+      const frame = frameOf(section);
+      report.notes.push(
+        JSON.stringify({
+          kind,
+          context: details.tabType,
+          hidden: doc.hidden,
+          connected: section.isConnected,
+          open: collapsible.open,
+          state: stateOf(section),
+          bodyRect: section
+            .querySelector('[data-type="body"]')
+            ?.getBoundingClientRect()
+            .toJSON(),
+          viewportHeight: host.innerHeight,
+          frameURL: frame?.contentWindow?.location.href,
+          frameReady: frame?.contentDocument?.readyState,
+          matrixBusy: frame?.contentDocument
+            ?.querySelector(".zest-matrix-list")
+            ?.getAttribute("aria-busy"),
+        }),
+      );
+      throw error;
+    }
+  }
   if (wait)
-    await until(kind + " visible loaded content", () =>
-      contentReady(kind, section),
-    );
+    report.timings.push({
+      kind,
+      context: details.tabType,
+      hadFrame,
+      milliseconds: Math.round((host.performance.now() - started) * 10) / 10,
+    });
   return section;
 }
 let prototype, originalRegister;
@@ -255,6 +336,15 @@ try {
     );
     record.released = true;
     const frame = frameOf(section);
+    const renderedContent = () => {
+      const root = frame.contentDocument.querySelector(
+        kind === "stats" ? ".zest-stats-open-details" : ".zest-matrix-list",
+      );
+      // The list container survives every matrix repaint. Its first row (or
+      // empty-state child) is the evidence that a settled snapshot was reused.
+      return kind === "stats" ? root : root?.firstElementChild;
+    };
+    const rendered = renderedContent();
     section.querySelector("collapsible-section").open = false;
     await delay(100);
     section.querySelector("collapsible-section").open = true;
@@ -265,6 +355,10 @@ try {
       kind + " collapse/reopen keeps one frame",
       frameOf(section) === frame &&
         section.querySelectorAll("iframe").length === 1,
+    );
+    check(
+      kind + " unchanged reopen reuses rendered content",
+      !!rendered && rendered === renderedContent(),
     );
     await screenshot(kind, section, "library-" + kind);
   }

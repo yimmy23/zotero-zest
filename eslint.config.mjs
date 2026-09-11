@@ -16,6 +16,7 @@ export default zotero({
         "scripts/native-select-probe.js",
         "scripts/sidebar-probe.js",
         "scripts/sidebar-loading-probe.js",
+        "scripts/rating-probe.js",
         "scripts/sidebar-controls-probe.js",
         "scripts/achievement-artwork-probe.js",
       ],

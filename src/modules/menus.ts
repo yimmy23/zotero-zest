@@ -16,6 +16,8 @@ import { toggleGraphPane } from "../graph/pane";
 import { toggleTagTree } from "../tags/nestedTree";
 import { openStatsDialog } from "../panes/statsDialog";
 import { openMatrix } from "../panes/annotMatrix";
+import { openRatingImport } from "../panes/ratingImport";
+import { guard } from "../utils/guard";
 import { toggleSidebar } from "../tabs/sidebar";
 import { importBetterAuthors } from "../columns/authors";
 import { journalKeyOf, rankSourceThrottled, refreshJournal } from "../rank";
@@ -228,6 +230,16 @@ export function registerMenus() {
                 l10nID: getLocaleID("rating-menu-clear"),
                 onCommand: (_ev: any, ctx: any) =>
                   void setRatingForAll(regularItems(ctx), 0),
+              },
+              {
+                menuType: "menuitem",
+                l10nID: getLocaleID("menu-rating-import"),
+                onCommand: guard("rating import", (_ev: any, ctx: any) => {
+                  const host =
+                    ctx.menuElem?.ownerDocument?.defaultView ||
+                    Zotero.getMainWindow();
+                  if (host) openRatingImport(host, regularItems(ctx));
+                }),
               },
             ],
           },

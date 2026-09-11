@@ -23,6 +23,37 @@ status-menu-header-manual = 当前：{ $status }
 status-menu-header-many = { $count } 个条目
 
 rating-tip = 点击星星评级；再次点击当前星级可降一级
+rating-title-tip = 评级：{ $rating } 星，与评级列和侧边栏一致
+menu-rating-import =
+    .label = 从星级标签导入评级…
+rating-import-title = 导入星级标签
+rating-import-subtitle = 仅处理所选文献的纯星级标签（1–5 星）。确认后写入 Extra，不改标题、不删除标签、不覆盖已有评级。
+rating-import-summary = 所选 { $total } 篇 · 可导入 { $eligible } 篇 · 跳过 { $skipped } 篇
+rating-import-col-title = 文献
+rating-import-col-existing = 已有评级
+rating-import-col-tags = 星级标签
+rating-import-col-outcome = 处理结果
+rating-import-outcome-ready = 可导入为 { $rating } 星
+rating-import-outcome-no-tag = 无纯星级标签
+rating-import-outcome-conflict = 星级标签冲突，跳过
+rating-import-outcome-existing = 已有评级字段，保留
+rating-import-outcome-nonregular = 非文献条目，跳过
+rating-import-outcome-readonly = 只读文献，跳过
+rating-import-outcome-deleted = 已删除，跳过
+rating-import-outcome-duplicate = 重复条目，跳过
+rating-import-outcome-changed = 预览后已变更，跳过
+rating-import-outcome-failed = 保存失败
+rating-import-outcome-imported = 已导入
+rating-import-outcome-unavailable = 暂时无法读取，跳过
+rating-import-empty = 请先在文库中选择需要导入的文献。
+rating-import-range = 第 { $start }–{ $end } 篇，共 { $total } 篇
+rating-import-previous = 上一页
+rating-import-next = 下一页
+rating-import-confirm = 导入 { $count } 篇
+rating-import-cancel = 关闭
+rating-import-working = 正在导入…
+rating-import-result = 已导入 { $imported } 篇 · 跳过 { $skipped } 篇 · 失败 { $failed } 篇
+rating-import-closed = 已停止导入，已保存的评级保留。
 
 # ---- menus ----
 menu-root =
