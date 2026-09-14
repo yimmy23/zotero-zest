@@ -44,6 +44,7 @@ import {
 } from "./abstractSource";
 import { translateAbstract, translationProvider } from "./abstractTranslation";
 import { selectCoreAuthors } from "./coreAuthors";
+import { installInfoCopy, selectedInfoText } from "./infoCopy";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
@@ -97,6 +98,7 @@ interface SectionState {
   ratingMessage?: string;
   remarkEditor?: HTMLTextAreaElement;
   openSections?: Map<string, boolean>;
+  disposeCopy?: () => void;
 }
 const sections = new Map<HTMLElement, SectionState>();
 
@@ -115,6 +117,11 @@ function cancelTopUp(state: SectionState) {
   state.timer = undefined;
 }
 
+function disposeCopy(state: SectionState) {
+  state.disposeCopy?.();
+  state.disposeCopy = undefined;
+}
+
 function sectionState(props: any): SectionState | undefined {
   const body = props?.body as HTMLElement | undefined;
   if (!body) return;
@@ -125,6 +132,7 @@ function sectionState(props: any): SectionState | undefined {
   }
   if (state && state.itemID !== props.item?.id) {
     cancelTopUp(state);
+    disposeCopy(state);
     state.itemID = props.item?.id;
     state.abstractKey = undefined;
     state.abstractBusy = false;
@@ -177,7 +185,10 @@ export function registerInfoSection() {
     onDestroy: (props: any) => {
       try {
         const state = sections.get(props?.body);
-        if (state) cancelTopUp(state);
+        if (state) {
+          cancelTopUp(state);
+          disposeCopy(state);
+        }
         sections.delete(props?.body);
       } catch {
         // window gone
@@ -206,7 +217,10 @@ export function registerInfoSection() {
 }
 
 export function unregisterInfoSection() {
-  for (const state of sections.values()) cancelTopUp(state);
+  for (const state of sections.values()) {
+    cancelTopUp(state);
+    disposeCopy(state);
+  }
   sections.clear();
   if (!sectionID) return;
   try {
@@ -322,7 +336,7 @@ function row(doc: Document, label: string): HTMLElement {
   const el = doc.createElement("div");
   el.className = "zest-info-row";
   const key = doc.createElement("span");
-  key.className = "zest-info-key";
+  key.className = "zest-info-key zest-info-copyable";
   key.textContent = label;
   el.appendChild(key);
   return el;
@@ -342,7 +356,10 @@ function render(props: any) {
         editor.selectionDirection ?? "none",
       ] as const)
     : undefined;
-  if (state) cancelTopUp(state);
+  if (state) {
+    cancelTopUp(state);
+    disposeCopy(state);
+  }
   if (state && !getPref("info.abstract")) {
     state.abstractRequest = undefined;
     state.abstractBusy = false;
@@ -384,16 +401,16 @@ function render(props: any) {
       const r = row(doc, getString("info-title"));
       r.classList.add("zest-info-heading");
       const value = doc.createElement("span");
-      value.className = "zest-info-value zest-info-title";
+      value.className = "zest-info-value zest-info-title zest-info-copyable";
       if (translation) {
         const zh = doc.createElement("div");
-        zh.className = "zest-info-translation";
+        zh.className = "zest-info-translation zest-info-copyable";
         zh.textContent = translation;
         value.appendChild(zh);
       }
       if (title) {
         const orig = doc.createElement("div");
-        orig.className = translation ? "zest-info-original" : "";
+        orig.className = `zest-info-copyable${translation ? " zest-info-original" : ""}`;
         orig.textContent = title;
         value.appendChild(orig);
       }
@@ -423,7 +440,7 @@ function render(props: any) {
     const r = row(doc, getString("info-authors"));
     r.classList.add("zest-info-metadata", "zest-info-authors-block");
     const value = doc.createElement("span");
-    value.className = "zest-info-value zest-info-authors";
+    value.className = "zest-info-value zest-info-authors zest-info-copyable";
     const entries: HTMLElement[] = [];
     let entry: HTMLElement | undefined;
     let separator = "";
@@ -447,11 +464,20 @@ function render(props: any) {
         const creator = part.creator;
         const button = doc.createElement("button");
         button.type = "button";
-        button.className = `zest-info-author${part.kind ? ` zest-author-${part.kind}` : ""}`;
+        button.className = `zest-info-author zest-info-copyable${part.kind ? ` zest-author-${part.kind}` : ""}`;
         button.textContent = part.text;
         button.title = getString("author-click-tip");
         button.addEventListener("click", (ev: MouseEvent) => {
           ev.stopPropagation();
+          if (
+            ev.button > 0 ||
+            ev.altKey ||
+            ev.ctrlKey ||
+            ev.metaKey ||
+            ev.shiftKey ||
+            (ev.detail !== 0 && selectedInfoText(body))
+          )
+            return;
           const win = doc.defaultView as Window | null;
           if (!win) return;
           const oa = findCachedAuthor(item, creator.family, creator.given);
@@ -483,7 +509,7 @@ function render(props: any) {
         ].filter(Boolean);
         if (roles.length) {
           const role = doc.createElement("span");
-          role.className = "zest-info-author-role";
+          role.className = "zest-info-author-role zest-info-copyable";
           role.textContent = roles.join(" · ");
           if (author?.last) role.title = getString("info-author-last-tip");
           else if (author?.corresponding) role.title = "OpenAlex";
@@ -528,8 +554,9 @@ function render(props: any) {
         names.className = "zest-info-institutions";
         const entries = insts.map((institution) => {
           const li = doc.createElement("li");
+          li.className = "zest-info-copyable";
           const name = doc.createElement("span");
-          name.className = "zest-info-institution-name";
+          name.className = "zest-info-institution-name zest-info-copyable";
           name.textContent = institution.name;
           li.appendChild(name);
           const roles = doc.createElement("span");
@@ -545,7 +572,7 @@ function render(props: any) {
           ] as const) {
             if (!show) continue;
             const role = doc.createElement("span");
-            role.className = "zest-info-institution-role";
+            role.className = "zest-info-institution-role zest-info-copyable";
             role.setAttribute("data-role", kind);
             role.textContent = getString(key);
             if (kind === "last") role.title = getString("info-author-last-tip");
@@ -620,7 +647,7 @@ function render(props: any) {
     const value = doc.createElement("div");
     value.className = "zest-info-value zest-info-venue";
     const name = doc.createElement("span");
-    name.className = "zest-info-venue-name";
+    name.className = "zest-info-venue-name zest-info-copyable";
     name.textContent = venue;
     value.appendChild(name);
     r.appendChild(value);
@@ -635,7 +662,7 @@ function render(props: any) {
     ).slice(0, 3)) {
       const display = rankValueDisplay(v, v.sourceField);
       const badge = doc.createElement("span");
-      badge.className = "zest-badge zest-rank-badge";
+      badge.className = "zest-badge zest-rank-badge zest-info-copyable";
       badge.textContent = display.text;
       badge.title = getString("rank-badge-tip", {
         args: {
@@ -661,13 +688,13 @@ function render(props: any) {
   const citeControls = doc.createElement("div");
   citeControls.className = "zest-info-value zest-info-controls";
   const citeValue = doc.createElement("span");
-  citeValue.className = "zest-info-value";
+  citeValue.className = "zest-info-value zest-info-copyable";
   if (cites) {
     const count = doc.createElement("strong");
-    count.className = "zest-info-citation-count";
+    count.className = "zest-info-citation-count zest-info-copyable";
     count.textContent = String(cites.count);
     const provenance = doc.createElement("span");
-    provenance.className = "zest-info-provenance";
+    provenance.className = "zest-info-provenance zest-info-copyable";
     provenance.textContent = `${cites.source ?? "?"} · ${cites.date ?? "—"}`;
     citeValue.append(count, provenance);
   } else citeValue.textContent = getString("info-citations-none");
@@ -694,7 +721,7 @@ function render(props: any) {
   const workspace = doc.createElement("div");
   workspace.className = "zest-info-card zest-info-workspace";
   const workspaceTitle = doc.createElement("div");
-  workspaceTitle.className = "zest-info-group-title";
+  workspaceTitle.className = "zest-info-group-title zest-info-copyable";
   workspaceTitle.textContent = getString("info-workspace");
   workspace.appendChild(workspaceTitle);
   body.appendChild(workspace);
@@ -703,7 +730,7 @@ function render(props: any) {
   const rec = readingStore.getForItem(item);
   const readRow = row(doc, getString("info-reading"));
   const readValue = doc.createElement("span");
-  readValue.className = "zest-info-value";
+  readValue.className = "zest-info-value zest-info-copyable";
   readValue.textContent = rec
     ? getString("info-reading-value", {
         args: {
@@ -888,6 +915,7 @@ function render(props: any) {
     r.appendChild(group);
     body.appendChild(r);
   }
+  if (state) state.disposeCopy = installInfoCopy(body);
   if (restoreEditor && selection) {
     input.focus?.({ preventScroll: true });
     input.setSelectionRange?.(...selection);
@@ -941,7 +969,7 @@ function abstractText(
   plainText = false,
 ): HTMLElement {
   const content = doc.createElement("div");
-  content.className = "zest-info-abstract-text";
+  content.className = "zest-info-abstract-text zest-info-copyable";
   const appendText = (parent: HTMLElement, value: string) => {
     for (const part of abstractInlineParts(value)) {
       const node =
@@ -1045,7 +1073,7 @@ function renderAbstract(
   const actions = doc.createElement("div");
   actions.className = "zest-info-abstract-actions";
   const source = doc.createElement("span");
-  source.className = "zest-info-abstract-source";
+  source.className = "zest-info-abstract-source zest-info-copyable";
   source.textContent = state.translationVisible
     ? getString("info-abstract-translation-source", {
         args: { source: state.translationSource || "" },

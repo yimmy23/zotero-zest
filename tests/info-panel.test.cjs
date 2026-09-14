@@ -68,6 +68,8 @@ function setup({
   const writes = [];
   const logs = [];
   const authorMenus = [];
+  const copyBindings = [];
+  const textSelections = new Map();
   const ratingWrites = [];
   const ratings = new Map();
   let fetchImplementation = async () => ({ kind: "missing" });
@@ -315,6 +317,16 @@ function setup({
       "src/authors/authorMenu.ts": {
         openAuthorMenu: (...args) => authorMenus.push(args),
       },
+      "src/panes/infoCopy.ts": {
+        selectedInfoText: (root) => textSelections.get(root) || "",
+        installInfoCopy(root) {
+          const binding = { root, disposed: false };
+          copyBindings.push(binding);
+          return () => {
+            binding.disposed = true;
+          };
+        },
+      },
       "src/graph/authorFetch.ts": {
         async ensureAuthorships(items, options) {
           requests.push({ items, options });
@@ -379,6 +391,8 @@ function setup({
   return {
     doc,
     authorMenus,
+    copyBindings,
+    textSelections,
     ratingWrites,
     prefs,
     jobs,
@@ -1961,6 +1975,98 @@ test("native author buttons anchor keyboard clicks to the author and preserve po
   assert.equal(s.authorMenus[1][2].screenY, 607);
   assert.deepEqual(s.writes, []);
   assert.deepEqual(s.logs, []);
+});
+
+test("selecting an author does not open a menu, while keyboard activation stays native", () => {
+  const s = setup({ authorParts: authorPartsFor(1) });
+  const props = s.show(1);
+  const author = findClass(props.body, "zest-info-author");
+  const click = (overrides = {}) =>
+    author.listeners.click({
+      detail: 1,
+      button: 0,
+      screenX: 500,
+      screenY: 600,
+      stopPropagation() {},
+      ...overrides,
+    });
+
+  s.textSelections.set(props.body, "Researcher");
+  click();
+  assert.equal(s.authorMenus.length, 0);
+  click({ detail: 0 });
+  assert.equal(s.authorMenus.length, 1);
+
+  s.textSelections.delete(props.body);
+  for (const modifiers of [
+    { button: 2 },
+    { metaKey: true },
+    { ctrlKey: true },
+    { shiftKey: true },
+    { altKey: true },
+  ])
+    click(modifiers);
+  assert.equal(s.authorMenus.length, 1);
+  click();
+  assert.equal(s.authorMenus.length, 2);
+  assert.deepEqual(s.writes, []);
+});
+
+test("copy handlers belong to one render and are disposed on item change or teardown", () => {
+  const s = setup({ title: "Selectable title" });
+  const first = s.show(1);
+  const live = () => s.copyBindings.filter((binding) => !binding.disposed);
+  assert.equal(live().length, 1);
+  s.panel.refreshInfoSections(1);
+  assert.equal(s.copyBindings[0].disposed, true);
+  assert.equal(live().length, 1);
+
+  first.item = new s.Item(2);
+  s.section.onItemChange(first);
+  assert.equal(live().length, 0);
+  s.section.onRender(first);
+  assert.equal(live().length, 1);
+  const second = s.show(3);
+  assert.equal(live().length, 2);
+  s.section.onDestroy(first);
+  assert.deepEqual(
+    live().map((binding) => binding.root),
+    [second.body],
+  );
+  s.panel.unregisterInfoSection();
+  assert.equal(live().length, 0);
+  assert.deepEqual(s.writes, []);
+});
+
+test("copyable text markers preserve field boundaries and never mark edit controls", () => {
+  const s = setup({
+    title: "Selectable title",
+    venue: "A Journal",
+    ranks: [{ field: "sci", value: "Q1", source: "dataset" }],
+    authorParts: authorPartsFor(2),
+    abstract: true,
+    fields: { abstractNote: "Background: A readable abstract." },
+  });
+  const props = s.show(1);
+  for (const name of [
+    "zest-info-title",
+    "zest-info-venue-name",
+    "zest-rank-badge",
+    "zest-info-author",
+    "zest-info-author-role",
+    "zest-info-abstract-text",
+  ])
+    assert.ok(
+      findClass(props.body, name).classList.contains("zest-info-copyable"),
+      name,
+    );
+  for (const name of ["zest-info-input", "zest-info-status", "zest-info-star"])
+    assert.equal(
+      findClass(props.body, name).classList.contains("zest-info-copyable"),
+      false,
+      name,
+    );
+  assert.deepEqual(s.writes, []);
 });
 
 test("only the first and verified corresponding authors and their distinct institutions are initially visible, with expansion remembered per item", () => {

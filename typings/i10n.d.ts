@@ -130,6 +130,8 @@ export type FluentMessageId =
   | 'info-citations'
   | 'info-citations-none'
   | 'info-collapse'
+  | 'info-copy-field'
+  | 'info-copy-selected'
   | 'info-heat-tip'
   | 'info-open'
   | 'info-rating-save-failed'

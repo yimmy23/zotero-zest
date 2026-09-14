@@ -336,6 +336,9 @@ export function registerStyles(win: Window) {
     .zest-info-stars.disabled .zest-info-star { cursor: default; }
     .zest-info-stars.disabled { opacity: .7; }
     .zest-info { display: flex; flex-direction: column; gap: 10px; padding: 4px 8px 12px; line-height: 1.5; }
+    /* Zotero disables selection on chrome and native buttons by default. */
+    .zest-info .zest-info-copyable, .zest-info button.zest-info-author { -moz-user-select: text; user-select: text; }
+    .zest-info .zest-info-copyable:not(button) { cursor: text; }
     /* Native collapsible-section keeps the direct body in the layout while it
        closes. Keep our horizontal inset, but remove only our vertical inset so
        the collapsed section ends at the native header. */
@@ -406,6 +409,7 @@ export function registerStyles(win: Window) {
     .zest-info-feedback { display: block; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
     .zest-info-feedback:empty { display: none; }
     .zest-info-remark-feedback { grid-column: 2; }
+    .zest-info:focus-visible,
     .zest-info :is(button, input, textarea, summary):focus-visible,
     .zest-annot-copy:focus-visible,
     .zest-tabbar :is(button, input):focus-visible,
