@@ -31,7 +31,9 @@ import { openAuthorMenu } from "../authors/authorMenu";
 import { ensureAuthorships } from "../graph/authorFetch";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { getExtraBlock } from "../utils/extra";
+import { citationKeyOf } from "../utils/citationKey";
 import { iconButton } from "../ui/icons";
+import { setSemanticBadge } from "../ui/color";
 import {
   abstractInlineParts,
   abstractParagraphs,
@@ -44,7 +46,7 @@ import {
 } from "./abstractSource";
 import { translateAbstract, translationProvider } from "./abstractTranslation";
 import { selectCoreAuthors } from "./coreAuthors";
-import { installInfoCopy, selectedInfoText } from "./infoCopy";
+import { copyInfoText, installInfoCopy, selectedInfoText } from "./infoCopy";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
@@ -71,6 +73,8 @@ import { installInfoCopy, selectedInfoText } from "./infoCopy";
  */
 
 let sectionID: string | false = false;
+let itemNotifierID: string | undefined;
+let notifierEpoch = 0;
 interface SectionState {
   refresh: () => void;
   setEnabled?: (enabled: boolean) => void;
@@ -214,9 +218,49 @@ export function registerInfoSection() {
     },
   });
   sectionID = typeof result === "string" ? result : false;
+  if (sectionID) {
+    const epoch = ++notifierEpoch;
+    try {
+      // Native custom sections cache renders by item ID, so a same-item field
+      // save needs the refresh callback supplied by ItemPaneManager.onInit.
+      itemNotifierID = Zotero.Notifier.registerObserver(
+        {
+          notify: (
+            event: string,
+            type: string,
+            ids: Array<number | string>,
+          ) => {
+            if (
+              epoch !== notifierEpoch ||
+              !addon.data.alive ||
+              event !== "modify" ||
+              type !== "item"
+            )
+              return;
+            for (const id of new Set(ids.map(Number))) {
+              if (Number.isSafeInteger(id) && id > 0) refreshInfoSections(id);
+            }
+          },
+        },
+        ["item"],
+        `${config.addonRef}-info-section`,
+      );
+    } catch (e) {
+      ztoolkit.log("[info] item observer registration failed", e);
+    }
+  }
 }
 
 export function unregisterInfoSection() {
+  notifierEpoch++;
+  if (itemNotifierID) {
+    try {
+      Zotero.Notifier.unregisterObserver(itemNotifierID);
+    } catch {
+      // notifier already shut down
+    }
+    itemNotifierID = undefined;
+  }
   for (const state of sections.values()) {
     cancelTopUp(state);
     disposeCopy(state);
@@ -417,6 +461,61 @@ function render(props: any) {
       r.appendChild(value);
       bibliography.appendChild(r);
     }
+  }
+
+  {
+    const citationKey = citationKeyOf(item);
+    const r = row(doc, getString("info-citation-key"));
+    r.classList.add("zest-info-citation-key");
+    const controls = doc.createElement("div");
+    controls.className = "zest-info-value zest-info-citation-key-controls";
+    const value = doc.createElement("span");
+    value.className = `zest-info-value zest-info-citation-key-value ${citationKey ? "zest-info-copyable" : "zest-info-placeholder"}`;
+    value.textContent = citationKey || getString("info-citation-key-empty");
+    if (!citationKey) {
+      value.title = getString("info-citation-key-empty-hint");
+      value.setAttribute(
+        "aria-label",
+        `${getString("info-citation-key-empty")}. ${value.title}`,
+      );
+    }
+    const copy = iconButton(
+      doc,
+      "copy",
+      getString("info-citation-key-copy"),
+      "zest-info-btn",
+    );
+    copy.type = "button";
+    copy.disabled = !citationKey;
+    const message = doc.createElement("span");
+    message.className = "zest-visually-hidden";
+    message.setAttribute("role", "status");
+    message.setAttribute("aria-live", "polite");
+    copy.addEventListener(
+      "click",
+      guard("info citation key copy", () => {
+        if (!state || !sectionVisible(body, state, item) || !copy.isConnected)
+          return;
+        // A native field edit may arrive before the panel's next repaint.
+        const current = citationKeyOf(state.item || item);
+        if (!current) {
+          state.refresh();
+          return;
+        }
+        value.textContent = current;
+        const feedback = getString(
+          copyInfoText(current)
+            ? "info-citation-key-copied"
+            : "info-citation-key-copy-failed",
+        );
+        message.className = "zest-info-citation-key-message";
+        message.textContent = feedback;
+        copy.title = feedback;
+      }),
+    );
+    controls.append(value, copy, message);
+    r.appendChild(controls);
+    bibliography.appendChild(r);
   }
 
   // Keep the source next to the title, even when the author list is expanded.
@@ -658,9 +757,9 @@ function render(props: any) {
     badges.className = "zest-info-ranks";
     for (const v of displayValuesForUI(
       rec,
-      rankFieldsForDisplay(displayFields()),
+      rankFieldsForDisplay(displayFields(), rec),
     ).slice(0, 3)) {
-      const display = rankValueDisplay(v, v.sourceField);
+      const display = rankValueDisplay(v, v.sourceField, v.customized);
       const badge = doc.createElement("span");
       badge.className = "zest-badge zest-rank-badge zest-info-copyable";
       badge.textContent = display.text;
@@ -673,7 +772,7 @@ function render(props: any) {
       });
       const rgb = hexToRgb(v.rank ? colorForRank(v.rank) : defaultRankColor());
       if (rgb) {
-        badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},.15)`;
+        setSemanticBadge(badge, rgb, 0.15);
       }
       badges.appendChild(badge);
     }

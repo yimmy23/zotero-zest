@@ -3,7 +3,7 @@ import { getString } from "../utils/locale";
 import { getPref, setPref, getNumPref } from "../utils/prefs";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { guard } from "../utils/guard";
-import { ensureAuthorships } from "./authorFetch";
+import { ensureAuthorships, type AuthorshipProgress } from "./authorFetch";
 import { appendAuthorMenuItems } from "../authors/authorMenu";
 import {
   buildGraph,
@@ -45,6 +45,10 @@ interface PaneState {
   status: HTMLElement;
   message: HTMLElement;
   refresh: HTMLButtonElement;
+  completeAuthors: HTMLButtonElement;
+  generation: number;
+  fetchGeneration: number;
+  fetching: boolean;
   view?: GraphView;
   modeButtons: Map<GraphMode, HTMLElement>;
   roleButtons: Map<string, HTMLElement>;
@@ -52,7 +56,6 @@ interface PaneState {
   minButtons: Map<number, HTMLElement>;
   minWrap: HTMLElement;
   building: boolean;
-  rebuildAgain: boolean;
 }
 
 const panes = new Map<Window, PaneState>();
@@ -179,6 +182,24 @@ export function showGraphPane(win: Window) {
     modeButtons.set(mode, b);
   }
   header.appendChild(modeWrap);
+  const options = doc.createElement("details");
+  options.className = "zest-graph-options";
+  const summary = doc.createElement("summary");
+  summary.className = "zest-graph-btn";
+  summary.textContent = getString("graph-options");
+  const optionsBody = doc.createElement("div");
+  optionsBody.className = "zest-graph-options-body";
+  options.appendChild(summary);
+  options.appendChild(optionsBody);
+  options.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key === "Escape" && options.open) {
+      options.open = false;
+      summary.focus();
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
+  header.appendChild(options);
 
   // Author mode: every author, or first + last by position, not correspondence.
   const roleButtons = new Map<string, HTMLElement>();
@@ -203,7 +224,7 @@ export function showGraphPane(win: Window) {
     rolesWrap.appendChild(b);
     roleButtons.set(role, b);
   }
-  header.appendChild(rolesWrap);
+  optionsBody.appendChild(rolesWrap);
 
   // bipartite modes: how many items must share an author/tag/collection
   const minButtons = new Map<number, HTMLElement>();
@@ -229,7 +250,7 @@ export function showGraphPane(win: Window) {
     minWrap.appendChild(b);
     minButtons.set(n, b);
   }
-  header.appendChild(minWrap);
+  optionsBody.appendChild(minWrap);
 
   const status = doc.createElement("span");
   status.className = "zest-graph-status";
@@ -254,6 +275,19 @@ export function showGraphPane(win: Window) {
   );
   actions.appendChild(refresh);
 
+  const completeAuthors = doc.createElement("button");
+  completeAuthors.type = "button";
+  completeAuthors.className = "zest-graph-btn zest-graph-authors";
+  completeAuthors.textContent = getString("graph-authors-complete");
+  completeAuthors.title = getString("graph-authors-complete-tip");
+  completeAuthors.addEventListener(
+    "click",
+    guard("graph author identities", () => {
+      void completeAuthorIdentities(win);
+    }),
+  );
+  actions.appendChild(completeAuthors);
+
   const fit = doc.createElement("button");
   fit.type = "button";
   fit.className = "zest-graph-btn zest-graph-fit";
@@ -275,8 +309,8 @@ export function showGraphPane(win: Window) {
     "click",
     guard("graph close", () => hideGraphPane(win)),
   );
-  actions.appendChild(close);
-  header.appendChild(actions);
+  header.appendChild(close);
+  optionsBody.appendChild(actions);
 
   const canvas = doc.createElement("div");
   canvas.className = "zest-graph-canvas";
@@ -311,13 +345,16 @@ export function showGraphPane(win: Window) {
     status,
     message,
     refresh,
+    completeAuthors,
+    generation: 0,
+    fetchGeneration: 0,
+    fetching: false,
     modeButtons,
     roleButtons,
     rolesWrap,
     minButtons,
     minWrap,
     building: false,
-    rebuildAgain: false,
   };
   panes.set(win, state);
   syncModeButtons(win);
@@ -393,6 +430,7 @@ function syncModeButtons(win: Window) {
   const state = panes.get(win);
   if (!state) return;
   const active = graphMode();
+  state.completeAuthors.hidden = active !== "author";
   for (const [mode, btn] of state.modeButtons) {
     btn.classList.toggle("active", mode === active);
     btn.setAttribute("aria-pressed", String(mode === active));
@@ -426,6 +464,8 @@ function watchScope(win: Window) {
     const listener = guard("graph scope", () => {
       const current = panes.get(win);
       if (!current) return;
+      current.generation++;
+      cancelAuthorCompletion(current);
       if (current.rebuildTimer) clearTimeout(current.rebuildTimer);
       current.rebuildTimer = setTimeout(() => {
         current.rebuildTimer = undefined;
@@ -440,14 +480,19 @@ function watchScope(win: Window) {
   }
 }
 
-async function rebuild(win: Window) {
+async function rebuild(win: Window, preserveFetch = false) {
   const state = panes.get(win);
   if (!state) return;
-  if (state.building) {
-    state.rebuildAgain = true;
-    return;
-  }
+  if (!preserveFetch) cancelAuthorCompletion(state);
+  const generation = ++state.generation;
+  const valid = () =>
+    addon.data.alive &&
+    !win.closed &&
+    panes.get(win) === state &&
+    state.generation === generation;
+  if (!valid()) return;
   state.building = true;
+  state.completeAuthors.disabled = true;
   state.refresh.disabled = true;
   state.canvas.setAttribute("aria-busy", "true");
   state.status.textContent = getString("graph-building");
@@ -465,10 +510,11 @@ async function rebuild(win: Window) {
       centerItemID,
       authorRoles: authorRoles(),
       minShared: minShared(),
+      shouldContinue: valid,
     });
     // closed while building — or closed AND reopened, which makes a fresh
     // PaneState under the same window key; only our own state may proceed
-    if (panes.get(win) !== state || state.rebuildAgain) return;
+    if (!valid()) return;
     if (!state.view) throw new Error("Graph view unavailable");
     state.view.setData(data);
     state.status.textContent = statusText(data);
@@ -480,32 +526,78 @@ async function rebuild(win: Window) {
         getString("graph-empty"),
         getString("graph-empty-hint"),
       );
-    if (mode === "author") {
-      // top up the OpenAlex authorship cache in the background; rebuild
-      // only when something new actually arrived (then everything is
-      // cached or backed off, so the second pass fetches nothing)
-      const shouldContinue = () =>
-        addon.data.alive && panes.get(win) === state && graphMode() === mode;
-      void ensureAuthorships(items, { shouldContinue }).then((changed) => {
-        if (changed && shouldContinue()) void rebuild(win);
-      });
-    }
   } catch (e) {
     ztoolkit.log("[graph] build failed", e);
-    if (panes.get(win) === state) {
+    if (valid()) {
       state.status.textContent = getString("graph-failed");
       showMessage(state, getString("graph-failed"));
     }
   } finally {
-    state.building = false;
-    if (panes.get(win) === state) {
+    if (valid()) {
+      state.building = false;
+      state.completeAuthors.disabled = state.fetching;
       state.refresh.disabled = false;
       state.canvas.setAttribute("aria-busy", "false");
-      if (state.rebuildAgain) {
-        state.rebuildAgain = false;
-        void rebuild(win);
-      }
     }
+  }
+}
+
+function cancelAuthorCompletion(state: PaneState) {
+  state.fetchGeneration++;
+  state.fetching = false;
+  state.completeAuthors.disabled = state.building;
+  state.completeAuthors.textContent = getString("graph-authors-complete");
+  state.completeAuthors.setAttribute("aria-busy", "false");
+}
+
+/** The only graph action that contacts OpenAlex. Opening/restoring, scope
+ * refreshes, mode changes and local rebuilds always consume the cache only. */
+export async function completeAuthorIdentities(win: Window): Promise<void> {
+  const state = panes.get(win);
+  if (!state || state.fetching || state.building || graphMode() !== "author")
+    return;
+  const generation = ++state.fetchGeneration;
+  const valid = () =>
+    addon.data.alive &&
+    !win.closed &&
+    panes.get(win) === state &&
+    state.fetchGeneration === generation &&
+    graphMode() === "author";
+  if (!valid()) return;
+  state.fetching = true;
+  state.completeAuthors.disabled = true;
+  state.completeAuthors.textContent = getString("graph-authors-loading");
+  state.completeAuthors.setAttribute("aria-busy", "true");
+  let progress: AuthorshipProgress = { attempted: 0, updated: 0 };
+  try {
+    const changed = await ensureAuthorships(scopeItems(win), {
+      shouldContinue: valid,
+      onProgress: (value) => {
+        if (!valid()) return;
+        progress = value;
+        state.status.textContent = getString("graph-authors-progress", {
+          args: { updated: value.updated, attempted: value.attempted },
+        });
+      },
+    });
+    if (!valid()) return;
+    if (changed) await rebuild(win, true);
+    if (!valid()) return;
+    state.status.textContent = getString(
+      progress.stopped ? "graph-authors-stopped" : "graph-authors-done",
+      {
+        args: { updated: progress.updated, attempted: progress.attempted },
+      },
+    );
+    state.status.title = state.status.textContent;
+  } catch (error) {
+    ztoolkit.log("[graph] author identity completion failed", error);
+    if (valid())
+      state.status.textContent = getString("graph-authors-stopped", {
+        args: { updated: progress.updated, attempted: progress.attempted },
+      });
+  } finally {
+    if (valid()) cancelAuthorCompletion(state);
   }
 }
 

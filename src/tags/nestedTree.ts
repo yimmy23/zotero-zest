@@ -4,6 +4,7 @@ import { getPref, setPref } from "../utils/prefs";
 import { guard } from "../utils/guard";
 import { setTimeout, clearTimeout } from "../utils/timers";
 import { parseTagRule } from "./match";
+import { compileTagBranches, type TagBranchSelection } from "./branchFilter";
 import {
   collectTagScope,
   cachedTags,
@@ -1132,35 +1133,23 @@ function emitSelectionChange() {
 }
 
 function applyTagFilter(state: TreeState) {
-  const groups = [...state.selection.values()].map((set) => new Set(set));
+  const selection = branchSelection(state);
   const withChildren = matchChildTags();
   const showAutomatic =
     Zotero.Prefs.get("extensions.zotero.tagSelector.showAutomatic", true) !==
     false;
-  const link = linkSymbol();
-  const key = groups.length
-    ? JSON.stringify([
-        state.libraryID,
-        withChildren,
-        showAutomatic,
-        link,
-        [...state.selection].map(([path, names]) => [path, [...names].sort()]),
-      ])
+  const key = selection.branches.length
+    ? JSON.stringify([state.libraryID, withChildren, showAutomatic, selection])
     : "";
   if (key === state.filterKey) return;
   state.filterKey = key;
   emitSelectionChange();
-  if (!groups.length) {
+  if (!selection.branches.length) {
     setItemFilter(state.win, "tags", null);
     void refreshItemView(state.win);
     return;
   }
-  // per selected branch: the exact names as a set, the "under this tag"
-  // prefixes as strings — built once, not per item per tag
-  const tests = groups.map((names) => ({
-    exact: names,
-    prefixes: [...names].map((n) => n + link),
-  }));
+  const matches = compileTagBranches(selection);
   const ok = setItemFilter(state.win, "tags", (items) => {
     // the tag cache is NOT cleared here: this predicate runs on every refresh
     // of the item list, and rebuilding every item's tag list each time made
@@ -1169,13 +1158,7 @@ function applyTagFilter(state: TreeState) {
     return items.filter((item) => {
       try {
         const tags = cachedTags(item, withChildren, showAutomatic);
-        if (!tags.length) return false;
-        // AND between branches, OR within a branch
-        return tests.every(({ exact, prefixes }) =>
-          tags.some(
-            (t) => exact.has(t) || prefixes.some((p) => t.startsWith(p)),
-          ),
-        );
+        return matches(tags);
       } catch {
         return true; // never hide an item because of our own error
       }
@@ -1285,7 +1268,24 @@ function stopNotifier() {
   notifierID = undefined;
 }
 
-/** the currently selected branches (used by the annotation locator cards) */
+function branchSelection(state?: TreeState): TagBranchSelection {
+  return {
+    branches: [...(state?.selection ?? [])].map(([path, names]) => ({
+      path,
+      names: [...names].sort(),
+    })),
+    linkSymbol: linkSymbol(),
+    matchRule: String(getPref("textTags.match") || "#"),
+  };
+}
+
+/** Snapshot for this window only; no window means no selection. The caller
+ * can compile a predicate without losing branch grouping or display mapping. */
+export function selectedTagBranches(win?: Window): TagBranchSelection {
+  return branchSelection(win ? states.get(win) : undefined);
+}
+
+/** Flattened raw names for diagnostics/compatibility, not a filter contract. */
 export function selectedTagNames(win?: Window): string[] {
   const state = win ? states.get(win) : [...states.values()][0];
   if (!state) return [];

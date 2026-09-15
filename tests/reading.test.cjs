@@ -476,7 +476,7 @@ test("legacy imports remap unique keys and report ambiguous, deleted and missing
     ambiguous: 1,
     seconds: 60,
   });
-  assert.deepEqual(progress, [1, 2, 3, 4, 5]);
+  assert.deepEqual(progress, [5]);
   assert.equal(db.seconds(9), 60);
 });
 
@@ -497,4 +497,254 @@ test("legacy CSV headers remain importable without treating invalid identity as 
   assert.equal((await api.importItems(bad, "max")).skipped, 1);
   const missingGroup = exported(ITEM, { type: "group", groupID: 999 });
   assert.equal((await api.importItems([missingGroup], "max")).skipped, 1);
+});
+
+for (const format of ["JSON", "CSV"]) {
+  test(`${format} day-only history survives sampling, flush, reload and repeated max imports`, async () => {
+    const { add, zotero } = libraries();
+    add(9, ITEM);
+    const { h, store, db } = setup(undefined, zotero);
+    const api = h.load("src/reading/exportImport.ts");
+    const original = {
+      ...exported(),
+      pages_seconds: {},
+      attachments: {},
+      days: { [DAY]: 3600 },
+    };
+    const input = api[`from${format}`](api[`to${format}`]([original]));
+    assert.equal((await api.importItems(input, "max")).seconds, 3600);
+    assert.equal(store.get(9, ITEM).total, 3600);
+    assert.equal(store.get(9, ITEM).unallocatedSeconds, 3600);
+    store.addSample(9, ITEM, ATT, 0, 5, 10, NOW);
+    assert.equal(store.get(9, ITEM).total, 3605);
+    assert.equal(store.get(9, ITEM).unallocatedSeconds, 3600);
+    assert.equal(await store.flush(), true);
+    const reloaded = setup(db, zotero);
+    await reloaded.store.load();
+    const api2 = reloaded.h.load("src/reading/exportImport.ts");
+    assert.equal(reloaded.store.get(9, ITEM).total, 3605);
+    await api2.importItems(input, "max");
+    await api2.importItems(input, "max");
+    assert.equal(reloaded.store.get(9, ITEM).total, 3605);
+    const roundtrip = api2[`from${format}`](
+      api2[`to${format}`](api2.collectExport()),
+    );
+    await api2.importItems(roundtrip, "max");
+    assert.equal(reloaded.store.get(9, ITEM).total, 3605);
+    assert.equal(reloaded.store.get(9, ITEM).days.get(DAY), 3605);
+    assert.equal(
+      db.seconds(9),
+      5,
+      "historical time never becomes fabricated page evidence",
+    );
+  });
+}
+
+test("partially detailed history accepts later page details without double counting", async () => {
+  const { store, db } = setup();
+  await store.mergeRecord({ ...record(60), days: { [DAY]: 3600 } }, "max");
+  assert.equal(store.get(1, ITEM).total, 3600);
+  assert.equal(store.get(1, ITEM).unallocatedSeconds, 3540);
+  await store.mergeRecord(record(3600), "max");
+  assert.equal(store.get(1, ITEM).total, 3600);
+  assert.equal(store.get(1, ITEM).unallocatedSeconds, 0);
+  await store.mergeRecord({ ...record(60), days: { [DAY]: 3600 } }, "max");
+  sample(store, 5);
+  await store.flush();
+  const reloaded = setup(db);
+  await reloaded.store.load();
+  assert.equal(reloaded.store.get(1, ITEM).total, 3605);
+  assert.equal(reloaded.store.get(1, ITEM).unallocatedSeconds, 0);
+});
+
+test("already persisted day/page imbalance is recovered without changing original rows", async () => {
+  const db = database(seed(5));
+  await db.writeBatch(
+    {
+      pages: [],
+      atts: [],
+      days: [{ libraryID: 1, itemKey: ITEM, day: DAY, seconds: 3605 }],
+      meta: [],
+    },
+    "max",
+  );
+  const { store } = setup(db);
+  const writes = db.writeCount;
+  await store.load();
+  assert.equal(store.get(1, ITEM).total, 3605);
+  assert.equal(store.get(1, ITEM).unallocatedSeconds, 3600);
+  assert.equal(db.writeCount, writes);
+  sample(store, 5);
+  await store.flush();
+  const reloaded = setup(db);
+  await reloaded.store.load();
+  assert.equal(reloaded.store.get(1, ITEM).total, 3610);
+  assert.equal(db.seconds(), 10);
+});
+
+test("sum imports of day-only history add time, while normal page/day summaries count once", async () => {
+  const { store, db } = setup();
+  const history = { libraryID: 1, itemKey: ITEM, days: { [DAY]: 3600 } };
+  await store.mergeRecord(history, "sum");
+  await store.mergeRecord(history, "sum");
+  assert.equal(store.get(1, ITEM).total, 7200);
+  sample(store, 5);
+  await store.flush();
+  const reloaded = setup(db);
+  await reloaded.store.load();
+  assert.equal(reloaded.store.get(1, ITEM).total, 7205);
+  await reloaded.store.mergeRecord(record(60, "READ0002"), "max");
+  assert.equal(reloaded.store.get(1, "READ0002").total, 60);
+  assert.equal(reloaded.store.get(1, "READ0002").unallocatedSeconds, 0);
+});
+
+for (const shape of ["pages-then-days", "days-then-pages"]) {
+  test(`sum rejects unrepresentable ${shape} histories before flushing pending samples`, async () => {
+    const { store, db } = setup();
+    const pages = { libraryID: 1, itemKey: ITEM, page: { 0: 100 } };
+    const days = { libraryID: 1, itemKey: ITEM, days: { [DAY]: 3600 } };
+    const [existing, incoming] =
+      shape === "pages-then-days" ? [pages, days] : [days, pages];
+    await store.mergeRecord(existing, "max");
+    sample(store, 5);
+    const before = store.get(1, ITEM).total;
+    const writes = db.writeCount;
+    await assert.rejects(
+      store.mergeRecord(incoming, "sum"),
+      /import-sum-unallocated/,
+    );
+    assert.equal(
+      db.writeCount,
+      writes,
+      "rejection precedes pending flush and import write",
+    );
+    assert.equal(store.get(1, ITEM).total, before);
+    assert.equal(
+      await store.flush(),
+      true,
+      "pending live sample remains retryable",
+    );
+    const reloaded = setup(db);
+    await reloaded.store.load();
+    assert.equal(reloaded.store.get(1, ITEM).total, before);
+    await store.mergeRecord(incoming, "max");
+    assert.ok(
+      store.get(1, ITEM).total >= before,
+      "max remains available without losing stored rows",
+    );
+  });
+}
+
+test("sum preserves paired records alongside incomplete history when the intended total is representable", async () => {
+  const { store } = setup();
+  await store.mergeRecord(
+    { libraryID: 1, itemKey: ITEM, days: { [DAY]: 3600 } },
+    "sum",
+  );
+  await store.mergeRecord(record(100), "sum");
+  assert.equal(store.get(1, ITEM).total, 3700);
+  assert.equal(store.get(1, ITEM).unallocatedSeconds, 3600);
+  await store.mergeRecord(record(60), "sum");
+  assert.equal(store.get(1, ITEM).total, 3760);
+});
+
+for (const mode of ["max", "sum"]) {
+  test(`whole-file ${mode} failure rolls back earlier items and retry applies once`, async () => {
+    const { add, zotero } = libraries();
+    add(9, ITEM);
+    add(9, "READ0002");
+    const { h, store, db } = setup(undefined, zotero);
+    const api = h.load("src/reading/exportImport.ts");
+    const items = [exported(), exported("READ0002")];
+    await store.mergeRecord({ ...record(10), libraryID: 9 }, "max");
+    const progress = [];
+    db.beforeWrite = (_call, batch) => {
+      if (batch.pages.some((row) => row.itemKey === "READ0002"))
+        throw new Error("second item failed");
+    };
+    await assert.rejects(
+      api.importItems(items, mode, (done) => progress.push(done)),
+      /second item/,
+    );
+    assert.equal(db.seconds(9), 10);
+    assert.equal(store.get(9, ITEM).total, 10);
+    assert.equal(store.get(9, "READ0002"), undefined);
+    assert.deepEqual(progress, []);
+    db.beforeWrite = undefined;
+    await api.importItems(items, mode, (done) => progress.push(done));
+    assert.equal(db.seconds(9), mode === "sum" ? 70 : 60);
+    assert.equal(db.seconds(9, "READ0002"), 60);
+    assert.deepEqual(progress, [2]);
+  });
+}
+
+test("a later unrepresentable sum rejects the entire file before draining live samples", async () => {
+  const { store, db } = setup();
+  await store.mergeRecord(
+    { libraryID: 1, itemKey: "READ0002", days: { [DAY]: 100 } },
+    "max",
+  );
+  sample(store, 10);
+  const before = db.writeCount;
+  await assert.rejects(
+    store.mergeRecords(
+      [record(60), { ...record(60, "READ0002"), days: {} }],
+      "sum",
+    ),
+    /import-sum-unallocated/,
+  );
+  assert.equal(db.writeCount, before);
+  assert.equal(store.get(1, ITEM).total, 10);
+  assert.equal(store.get(1, "READ0002").total, 100);
+  await store.flush();
+  assert.equal(db.seconds(), 10);
+});
+
+test("duplicate target records share staged state and commit once", async () => {
+  for (const mode of ["max", "sum"]) {
+    const { store, db } = setup();
+    await store.mergeRecords([record(10), record(20), record(5)], mode);
+    assert.equal(db.writeCount, 1);
+    assert.equal(store.get(1, ITEM).total, mode === "sum" ? 35 : 20);
+    assert.equal(db.seconds(), store.get(1, ITEM).total);
+  }
+});
+
+test("multi-item commit preserves samples for every target while native write is pending", async () => {
+  const { store, db } = setup();
+  sample(store, 10);
+  const entered = deferred(),
+    release = deferred();
+  db.beforeWrite = async (call) => {
+    if (call === 2) {
+      entered.resolve();
+      await release.promise;
+    }
+  };
+  const pending = store.mergeRecords(
+    [record(60), record(30, "READ0002")],
+    "sum",
+  );
+  await entered.promise;
+  sample(store, 5);
+  sample(store, 7, "READ0002");
+  release.resolve();
+  await pending;
+  assert.equal(store.get(1, ITEM).total, 75);
+  assert.equal(store.get(1, "READ0002").total, 37);
+  await store.flush();
+  assert.equal(db.seconds(), 75);
+  assert.equal(db.seconds(1, "READ0002"), 37);
+});
+
+test("a failed progress display after commit does not turn a successful sum into a retryable failure", async () => {
+  const { add, zotero } = libraries();
+  add(9, ITEM);
+  const { h, db } = setup(undefined, zotero);
+  const api = h.load("src/reading/exportImport.ts");
+  const result = await api.importItems([exported()], "sum", () => {
+    throw new Error("window closed");
+  });
+  assert.equal(result.matched, 1);
+  assert.equal(db.seconds(9), 60);
 });

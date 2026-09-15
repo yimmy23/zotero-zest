@@ -119,40 +119,38 @@ function install(): boolean {
       const win = windowOf(this);
       const mine = win ? filters.get(win) : undefined;
       if (!mine?.size) return items;
-      // `getItems` also returns child items (attachments, notes, annotations);
-      // the tree only renders top-level rows but still needs the children in
-      // the set, so predicates never see them and they are passed through.
-      const top: Zotero.Item[] = [];
-      const children: Zotero.Item[] = [];
+      // Search can return only a matching attachment/note/annotation, and the
+      // native tree then reinstates its owner. Evaluate that owner even when
+      // it is absent from the result. Owners are only predicate inputs: the
+      // native query still decides which rows exist (including in Trash).
+      const owners = new Map<number, Zotero.Item>();
+      const ownerIDs = new Map<Zotero.Item, number>();
       for (const it of items as Zotero.Item[]) {
-        const isTop =
-          typeof (it as any)?.isTopLevelItem === "function"
-            ? (it as any).isTopLevelItem()
-            : true;
-        (isTop ? top : children).push(it);
+        try {
+          const isTop =
+            typeof it?.isTopLevelItem === "function"
+              ? it.isTopLevelItem()
+              : true;
+          const owner = isTop ? it : it.topLevelItem;
+          if (!owner) continue;
+          owners.set(owner.id, owner);
+          ownerIDs.set(it, owner.id);
+        } catch {
+          // An unreadable owner must not hide a native result.
+        }
       }
-      let out: Zotero.Item[] = top;
+      let out: Zotero.Item[] = [...owners.values()];
       for (const fn of mine.values()) {
         const next = fn(out);
         if (Array.isArray(next)) out = next;
       }
-      if (!children.length) return out;
-      // A child whose parent we filtered out must go too — the item tree
-      // reinstates the parent row for any child left in the set. A child whose
-      // parent was never in the set (Trash shows deleted children of live
-      // parents, quick search matches children directly) is kept as it was.
-      const present = new Set(top.map((i) => i.id));
       const kept = new Set(out.map((i) => i.id));
-      const keptChildren = children.filter((c) => {
-        try {
-          const topItem = (c as any).topLevelItem;
-          if (!topItem) return true;
-          return !present.has(topItem.id) || kept.has(topItem.id);
-        } catch {
-          return true;
-        }
+      // Preserve source objects, ordering and multiplicity; never add a live
+      // parent to Trash or a nonmatching parent to the native search result.
+      return (items as Zotero.Item[]).filter((item) => {
+        const ownerID = ownerIDs.get(item);
+        return ownerID === undefined || kept.has(ownerID);
       });
-      return keptChildren.length ? out.concat(keptChildren) : out;
     } catch (e) {
       ztoolkit.log("[filter] predicate failed — showing unfiltered", e);
       return items;

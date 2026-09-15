@@ -8,6 +8,39 @@
 
 const FULLWIDTH = /[！-～]/g;
 
+/** Bump when lookup rules change; old misses may be retried without losing hits. */
+export const JOURNAL_LOOKUP_VERSION = 1;
+
+/**
+ * Verified title aliases, not a rule for removing arbitrary acronym subtitles.
+ * NLM: https://www.ncbi.nlm.nih.gov/nlmcatalog/8605732
+ * Publisher title and both ISSNs: https://link.springer.com/journal/262
+ * The preceding journal "Cancer immunology and immunotherapy" is NOT an alias.
+ */
+const JOURNAL_TITLES = [
+  {
+    name: "Cancer Immunology, Immunotherapy",
+    aliases: ["Cancer Immunology, Immunotherapy : CII"],
+    issns: ["0340-7004", "1432-0851"],
+  },
+];
+
+// Ignore presentation punctuation, but retain every word, article and subtitle.
+function titleKey(raw: string): string {
+  return toHalfWidth(raw)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+export function journalCatalogIdentity(raw: string) {
+  const key = titleKey(raw);
+  return JOURNAL_TITLES.find((entry) =>
+    [entry.name, ...entry.aliases].some((title) => titleKey(title) === key),
+  );
+}
+
 /** full-width ASCII → half-width, plus the CJK comma/colon we see most */
 export function toHalfWidth(s: string): string {
   return s
@@ -34,6 +67,8 @@ export function journalLookupName(raw: string | undefined | null): string {
     /\s*:\s*(?:(?:an?|the)\s+)?official\s+(?:journal|publication|organ)\s+of\b[\s\S]*\S\s*$/iu,
     "",
   );
+  const catalog = journalCatalogIdentity(stripped);
+  if (catalog) return catalog.name;
   // Keep every unmatched title byte-for-byte (apart from outer whitespace).
   // This helper must not silently reinterpret a real subtitle.
   if (stripped === searchable) return name;
@@ -41,8 +76,17 @@ export function journalLookupName(raw: string | undefined | null): string {
 }
 
 export function normalizeJournal(raw: string | undefined | null): string {
+  return normalizeTitle(journalLookupName(raw));
+}
+
+/** Previous cache keys are read-only aliases; never rewrite a user's file. */
+export function legacyJournalNameKey(raw: string): string {
+  return normalizeTitle(raw);
+}
+
+function normalizeTitle(raw: string | undefined | null): string {
   if (!raw) return "";
-  let s = toHalfWidth(journalLookupName(raw)).trim();
+  let s = toHalfWidth(raw).trim();
   // A location or edition in parentheses can distinguish separate journals.
   // Keep its words in identity keys; punctuation itself is normalised below.
   s = s.normalize("NFKD").replace(/[̀-ͯ]/g, "");
@@ -57,18 +101,19 @@ export function normalizeJournal(raw: string | undefined | null): string {
 /** 1234-5678 / 12345678 → "1234-5678"; anything else → "" */
 export function normalizeISSN(raw: string | undefined | null): string {
   if (!raw) return "";
-  const m = String(raw)
-    .toUpperCase()
-    .replace(/[^0-9X]/g, "");
-  if (m.length !== 8) return "";
-  return `${m.slice(0, 4)}-${m.slice(4)}`;
+  const m = toHalfWidth(String(raw))
+    .trim()
+    .match(/^(\d{4})\s*[-‐‑–—]?\s*(\d{3}[\dX])$/i);
+  return m ? `${m[1]}-${m[2].toUpperCase()}` : "";
 }
 
 /** every ISSN found in a free-text field ("1234-5678, 8765-4321") */
 export function allISSNs(raw: string | undefined | null): string[] {
   if (!raw) return [];
   const out: string[] = [];
-  for (const m of String(raw).matchAll(/\d{4}\s*-?\s*\d{3}[\dxX]/g)) {
+  for (const m of toHalfWidth(String(raw)).matchAll(
+    /(?<![\dX])\d{4}\s*[-‐‑–—]?\s*\d{3}[\dxX](?![\dX])/gi,
+  )) {
     const issn = normalizeISSN(m[0]);
     if (issn && !out.includes(issn)) out.push(issn);
   }

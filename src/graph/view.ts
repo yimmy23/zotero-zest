@@ -142,13 +142,8 @@ const COMPONENT_PALETTE = [
   "#a0cbe8",
 ];
 
-/**
- * Layout budget. The first WARMUP_TICKS run synchronously before the first
- * paint (a few ms for 50 nodes) so nodes start near their final positions;
- * only the tail is animated. Animating from a random cloud meant ~1s of
- * heavy motion competing with the other sections' rendering — visibly
- * janky. Now the visible motion is a short settle.
- */
+/** Layout converges in cancellable animation frames, including warm-up.
+ * No synchronous 110-tick pass can block hiding or replacing this scene. */
 const WARMUP_TICKS = 110;
 const SETTLE_TICKS = 50;
 /** simulation steps per animation frame */
@@ -407,11 +402,10 @@ export class GraphView {
       )
       .stop();
 
-    // off-screen warm-up: converge most of the way before the first paint
-    for (let i = 0; i < WARMUP_TICKS; i++) this.sim.tick();
+    // Paint seeded positions immediately; all force ticks run in frames.
     this.updatePositions();
     this.fitView();
-    this.runTicks(SETTLE_TICKS);
+    this.runTicks(WARMUP_TICKS + SETTLE_TICKS);
   }
 
   resize(): void {
@@ -681,8 +675,13 @@ export class GraphView {
       const sim = this.sim;
       if (!sim) return;
       let ticked = 0;
+      const started = Date.now();
       let maxMove = 0;
-      while (ticked < TICKS_PER_FRAME && this.tickBudget > 0) {
+      while (
+        ticked < TICKS_PER_FRAME &&
+        this.tickBudget > 0 &&
+        (ticked === 0 || Date.now() - started < 8)
+      ) {
         if (sim.alpha() < sim.alphaMin() && sim.alphaTarget() === 0) {
           this.tickBudget = 0;
           break;

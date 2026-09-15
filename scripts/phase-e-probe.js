@@ -31,6 +31,68 @@ const mk = async (fields, creators) => {
 };
 const trash = [];
 
+/* ---------- Phase C: native controls, exact copy and semantic colours ---------- */
+{
+  const row = { text: "Literal <text>", comment: "Comment\nline" };
+  const before = JSON.stringify(row);
+  check(
+    "ui.annotationCopyIsExactAndReadOnly",
+    dev.annotationActions.annotationCopyText(row) ===
+      "Literal <text>\n\nComment\nline" && JSON.stringify(row) === before,
+  );
+  const button = dev.annotationActions.annotationActionButton(
+    doc,
+    "copy",
+    "probe",
+  );
+  check(
+    "ui.annotationActionsAreNamedNativeButtons",
+    button.localName === "button" &&
+      button.type === "button" &&
+      !!button.textContent.trim(),
+  );
+  const badge = doc.createElement("span");
+  badge.className = "zest-badge";
+  dev.uiColor.setSemanticBadge(badge, [128, 128, 128], 1);
+  check(
+    "ui.autoBadgeUsesNativeTextAndPreservesNeutralColour",
+    badge.classList.contains("zest-readable-text") &&
+      !badge.style.color &&
+      badge.style.getPropertyValue("--zest-badge-rgb") === "128,128,128",
+  );
+  const sampleHost = doc.createElement("div");
+  sampleHost.style.cssText =
+    "position:fixed;left:-10000px;top:0;pointer-events:none";
+  const nativeSurface = doc.createElement("span");
+  nativeSurface.style.color = "var(--fill-primary)";
+  nativeSurface.style.backgroundColor = "var(--material-background)";
+  badge.textContent = "Probe";
+  dev.uiColor.setSemanticBadge(badge, [64, 196, 99], 0.15);
+  sampleHost.append(badge, nativeSurface);
+  doc.documentElement.appendChild(sampleHost);
+  try {
+    const badgeStyle = win.getComputedStyle(badge);
+    const nativeStyle = win.getComputedStyle(nativeSurface);
+    check(
+      "ui.autoBadgeUsesTintedBackgroundWithoutSquareMarker",
+      ["::before", "::after"].every((pseudo) =>
+        ["none", "normal"].includes(
+          win.getComputedStyle(badge, pseudo).content,
+        ),
+      ) &&
+        badgeStyle.backgroundColor !== nativeStyle.backgroundColor &&
+        badgeStyle.color === nativeStyle.color,
+      `background=${badgeStyle.backgroundColor}; native=${nativeStyle.backgroundColor}`,
+    );
+  } finally {
+    sampleHost.remove();
+  }
+  check(
+    "ui.neutralAnnotationBorderStaysNeutral",
+    dev.uiColor.readableTextColor([128, 128, 128], false).includes(" 0%,"),
+  );
+}
+
 /* ---------- author identity: strict shared matcher, entirely in memory ---------- */
 {
   const name = (family, given) => ({ family, given });
@@ -966,6 +1028,76 @@ check(
   }
 }
 
+/* ---------- journal catalogue identity and multi-ISSN parsing: pure only ---------- */
+{
+  const normalize = dev.rankNormalize;
+  const canonical = "Cancer Immunology, Immunotherapy";
+  const canonicalKey = normalize.normalizeJournal(canonical);
+  check(
+    "rank.verifiedCIIAliasHandlesCaseAndFullWidthPunctuation",
+    [
+      "Cancer Immunology, Immunotherapy : CII",
+      "cancer immunology, immunotherapy : cii.",
+      "Ｃａｎｃｅｒ Ｉｍｍｕｎｏｌｏｇｙ， Ｉｍｍｕｎｏｔｈｅｒａｐｙ： ＣＩＩ",
+    ].every(
+      (title) =>
+        normalize.journalLookupName(title) === canonical &&
+        normalize.normalizeJournal(title) === canonicalKey,
+    ),
+  );
+  check(
+    "rank.CIIAliasPreservesRealSubtitleAndHistoricalJournal",
+    [
+      "CA: A Cancer Journal for Clinicians",
+      "Cancer immunology and immunotherapy",
+    ].every(
+      (title) =>
+        normalize.journalLookupName(title) === title &&
+        normalize.normalizeJournal(title) !== canonicalKey &&
+        !normalize.journalCatalogIdentity(title),
+    ) &&
+      normalize.normalizeJournal("CA: A Cancer Journal for Clinicians") !==
+        normalize.normalizeJournal("CA"),
+  );
+  const bothISSNsAndOnlyRankField = (parsed) => {
+    const row = parsed.rows[0];
+    return (
+      parsed.rows.length === 1 &&
+      row.name === canonical &&
+      normalize.allISSNs(row.issn).sort().join(",") === "0340-7004,1432-0851" &&
+      parsed.fields.length === 1 &&
+      parsed.fields[0] === "xr" &&
+      Object.keys(row.fields).length === 1 &&
+      row.fields.xr === "医学2区"
+    );
+  };
+  check(
+    "rank.jsonDatasetKeepsPrintAndElectronicISSNsOutOfRankFields",
+    bothISSNsAndOnlyRankField(
+      dev.dataset.parseDataset(
+        JSON.stringify([
+          {
+            name: canonical,
+            pISSN: "0340-7004",
+            eISSN: "1432-0851",
+            xr: "医学2区",
+          },
+        ]),
+        "json",
+      ),
+    ),
+  );
+  check(
+    "rank.csvDatasetKeepsPrintAndElectronicISSNsOutOfRankFields",
+    bothISSNsAndOnlyRankField(
+      dev.dataset.parseDataset(
+        `name,pISSN,eISSN,xr\n"${canonical}",0340-7004,1432-0851,医学2区`,
+        "csv",
+      ),
+    ),
+  );
+}
+
 /* ---------- 10. easyScholar rank labels follow the Zotero locale ---------- */
 {
   const shortJournal = "European Journal of Cardio-Thoracic Surgery";
@@ -1055,13 +1187,14 @@ check(
   check(
     "rank.displayFollowsLocale",
     chineseUI
-      ? medDisplay.text === "医学1区" && multiDisplay.text === "综合性期刊1区"
+      ? medDisplay.text === "中科院 医学1区" &&
+          multiDisplay.text === "中科院 综合性期刊1区"
       : medDisplay.text === "CAS Z1 · Med." &&
           multiDisplay.text === "CAS Z1 · Multidisc." &&
           medDisplay.description ===
-            "CAS Journal Ranking (Upgraded) — Medicine, Zone 1" &&
+            "CAS Journal Ranking (historical) — Medicine, Zone 1" &&
           multiDisplay.description ===
-            "CAS Journal Ranking (Upgraded) — Multidisciplinary, Zone 1",
+            "CAS Journal Ranking (historical) — Multidisciplinary, Zone 1",
     `${Zotero.locale}: ${medDisplay.text} / ${multiDisplay.text}`,
   );
   const unknown = dev.rankDisplay.rankValueDisplay({
@@ -1097,12 +1230,12 @@ check(
     "rank.displayPreservesUnknownAndHandlesMigratedCache",
     unknown.text === "用户自定义分级" &&
       collidingCustom.text === "医学1区" &&
-      dataset.text === (chineseUI ? "医学1区" : "CAS Z1 · Med."),
+      dataset.text === (chineseUI ? "中科院 医学1区" : "CAS Z1 · Med."),
   );
   check(
     "rank.displayKeepsFieldMapAndLocalization",
     mapped.field === "CAS" &&
-      mappedDisplay.text === (chineseUI ? "医学1区" : "CAS Z1 · Med."),
+      mappedDisplay.text === (chineseUI ? "中科院 医学1区" : "CAS Z1 · Med."),
   );
   check(
     "rank.displayDoesNotMutateSourceValue",
@@ -1131,6 +1264,71 @@ check(
   );
 }
 
+/* ---------- default ranking and writing key remain read-only ---------- */
+{
+  const xr = { field: "xr", value: "医学2区", source: "easyscholar" };
+  const cas = { field: "sciUp", value: "医学1区", source: "easyscholar" };
+  const record = {
+    key: "zest-default-rank-probe",
+    name: "Probe",
+    values: [xr, cas],
+    updated: Date.now(),
+  };
+  const original = JSON.stringify(record);
+  const fields = ["xr", "sci", "sciif"];
+  check(
+    "rank.defaultPrefersXR",
+    dev.rankDisplay.rankFieldsForDisplay(fields, record).includes("xr") &&
+      !dev.rankDisplay.rankFieldsForDisplay(fields, record).includes("sciUp"),
+  );
+  check(
+    "rank.defaultFallsBackToHistoricalCAS",
+    dev.rankDisplay
+      .rankFieldsForDisplay(fields, { ...record, values: [cas] })
+      .includes("sciUp"),
+  );
+  check(
+    "rank.customBothSchemesSurvive",
+    dev.rankDisplay
+      .rankFieldsForDisplay(["xr", "sciUp", "sciif"], record)
+      .join(",") === "xr,sciUp,sciif",
+  );
+  check(
+    "rank.defaultSelectionNeverMutatesRecord",
+    JSON.stringify(record) === original,
+  );
+  check(
+    "rank.invalidXRDoesNotSuppressFallback",
+    dev.rankDisplay
+      .rankFieldsForDisplay(fields, {
+        ...record,
+        values: [{ ...xr, value: "医学99区" }, cas],
+      })
+      .includes("sciUp"),
+  );
+  const item = await mk({
+    title: "phase-e citation key",
+    citationKey: "Wang2025NSCLC",
+    extra: "Custom_Field: untouched",
+  });
+  trash.push(item);
+  const before = item.getField("extra");
+  check(
+    "info.citationKeyUsesNativeField",
+    dev.citationKey.citationKeyOf(item) === "Wang2025NSCLC",
+  );
+  check(
+    "info.citationKeyReadPreservesExtra",
+    item.getField("extra") === before,
+  );
+  const noKey = await mk({ title: "phase-e missing citation key" });
+  trash.push(noKey);
+  check(
+    "info.citationKeyNeverUsesInternalKey",
+    !!noKey.key && !dev.citationKey.citationKeyOf(noKey),
+  );
+}
+
 /* ---------- visible panel: offline by default and reversible ---------- */
 // Rendering the default panel must remain offline; the manual control is the
 // explicit network action. Stub the transport so this probe never sends a DOI.
@@ -1143,6 +1341,11 @@ check(
     DOI: "10.0000/zest-affiliation-probe",
   });
   trash.push(item);
+  const keyBefore = {
+    citationKey: item.getField("citationKey"),
+    extra: item.getField("extra"),
+    key: item.key,
+  };
   const request = dev.httpMod.http.requestResult;
   let requests = 0;
   dev.httpMod.http.requestResult = async () => {
@@ -1182,6 +1385,64 @@ check(
     check("info.affiliationsDefaultOffline", requests === 0 && !!button);
     const link = doc.querySelector(".zest-info-link");
     const linkStyle = link && win.getComputedStyle(link);
+    const visibleInfo = [...doc.querySelectorAll(".zest-info")].find(
+      (el) => el.getClientRects().length,
+    );
+    const keyRow = visibleInfo?.querySelector(".zest-info-citation-key");
+    const keyValue = keyRow?.querySelector(".zest-info-citation-key-value");
+    const keyCopy = keyRow?.querySelector("button");
+    check(
+      "info.emptyCitationKeyShowsExplainedDisabledPlaceholder",
+      !!keyRow?.getClientRects().length &&
+        keyValue?.classList.contains("zest-info-placeholder") &&
+        !!keyValue?.textContent.trim() &&
+        !!keyValue?.title &&
+        !!keyValue?.getAttribute("aria-label") &&
+        keyCopy?.disabled === true &&
+        !keyRow.querySelector('input,textarea,[contenteditable="true"]'),
+    );
+    const clipboard = Zotero.Utilities.Internal.copyTextToClipboard;
+    let emptyCopies = 0;
+    try {
+      Zotero.Utilities.Internal.copyTextToClipboard = () => emptyCopies++;
+      keyCopy?.click();
+      check(
+        "info.emptyCitationKeyCannotCopyGenerateOrWriteFields",
+        emptyCopies === 0 &&
+          !dev.citationKey.citationKeyOf(item) &&
+          item.getField("citationKey") === keyBefore.citationKey &&
+          item.getField("extra") === keyBefore.extra &&
+          item.key === keyBefore.key,
+      );
+    } finally {
+      Zotero.Utilities.Internal.copyTextToClipboard = clipboard;
+    }
+    const rounded = [button, link, keyCopy, doc.getElementById("zest-tb-menu")];
+    const radius = parseFloat(
+      win
+        .getComputedStyle(doc.documentElement)
+        .getPropertyValue("--zest-control-radius"),
+    );
+    const corners = [
+      "borderTopLeftRadius",
+      "borderTopRightRadius",
+      "borderBottomRightRadius",
+      "borderBottomLeftRadius",
+    ];
+    check(
+      "ui.mainButtonsShareRoundedCorners",
+      radius > 0 &&
+        rounded.every((element) => {
+          if (!element) return false;
+          const style = win.getComputedStyle(element);
+          return corners.every((corner) =>
+            style[corner]
+              .split(/\s+/)
+              .every((value) => parseFloat(value) === radius),
+          );
+        }),
+      `radius=${radius}; controls=${rounded.filter(Boolean).length}`,
+    );
     check(
       "info.linkSpacingAndSubtleBorder",
       linkStyle?.margin === "0px" &&
@@ -1204,6 +1465,27 @@ check(
         doc
           .querySelector(".zest-info")
           ?.textContent.includes("Zest Probe Institute"),
+    );
+    // Exercise Zotero's real item modify notification. Calling our refresh
+    // helper here would mask a missing notifier subscription in the plugin.
+    item.setField("citationKey", "ZestNotifierProbe");
+    await item.saveTx();
+    await delay(300);
+    check(
+      "info.savedCitationKeyRefreshesWithoutReselection",
+      doc.querySelector(".zest-info-citation-key-value")?.textContent ===
+        "ZestNotifierProbe" &&
+        doc.querySelector(".zest-info-citation-key button")?.disabled === false,
+    );
+    item.setField("citationKey", "");
+    await item.saveTx();
+    await delay(300);
+    check(
+      "info.clearedCitationKeyRefreshesWithoutReselection",
+      !!doc.querySelector(".zest-info-citation-key .zest-info-placeholder") &&
+        doc.querySelector(".zest-info-citation-key button")?.disabled ===
+          true &&
+        item.getField("extra") === keyBefore.extra,
     );
   } finally {
     dev.httpMod.http.requestResult = request;
@@ -1545,10 +1827,14 @@ check(
       const authorsIndex = bibliographyChildren.findIndex((node) =>
         node.classList.contains("zest-info-authors-block"),
       );
+      const citationKeyIndex = bibliographyChildren.findIndex((node) =>
+        node.classList.contains("zest-info-citation-key"),
+      );
       check(
         "info.sourceBeforeAuthors",
         titleIndex >= 0 &&
-          sourceIndex === titleIndex + 1 &&
+          citationKeyIndex === titleIndex + 1 &&
+          sourceIndex === citationKeyIndex + 1 &&
           authorsIndex > sourceIndex &&
           !!bibliographyChildren[sourceIndex].querySelector(
             ".zest-info-venue-name",
@@ -2069,6 +2355,275 @@ check(
   "extra.appendPreservesUserWhitespace",
   dev.extra.upsertExtraText("my note\r\n\r\n  \r\n", ["Remark"], "value") ===
     "my note\r\n\r\n  \r\n\r\nRemark: value",
+);
+
+/* ---------- Phase A: preservation and ownership regressions ---------- */
+{
+  const plan = dev.tagRename.planTagRenames(
+    [
+      ["#A", "#A/B"],
+      ["#A/B", "#A/B/B"],
+    ],
+    new Set(["#A", "#A/B"]),
+  );
+  check(
+    "tags.renameDependenciesBeforeSources",
+    JSON.stringify(plan.ordered) ===
+      JSON.stringify([
+        ["#A/B", "#A/B/B"],
+        ["#A", "#A/B"],
+      ]) && plan.merges === 0,
+  );
+  const prefix = `#PhaseE${Date.now()}`;
+  const a = await mk({ title: "Phase E rename source" });
+  const b = await mk({ title: "Phase E rename descendant" });
+  trash.push(a, b);
+  a.addTag(prefix);
+  b.addTag(`${prefix}/B`);
+  await a.saveTx();
+  await b.saveTx();
+  const nativePlan = dev.tagRename.planTagRenames(
+    [
+      [prefix, `${prefix}/B`],
+      [`${prefix}/B`, `${prefix}/B/B`],
+    ],
+    new Set([prefix, `${prefix}/B`]),
+  );
+  for (const [from, to] of nativePlan.ordered)
+    await Zotero.Tags.rename(a.libraryID, from, to);
+  check(
+    "tags.nativeRenameKeepsDistinctItems",
+    a.hasTag(`${prefix}/B`) &&
+      !a.hasTag(`${prefix}/B/B`) &&
+      b.hasTag(`${prefix}/B/B`),
+  );
+}
+{
+  const button = doc.getElementById("zest-tb-menu");
+  try {
+    button?.remove();
+    dev.toolbarMenu.installToolbarMenu(win);
+    check(
+      "toolbar.repairsLegacySweep",
+      dev.toolbarMenu.toolbarMenuInstalled(win) &&
+        doc.querySelectorAll("#zest-tb-menu").length === 1,
+    );
+  } finally {
+    dev.toolbarMenu.installToolbarMenu(win);
+  }
+}
+{
+  const target = Zotero.Utilities.Internal;
+  dev.exportPatch.uninstallExportPatch();
+  const original = target.itemToExportFormat;
+  try {
+    setPref("extra.stripOnExport", true);
+    target.itemToExportFormat = () => ({ extra: "User note\nRating: 4" });
+    dev.exportPatch.installExportPatch();
+    const prior = target.itemToExportFormat;
+    const foreign = (...args) => ({ ...prior(...args), foreign: true });
+    target.itemToExportFormat = foreign;
+    dev.exportPatch.uninstallExportPatch();
+    dev.exportPatch.installExportPatch();
+    const result = target.itemToExportFormat();
+    check(
+      "export.reinstallPreservesForeignChain",
+      result.extra === "User note\n" && result.foreign,
+    );
+    dev.exportPatch.uninstallExportPatch();
+    check(
+      "export.retiredWrappersStayDisabled",
+      target.itemToExportFormat === foreign &&
+        foreign().extra.includes("Rating: 4"),
+    );
+  } finally {
+    dev.exportPatch.uninstallExportPatch();
+    target.itemToExportFormat = original;
+    dev.exportPatch.installExportPatch();
+  }
+}
+{
+  const item = await mk({ title: "Phase E day-only history" });
+  trash.push(item);
+  try {
+    const history = {
+      libraryID: item.libraryID,
+      itemKey: item.key,
+      pages: 0,
+      page: {},
+      days: { "2026-01-01": 3600 },
+    };
+    await dev.readingStore.mergeRecord(history, "max");
+    dev.readingStore.addSample(item.libraryID, item.key, "PHASEA01", 0, 5, 1);
+    await dev.readingStore.flush();
+    await dev.readingStore.mergeRecord(history, "max");
+    const record = dev.readingStore.getForItem(item);
+    check(
+      "reading.dayOnlyTimeSurvivesLiveSampleAndReimport",
+      record?.total === 3605 && record.unallocatedSeconds === 3600,
+    );
+    const data = await dev.zestDB.loadAll();
+    check(
+      "reading.dayAndPageRowsRemainIntact",
+      data.days
+        .filter((r) => r.itemKey === item.key)
+        .reduce((sum, r) => sum + r.seconds, 0) === 3605 &&
+        data.pages
+          .filter((r) => r.itemKey === item.key)
+          .reduce((sum, r) => sum + r.seconds, 0) === 5,
+    );
+  } finally {
+    await dev.readingStore.clearItem(item.libraryID, item.key);
+  }
+}
+check(
+  "migration.ambiguousKeysNeverPickFirst",
+  dev.exportImport.resolveUniqueLibrary("SAMEKEY1", [1, 2], () => true) ===
+    "ambiguous",
+);
+check(
+  "cite.replacementPreservesUserLineEndings",
+  dev.citeExtra.withCitationLine(
+    "User\r\nCitations: 42 (Crossref) [2026-01-01]\nOther\n\n",
+    "Citations: 43 (Crossref) [2026-01-02]",
+  ) === "User\r\nCitations: 43 (Crossref) [2026-01-02]\nOther\n\n",
+);
+{
+  const target = { kind: "attachment", libraryID: 1, key: "SUPPLEM1" };
+  const config = dev.configModule.sanitizeConfig({
+    tabSessions: [
+      {
+        id: "phase-a",
+        name: "phase-a",
+        items: ["1/PARENT01", target],
+        selected: target,
+      },
+    ],
+  });
+  check(
+    "tabs.exactTargetAndLegacySessionSurviveConfig",
+    config.tabSessions[0]?.items[0] === "1/PARENT01" &&
+      config.tabSessions[0]?.items[1].key === "SUPPLEM1" &&
+      config.tabSessions[0]?.selected?.key === "SUPPLEM1",
+  );
+}
+
+/* ---------- hidden graph work stops even when items have no creators ---------- */
+{
+  let reads = 0,
+    cancelled = false;
+  const empty = Array.from({ length: 1000 }, () => ({
+    getCreators() {
+      reads++;
+      return [];
+    },
+  }));
+  try {
+    await dev.authorIdentity.buildAuthorResolverAsync(empty, {
+      maxSteps: 1,
+      shouldContinue: () => reads < 1,
+    });
+  } catch (error) {
+    cancelled = error.name === "WorkCancelled";
+  }
+  check("graph.creatorlessScanYieldsAndCancels", cancelled && reads === 1);
+  let graphReads = 0;
+  await dev.graphBuild.buildGraph(
+    [
+      {
+        isRegularItem() {
+          graphReads++;
+          return true;
+        },
+      },
+    ],
+    "author",
+    { maxNodes: 250, shouldContinue: () => false },
+  );
+  check("graph.cancelledBuildDoesNotReadItems", graphReads === 0);
+}
+
+/* ---------- Phase B: whole-file atomicity, tag branches and parsing ---------- */
+{
+  const first = await mk({ title: "Phase B atomic first" });
+  const second = await mk({ title: "Phase B atomic second" });
+  trash.push(first, second);
+  try {
+    await dev.readingStore.mergeRecord(
+      {
+        libraryID: second.libraryID,
+        itemKey: second.key,
+        days: { "2026-09-15": 100 },
+      },
+      "max",
+    );
+    let rejected = false;
+    try {
+      await dev.readingStore.mergeRecords(
+        [first, second].map((item) => ({
+          libraryID: item.libraryID,
+          itemKey: item.key,
+          page: { 0: 60 },
+        })),
+        "sum",
+      );
+    } catch {
+      rejected = true;
+    }
+    check(
+      "reading.invalidLaterRecordRejectsWholeImport",
+      rejected &&
+        !dev.readingStore.getForItem(first)?.total &&
+        dev.readingStore.getForItem(second)?.total === 100,
+    );
+    const rows = await dev.zestDB.loadAll();
+    check(
+      "reading.rejectedFileDoesNotPersistEarlierRows",
+      !rows.pages.some(
+        (row) => row.libraryID === first.libraryID && row.itemKey === first.key,
+      ),
+    );
+  } finally {
+    for (const item of [first, second])
+      await dev.readingStore.clearItem(item.libraryID, item.key);
+  }
+}
+{
+  const matcher = dev.tagMatch.parseTagRule("/^#(.+)/y");
+  check(
+    "tags.stickyRuleHasNoAlternatingState",
+    Array.from({ length: 6 }, () => matcher.test("#Method/Cohort")).every(
+      (value) => value === "Method/Cohort",
+    ),
+  );
+  const filter = dev.tagBranches.compileTagBranches({
+    branches: [
+      { path: "Method", names: [] },
+      { path: "Design", names: [] },
+    ],
+    linkSymbol: "/",
+    matchRule: "/^#(.+)/",
+  });
+  check(
+    "tags.branchesUseDelimiterAndOrWithinAndBetween",
+    filter(["#Method/Cohort", "#Design/Prospective"]) &&
+      !filter(["#Methodology", "#Design/Prospective"]) &&
+      !filter(["#Method/Cohort"]),
+  );
+}
+check(
+  "extra.replacePreservesMixedLineEndings",
+  dev.extra.upsertExtraText(
+    "User  \r\nrate: 1\nOther\r\n\r\n",
+    ["rate"],
+    "3",
+  ) === "User  \r\nrate: 3\nOther\r\n\r\n",
+);
+check(
+  "rank.unknownAndNegativeNeverBecomeNumbers",
+  ["N/A", "-12", "unknown", "1.2.3"].every(
+    (value) => dev.rankTypes.parseRankNumber(value) === undefined,
+  ) && dev.rankTypes.parseRankNumber("0") === 0,
 );
 
 /* ---------- cleanup ---------- */

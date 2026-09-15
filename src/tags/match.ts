@@ -30,7 +30,9 @@ export function parseTagRule(raw: string | undefined | null): TagMatcher {
   if (re) {
     let rx: RegExp | null = null;
     try {
-      rx = new RegExp(re[1], re[2].replace(/g/g, ""));
+      // Cached matchers are predicates, so neither global nor sticky state
+      // may carry a lastIndex from one tag (or render) to the next.
+      rx = new RegExp(re[1], re[2].replace(/[gy]/g, ""));
     } catch {
       rx = null;
     }

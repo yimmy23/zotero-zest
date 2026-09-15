@@ -19,6 +19,7 @@ const reCache = new Map<string, RegExp>();
 // A failed save can leave newer concurrent edits in memory. An explicit retry
 // must reach persistence even when its requested owned value already matches.
 const failedExtraSaves = new WeakSet<Zotero.Item>();
+const extraWrites = new WeakMap<Zotero.Item, Promise<boolean>>();
 /** memoised (key arrays are module constants; no g/y flag so sharing is safe) */
 function lineRe(keys: string[]): RegExp {
   const k = keys.join("\u0001");
@@ -64,51 +65,39 @@ export function upsertExtraText(
   value: string | null,
 ): string | null {
   const re = lineRe(keys);
-  // rewrite one line, never the others' endings: an Extra pasted from Windows
-  // keeps its CRLF
   const eol = extra.includes("\r\n") ? "\r\n" : "\n";
-  const lines = extra ? extra.split(/\r?\n/) : [];
-  const out: string[] = [];
   let done = false;
-  let changed = false;
   // only the spelling we actually rewrote counts as a duplicate: `rate:` and
   // `Rating:` are different lines to the user (one may be another plugin's, or
   // a deliberate note), and deleting the other spelling loses data we never
   // showed
   let writtenKey = "";
-  for (const line of lines) {
+  // A line owns its following delimiter, not the previous line's. Preserve
+  // every untouched slice, including mixed endings and trailing whitespace.
+  const next = extra.replace(/([^\r\n]*)(\r\n|\n|$)/g, (raw, line, ending) => {
     const m = line.match(re);
     if (m && !done) {
       done = true;
       writtenKey = m[1].toLowerCase();
-      if (value === null) {
-        changed = true;
-        continue; // drop
-      }
-      const next = `${m[1]}: ${value}`;
-      if (next !== line) changed = true;
-      out.push(next);
-      continue;
+      return value === null ? "" : `${m[1]}: ${value}${ending}`;
     }
     if (m && done && m[1].toLowerCase() === writtenKey) {
       // a second line with the SAME key: that one is a duplicate, drop it
-      changed = true;
-      continue;
+      return "";
     }
-    out.push(line);
-  }
+    return raw;
+  });
   if (!done && value !== null) {
     // Extra is user-authored text, including intentional trailing blank lines.
     // Append without normalising existing mixed LF/CRLF line endings.
     return `${extra}${extra ? eol : ""}${keys[0]}: ${value}`;
   }
-  if (!changed) return null;
-  return out.join(eol);
+  return next === extra ? null : next;
 }
 
 async function saveExtraText(item: Zotero.Item, before: string, next: string) {
-  item.setField("extra", next);
   try {
+    item.setField("extra", next);
     await item.saveTx({ skipSelect: true } as any);
     failedExtraSaves.delete(item);
   } catch (error) {
@@ -125,23 +114,49 @@ async function saveExtraText(item: Zotero.Item, before: string, next: string) {
   }
 }
 
+/**
+ * Serialize owned Extra edits and compute each change from the latest text.
+ * A failed save must be retried even if a concurrent editor left the requested
+ * value in memory. Only restore our snapshot while nobody has changed it.
+ * The optional guard is checked after waiting and immediately before writing.
+ */
+export async function mutateExtraText(
+  item: Zotero.Item,
+  mutate: (extra: string) => string | null,
+  shouldContinue: () => boolean = () => true,
+): Promise<boolean> {
+  const previous = extraWrites.get(item);
+  const pending = (async () => {
+    if (previous) await previous.catch(() => false);
+    if (!shouldContinue()) return false;
+    let extra: string;
+    try {
+      extra = (item.getField("extra") as string) || "";
+    } catch {
+      // Preserve the existing no-op for unloaded item data.
+      return false;
+    }
+    const next = mutate(extra) ?? extra;
+    if (next === extra && !failedExtraSaves.has(item)) return false;
+    if (!shouldContinue()) return false;
+    await saveExtraText(item, extra, next);
+    return true;
+  })();
+  extraWrites.set(item, pending);
+  try {
+    return await pending;
+  } finally {
+    if (extraWrites.get(item) === pending) extraWrites.delete(item);
+  }
+}
+
 /** Upsert one Extra line and save the item (skips the write when unchanged). */
 export async function setExtraLine(
   item: Zotero.Item,
   keys: string[],
   value: string | null,
 ): Promise<boolean> {
-  let extra: string;
-  try {
-    extra = (item.getField("extra") as string) || "";
-  } catch {
-    // unloaded item data
-    return false;
-  }
-  const next = upsertExtraText(extra, keys, value);
-  if (next === null && !failedExtraSaves.has(item)) return false;
-  await saveExtraText(item, extra, next ?? extra);
-  return true;
+  return mutateExtraText(item, (extra) => upsertExtraText(extra, keys, value));
 }
 
 /**
@@ -152,24 +167,14 @@ export async function setExtraLines(
   item: Zotero.Item,
   entries: Array<[string[], string | null]>,
 ): Promise<boolean> {
-  let extra: string;
-  try {
-    extra = (item.getField("extra") as string) || "";
-  } catch {
-    return false;
-  }
-  let next = extra;
-  let changed = false;
-  for (const [keys, value] of entries) {
-    const r = upsertExtraText(next, keys, value);
-    if (r !== null) {
-      next = r;
-      changed = true;
+  return mutateExtraText(item, (extra) => {
+    let next = extra;
+    for (const [keys, value] of entries) {
+      const r = upsertExtraText(next, keys, value);
+      if (r !== null) next = r;
     }
-  }
-  if (!changed && !failedExtraSaves.has(item)) return false;
-  await saveExtraText(item, extra, next);
-  return true;
+    return next;
+  });
 }
 
 /* ------------------------------------------------------------------ */

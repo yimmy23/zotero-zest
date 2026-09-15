@@ -99,6 +99,113 @@ INSERT INTO item_meta (libraryID, itemKey, firstRead, lastRead)
 DROP TABLE item_meta_v1;
 `;
 
+async function runScript(conn: any, sql: string) {
+  // executeCached rejects multi-statement SQL.
+  for (const stmt of sql.split(";")) {
+    const s = stmt.trim();
+    if (s) await conn.queryAsync(s);
+  }
+}
+
+/** Only recognise layouts whose columns and primary keys we understand. */
+async function hasLayout(conn: any, version: 1 | 2): Promise<boolean> {
+  const tables: Record<string, Array<[string, number]>> = {
+    page_time: [
+      ["libraryID", 1],
+      ["itemKey", 2],
+      ...(version === 2 ? ([["attKey", 3]] as Array<[string, number]>) : []),
+      ["pageIndex", version === 2 ? 4 : 3],
+      ["seconds", 0],
+    ],
+    daily_time: [
+      ["libraryID", 1],
+      ["itemKey", 2],
+      ["day", 3],
+      ["seconds", 0],
+    ],
+    item_meta: [
+      ["libraryID", 1],
+      ["itemKey", 2],
+      ...(version === 1 ? ([["pages", 0]] as Array<[string, number]>) : []),
+      ["firstRead", 0],
+      ["lastRead", 0],
+    ],
+  };
+  if (version === 2) {
+    tables.att_meta = [
+      ["libraryID", 1],
+      ["itemKey", 2],
+      ["attKey", 3],
+      ["pages", 0],
+    ];
+  } else if (await conn.tableExists("att_meta")) {
+    return false;
+  }
+  for (const [table, expected] of Object.entries(tables)) {
+    const rows = await conn.queryAsync(`PRAGMA table_info(${table})`);
+    if (
+      rows.length !== expected.length ||
+      expected.some(
+        ([name, pk]) =>
+          !rows.some((r: any) => r.name === name && Number(r.pk) === pk),
+      )
+    )
+      return false;
+  }
+  return true;
+}
+
+/** Atomic schema upgrade, also used by the isolated SQLite regression probe. */
+export async function initializeReadingSchema(conn: any): Promise<void> {
+  const hasMeta = await conn.tableExists("meta");
+  const raw = hasMeta
+    ? await conn.valueQueryAsync("SELECT value FROM meta WHERE key='schema'")
+    : false;
+  const hasPages = await conn.tableExists("page_time");
+  const version = raw ? Number(raw) : hasPages ? 1 : 0;
+  if (!Number.isInteger(version) || version < 0 || version > SCHEMA_VERSION) {
+    throw new Error(`Unsupported reading schema: ${String(raw)}`);
+  }
+  // An interrupted transaction rolls back these tables. Leftovers instead
+  // indicate an unknown/manual partial repair: retain them and stop writing.
+  for (const table of ["page_time_v1", "item_meta_v1"]) {
+    if (await conn.tableExists(table))
+      throw new Error(`Unrecognised reading schema: ${table} remains`);
+  }
+  let migrate = false;
+  if (version === 1) {
+    if (await hasLayout(conn, 1)) migrate = true;
+    else if (!(await hasLayout(conn, 2)))
+      throw new Error("Unrecognised reading schema 1 layout");
+    // Old builds committed the v2 tables before updating the v1 marker. A
+    // complete v2 layout needs only its marker repaired; never rerun the copy.
+    // Keep a distinct native SQLite backup (including WAL) before either path.
+    const suffix = `pre-schema-2-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    if (!(await conn.backupDatabase(suffix, true)))
+      throw new Error("Reading schema backup failed; upgrade deferred");
+  } else if (version === 2) {
+    if (!(await hasLayout(conn, 2)))
+      throw new Error("Unrecognised reading schema 2 layout");
+  } else {
+    for (const table of ["att_meta", "daily_time", "item_meta"]) {
+      if (await conn.tableExists(table))
+        throw new Error(`Unversioned partial reading schema: ${table}`);
+    }
+  }
+  await conn.executeTransaction(async () => {
+    if (migrate) await runScript(conn, MIGRATE_1_TO_2);
+    await runScript(conn, SCHEMA_V2);
+    await conn.queryAsync(
+      "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)",
+      [String(SCHEMA_VERSION)],
+    );
+  });
+  if (version === 1)
+    ztoolkit.log(
+      migrate ? "[db] migrated schema 1 → 2" : "[db] repaired schema 2 marker",
+    );
+}
+
 export interface PageRow {
   libraryID: number;
   itemKey: string;
@@ -149,42 +256,10 @@ class ZestDB {
     return this.initPromise;
   }
 
-  private async runScript(sql: string) {
-    // one statement per call: executeCached rejects multi-statement SQL
-    for (const stmt of sql.split(";")) {
-      const s = stmt.trim();
-      if (s) await this.conn.queryAsync(s);
-    }
-  }
-
   private async _init(): Promise<boolean> {
     try {
       this.conn = new (Zotero as any).DBConnection(config.addonRef);
-      await this.conn.queryAsync(
-        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)",
-      );
-      const raw = await this.conn.valueQueryAsync(
-        "SELECT value FROM meta WHERE key='schema'",
-      );
-      const hasPageTime = await this.conn.tableExists("page_time");
-      let version = raw ? Number(raw) : hasPageTime ? 1 : 0;
-      if (version > SCHEMA_VERSION) {
-        ztoolkit.log(
-          `[db] schema ${version} is newer than this build (${SCHEMA_VERSION}); read-only caution`,
-        );
-      }
-      if (version === 1) {
-        await this.conn.executeTransaction(async () => {
-          await this.runScript(MIGRATE_1_TO_2);
-        });
-        version = 2;
-        ztoolkit.log("[db] migrated schema 1 → 2");
-      }
-      await this.runScript(SCHEMA_V2);
-      await this.conn.queryAsync(
-        "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)",
-        [String(Math.max(version, SCHEMA_VERSION))],
-      );
+      await initializeReadingSchema(this.conn);
       this.ok = true;
     } catch (e) {
       const now = Date.now();

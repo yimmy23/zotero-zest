@@ -2,7 +2,7 @@
  * The `Map` rewrite grammar, kept compatible with zotero-style so an existing
  * configuration can be pasted in:
  *
- *   sci=中科院分区          exact match → replacement
+ *   sciUp=中科院分区        exact match → replacement
  *   /^JCR ?(\d)$/=Q$1       regex (with $1 back-references) → replacement
  *   sciwarn=                empty replacement → hide this entry
  *
@@ -39,7 +39,9 @@ export function parseRewriteRules(
       try {
         rules.push({
           raw: entry,
-          re: new RegExp(re[1], re[2].replace(/g/g, "")),
+          // Match + replace reuse this expression. Stateful flags would let
+          // the test advance lastIndex past the match before replacement.
+          re: new RegExp(re[1], re[2].replace(/[gy]/g, "")),
           to: right,
         });
       } catch {

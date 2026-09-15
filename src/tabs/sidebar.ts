@@ -18,6 +18,7 @@ import {
   itemKeyOf,
   pruneGroups,
   type TabGroup,
+  type TabSessionTarget,
 } from "./model";
 import { iconButton } from "../ui/icons";
 import { createDOMOwnership } from "../utils/domOwnership";
@@ -45,11 +46,21 @@ interface SidebarState {
   splitter: XULish;
   list: HTMLElement;
   search: HTMLInputElement;
+  library: HTMLButtonElement;
+  entries: FocusEntry[];
+  focusKey?: string;
   query: string;
   nativeRoot: HTMLElement;
   observer?: MutationObserver;
   notifierID?: string;
   refreshTimer?: number;
+}
+
+interface FocusEntry {
+  key: string;
+  button: HTMLButtonElement;
+  close?: HTMLButtonElement;
+  groupID?: string;
 }
 
 type XULish = Element & { setAttribute(name: string, value: string): void };
@@ -126,6 +137,8 @@ export function showSidebar(win: Window) {
   const box = doc.createXULElement("vbox") as unknown as XULish;
   box.id = `${config.addonRef}-tabbar`;
   box.classList.add("zest-tabbar");
+  box.setAttribute("role", "navigation");
+  box.setAttribute("aria-label", getString("tabs-sidebar-label"));
   const width = Math.min(
     MAX_WIDTH,
     Math.max(MIN_WIDTH, Number(getPref("tabs.width")) || 220),
@@ -138,6 +151,7 @@ export function showSidebar(win: Window) {
   search.type = "search";
   search.className = "zest-tabbar-search";
   search.placeholder = getString("tabs-search");
+  search.setAttribute("aria-label", getString("tabs-search"));
   search.addEventListener(
     "input",
     guard("tabs search", () => {
@@ -165,8 +179,51 @@ export function showSidebar(win: Window) {
 
   const list = doc.createElement("div");
   list.className = "zest-tabbar-list";
+  list.setAttribute("role", "list");
+  list.setAttribute("aria-label", getString("tabs-documents"));
+
+  // Library is never filtered, grouped or scrolled out with the documents.
+  const library = doc.createElement("button");
+  library.type = "button";
+  library.className = "zest-tabbar-library";
+  library.textContent = getString("tabs-library");
+  library.addEventListener(
+    "click",
+    guard("tabs library", () => {
+      if (!liveSidebar(win, library)) return;
+      const tab = (win as any).Zotero_Tabs._tabs.find(
+        (t: any) => t.type === "library",
+      );
+      if (tab) selectTab(win, tab.id);
+    }),
+  );
+  library.addEventListener(
+    "keydown",
+    guard("tabs library key", (event: KeyboardEvent) => {
+      const state = liveSidebar(win, library);
+      if (
+        !state ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey
+      )
+        return;
+      const entry =
+        event.key === "End"
+          ? state.entries.at(-1)
+          : ["ArrowDown", "Home"].includes(event.key)
+            ? state.entries[0]
+            : undefined;
+      if (entry) {
+        event.preventDefault();
+        focusEntry(state, entry);
+      }
+    }),
+  );
 
   box.appendChild(header as unknown as Node);
+  box.appendChild(library as unknown as Node);
   box.appendChild(list as unknown as Node);
 
   const splitter = doc.createXULElement("splitter") as unknown as XULish;
@@ -184,6 +241,8 @@ export function showSidebar(win: Window) {
     splitter,
     list,
     search,
+    library,
+    entries: [],
     query: "",
     nativeRoot,
   };
@@ -267,9 +326,8 @@ interface TabInfo {
   itemKey: string;
   item?: Zotero.Item;
   selected: boolean;
-  /** what a saved session stores for this tab: the item key for readers,
-   *  "note:<libraryID>/<key>" for note tabs ("" = not restorable) */
-  sessionKey: string;
+  /** Exact opened document, independently of the parent used for grouping. */
+  sessionTarget?: TabSessionTarget;
 }
 
 function readTabs(win: Window): TabInfo[] {
@@ -277,7 +335,7 @@ function readTabs(win: Window): TabInfo[] {
   const out: TabInfo[] = [];
   for (const tab of T?._tabs ?? []) {
     let item: Zotero.Item | undefined;
-    let sessionKey = "";
+    let sessionTarget: TabSessionTarget | undefined;
     try {
       // `tab.data.itemID` is written by Zotero_Tabs.add() and round-trips
       // through session.json, so it is there for reader, reader-unloaded and
@@ -289,13 +347,24 @@ function readTabs(win: Window): TabInfo[] {
         (Zotero.Reader as any).getByTabID?.(tab.id)?.itemID;
       if (itemID) {
         const opened = Zotero.Items.get(itemID) as Zotero.Item;
-        // groups are keyed by the PARENT (a note and its PDF sit together);
-        // a session must reopen the note itself, not the parent's PDF
+        // Groups share the parent, but a session must reopen this exact
+        // attachment/note: a supplementary PDF is a different document.
         item = ((opened as any)?.parentItem as Zotero.Item) || opened;
         if (String(tab.type).startsWith("note") && opened?.isNote?.()) {
-          sessionKey = `note:${opened.libraryID}/${opened.key}`;
-        } else {
-          sessionKey = itemKeyOf(item);
+          sessionTarget = {
+            kind: "note",
+            libraryID: opened.libraryID,
+            key: opened.key,
+          };
+        } else if (
+          String(tab.type).startsWith("reader") &&
+          opened?.isAttachment?.()
+        ) {
+          sessionTarget = {
+            kind: "attachment",
+            libraryID: opened.libraryID,
+            key: opened.key,
+          };
         }
       }
     } catch {
@@ -308,7 +377,7 @@ function readTabs(win: Window): TabInfo[] {
       itemKey: itemKeyOf(item),
       item,
       selected: tab.id === T.selectedID,
-      sessionKey,
+      sessionTarget,
     });
   }
   return out;
@@ -324,16 +393,142 @@ function scheduleRender(win: Window, delay = 120) {
   }, delay);
 }
 
-export function renderList(win: Window) {
+interface FocusSnapshot {
+  key: string;
+  index: number;
+  close: boolean;
+  groupID?: string;
+}
+
+function liveSidebar(
+  win: Window,
+  element: HTMLElement,
+): SidebarState | undefined {
+  const state = bars.get(win);
+  return state &&
+    addon.data.alive &&
+    element.isConnected &&
+    ownership.owns(state.nativeRoot, NATIVE_VISIBILITY)
+    ? state
+    : undefined;
+}
+
+function captureFocus(state: SidebarState): FocusSnapshot | undefined {
+  const active = state.win.document.activeElement;
+  const index = state.entries.findIndex(
+    (entry) => entry.button === active || entry.close === active,
+  );
+  if (index < 0) return;
+  const entry = state.entries[index];
+  return {
+    key: entry.key,
+    index,
+    close: entry.close === active,
+    groupID: entry.groupID,
+  };
+}
+
+/** Tab visits one document/group and its close control; arrows move the row stop. */
+function setRovingEntry(state: SidebarState, key: string) {
+  state.focusKey = key;
+  for (const entry of state.entries) {
+    const tabIndex = entry.key === key ? 0 : -1;
+    entry.button.tabIndex = tabIndex;
+    if (entry.close) entry.close.tabIndex = tabIndex;
+  }
+}
+
+function focusEntry(state: SidebarState, entry: FocusEntry, close = false) {
+  setRovingEntry(state, entry.key);
+  (close && entry.close ? entry.close : entry.button).focus({
+    preventScroll: true,
+  });
+  entry.button.scrollIntoView?.({ block: "nearest" });
+}
+
+function bindNavigation(
+  win: Window,
+  entry: FocusEntry,
+  activate: () => void,
+  group?: TabGroup,
+) {
+  const state = bars.get(win)!;
+  state.entries.push(entry);
+  entry.button.setAttribute("data-focus-key", entry.key);
+  const onFocus = () => {
+    if (liveSidebar(win, entry.button)) setRovingEntry(state, entry.key);
+  };
+  entry.button.addEventListener("focus", onFocus);
+  entry.close?.addEventListener("focus", onFocus);
+  const onKey = guard("tabs navigation", (event: KeyboardEvent) => {
+    if (
+      !liveSidebar(win, entry.button) ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return;
+    const index = state.entries.indexOf(entry);
+    let target: FocusEntry | undefined;
+    if (event.key === "ArrowDown")
+      target = state.entries[Math.min(index + 1, state.entries.length - 1)];
+    else if (event.key === "ArrowUp") {
+      if (index === 0) {
+        event.preventDefault();
+        state.library.focus();
+        return;
+      }
+      target = state.entries[index - 1];
+    } else if (event.key === "Home") target = state.entries[0];
+    else if (event.key === "End") target = state.entries.at(-1);
+    else if (
+      (event.key === "ArrowLeft" && group && !group.collapsed) ||
+      (event.key === "ArrowRight" && group?.collapsed)
+    ) {
+      event.preventDefault();
+      activate();
+      return;
+    } else if (event.key === "ArrowRight" && group)
+      target = state.entries[index + 1];
+    else if (event.key === "ArrowLeft" && entry.groupID)
+      target = state.entries.find((e) => e.key === `group:${entry.groupID}`);
+    else if (
+      (event.key === "Enter" || event.key === " ") &&
+      event.target !== entry.close
+    ) {
+      event.preventDefault();
+      activate();
+      return;
+    }
+    if (target) {
+      event.preventDefault();
+      focusEntry(state, target);
+    }
+  });
+  entry.button.addEventListener("keydown", onKey);
+  entry.close?.addEventListener("keydown", onKey);
+}
+
+export function renderList(win: Window, restoreFocus?: FocusSnapshot) {
   const state = bars.get(win);
   if (!state || !ownership.owns(state.nativeRoot, NATIVE_VISIBILITY)) return;
   const doc = win.document;
   const list = state.list;
+  const focused = restoreFocus || captureFocus(state);
+  const previousKey = state.focusKey;
   list.textContent = "";
+  state.entries = [];
 
-  const tabs = readTabs(win)
-    // the library tab is not a document; Zotero always keeps it and it cannot
-    // be closed or grouped, so it does not belong in the list
+  const allTabs = readTabs(win);
+  const library = allTabs.find((tab) => tab.type === "library");
+  state.library.disabled = !library;
+  state.library.setAttribute(
+    "aria-current",
+    library?.selected ? "page" : "false",
+  );
+  state.library.classList.toggle("selected", !!library?.selected);
+  const tabs = allTabs
     .filter((t) => t.type !== "library")
     .filter((t) => !state.query || t.title.toLowerCase().includes(state.query));
   const all = groups();
@@ -353,7 +548,8 @@ export function renderList(win: Window) {
     if (!members?.length) continue;
     list.appendChild(groupHeader(doc, win, group, members.length));
     if (!group.collapsed) {
-      for (const tab of members) list.appendChild(tabRow(doc, win, tab));
+      for (const tab of members)
+        list.appendChild(tabRow(doc, win, tab, group.id));
     }
   }
   for (const tab of ungrouped) list.appendChild(tabRow(doc, win, tab));
@@ -361,9 +557,29 @@ export function renderList(win: Window) {
   if (!tabs.length) {
     const empty = doc.createElement("div");
     empty.className = "zest-tabbar-empty";
+    empty.setAttribute("role", "listitem");
     empty.textContent = getString("tabs-empty");
     list.appendChild(empty);
   }
+
+  const selectedKey = `tab:${allTabs.find((tab) => tab.selected)?.id}`;
+  const selected = state.entries.find((entry) => entry.key === selectedKey);
+  const target =
+    state.entries.find(
+      (entry) => entry.key === (focused?.key || previousKey),
+    ) ||
+    (focused?.groupID
+      ? state.entries.find((entry) => entry.key === `group:${focused.groupID}`)
+      : undefined) ||
+    (focused
+      ? state.entries[Math.min(focused.index, state.entries.length - 1)]
+      : selected) ||
+    state.entries[0];
+  if (target) {
+    setRovingEntry(state, target.key);
+    if (focused)
+      focusEntry(state, target, focused.key === target.key && focused.close);
+  } else if (focused) state.library.focus();
 }
 
 function groupHeader(
@@ -372,45 +588,70 @@ function groupHeader(
   group: TabGroup,
   count: number,
 ): HTMLElement {
-  const el = doc.createElement("div");
+  const wrapper = doc.createElement("div");
+  wrapper.setAttribute("role", "listitem");
+  const el = doc.createElement("button");
+  el.type = "button";
   el.className = "zest-tabbar-group";
+  el.setAttribute("aria-expanded", String(!group.collapsed));
   const twisty = doc.createElement("span");
   twisty.className = "zest-tabbar-twisty";
   twisty.textContent = group.collapsed ? "▸" : "▾";
+  twisty.setAttribute("aria-hidden", "true");
   el.appendChild(twisty);
   const name = doc.createElement("span");
   name.className = "zest-tabbar-group-name";
   name.textContent = `${group.name} (${count})`;
   el.appendChild(name);
-  el.addEventListener(
-    "click",
-    guard("tabs group toggle", () => {
-      setGroupCollapsed(group.id, !group.collapsed);
-      renderList(win);
-    }),
+  const activate = () => {
+    if (!liveSidebar(win, el)) return;
+    setGroupCollapsed(group.id, !group.collapsed);
+    renderList(win);
+  };
+  bindNavigation(
+    win,
+    { key: `group:${group.id}`, button: el },
+    activate,
+    group,
   );
+  el.addEventListener("click", guard("tabs group toggle", activate));
   el.addEventListener(
     "contextmenu",
     guard("tabs group menu", (ev: MouseEvent) => {
+      if (!liveSidebar(win, el)) return;
       ev.preventDefault();
+      el.focus();
       showGroupMenu(win, group, ev.screenX, ev.screenY);
     }),
   );
-  return el;
+  wrapper.appendChild(el);
+  return wrapper;
 }
 
-function tabRow(doc: Document, win: Window, tab: TabInfo): HTMLElement {
+function tabRow(
+  doc: Document,
+  win: Window,
+  tab: TabInfo,
+  groupID?: string,
+): HTMLElement {
   const row = doc.createElement("div");
   row.className = "zest-tabbar-row";
+  row.setAttribute("role", "listitem");
   if (tab.selected) row.classList.add("selected");
   row.setAttribute("data-tab", tab.id);
   row.draggable = true;
 
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "zest-tabbar-tab";
+  button.setAttribute("aria-current", tab.selected ? "page" : "false");
   const label = doc.createElement("span");
   label.className = "zest-tabbar-title";
   label.textContent = tab.title || getString("tabs-untitled");
-  row.appendChild(label);
+  button.appendChild(label);
+  row.appendChild(button);
 
+  const entry: FocusEntry = { key: `tab:${tab.id}`, button, groupID };
   {
     const close = iconButton(
       doc,
@@ -419,28 +660,44 @@ function tabRow(doc: Document, win: Window, tab: TabInfo): HTMLElement {
       "zest-tabbar-close",
       12,
     );
+    close.type = "button";
+    close.setAttribute(
+      "aria-label",
+      `${getString("tabs-close")}: ${tab.title || getString("tabs-untitled")}`,
+    );
+    entry.close = close;
     close.addEventListener(
       "click",
       guard("tabs close", (ev: Event) => {
         ev.stopPropagation();
+        if (!liveSidebar(win, close)) return;
         closeTab(win, tab.id);
       }),
     );
     row.appendChild(close);
   }
 
-  row.addEventListener(
-    "click",
-    guard("tabs select", () => selectTab(win, tab.id)),
-  );
+  const activate = () => {
+    const state = liveSidebar(win, button);
+    if (!state) return;
+    focusEntry(state, entry);
+    selectTab(win, tab.id);
+  };
+  bindNavigation(win, entry, activate);
+
+  row.addEventListener("click", guard("tabs select", activate));
   row.addEventListener(
     "contextmenu",
     guard("tabs row menu", (ev: MouseEvent) => {
+      const state = liveSidebar(win, button);
+      if (!state) return;
       ev.preventDefault();
+      focusEntry(state, entry);
       showTabMenu(win, tab, ev.screenX, ev.screenY);
     }),
   );
   row.addEventListener("dragstart", (ev: Event) => {
+    if (!liveSidebar(win, button)) return;
     try {
       (ev as DragEvent).dataTransfer?.setData("text/plain", tab.id);
     } catch {
@@ -451,6 +708,7 @@ function tabRow(doc: Document, win: Window, tab: TabInfo): HTMLElement {
   row.addEventListener(
     "drop",
     guard("tabs drop", (ev: Event) => {
+      if (!liveSidebar(win, button)) return;
       const drag = ev as DragEvent;
       drag.preventDefault();
       const draggedID = drag.dataTransfer?.getData("text/plain");
@@ -466,8 +724,17 @@ function tabRow(doc: Document, win: Window, tab: TabInfo): HTMLElement {
 /* ------------------------------------------------------------------ */
 
 function selectTab(win: Window, id: string) {
+  const state = bars.get(win);
+  const focused = state && captureFocus(state);
   try {
-    (win as any).Zotero_Tabs.select(id);
+    // Zotero otherwise schedules a refocus hook which can await reader loading
+    // and steal focus after this render. Its own keyboard option suppresses it.
+    (win as any).Zotero_Tabs.select(
+      id,
+      false,
+      focused ? { keepTabFocused: true } : {},
+    );
+    renderList(win, focused);
   } catch (e) {
     // select() throws on an unknown id since 8.0
     ztoolkit.log("[tabs] select failed", e);
@@ -475,17 +742,48 @@ function selectTab(win: Window, id: string) {
   }
 }
 
-function closeTab(win: Window, id: string) {
+/** Preserve Zotero's close-selection order while suppressing its async refocus. */
+function closeNativeTabs(
+  win: Window,
+  ids: string | string[],
+  preserveFocus: boolean,
+) {
+  const tabs = (win as any).Zotero_Tabs;
+  const closing = new Set(typeof ids === "string" ? [ids] : ids);
+  if (preserveFocus && closing.has(tabs.selectedID)) {
+    const open = tabs._tabs as { id: string }[];
+    const index = open.findIndex((tab) => tab.id === tabs.selectedID);
+    // Match Zotero 10's jump-back target first, then right/left adjacency.
+    const previous = open.find(
+      (tab) => tab.id === tabs._prevSelectedID && !closing.has(tab.id),
+    );
+    const next =
+      previous ||
+      [...open.slice(index + 1), ...open.slice(0, index).reverse()].find(
+        (tab) => !closing.has(tab.id),
+      );
+    if (next) tabs.select(next.id, false, { keepTabFocused: true });
+  }
+  // Preselection keeps close() from scheduling another reader/library refocus.
+  tabs.close(ids);
+}
+
+function closeTab(win: Window, id: string, restoreFocus?: FocusSnapshot) {
+  const state = bars.get(win);
+  const focused = restoreFocus || (state && captureFocus(state));
   try {
-    (win as any).Zotero_Tabs.close(id);
+    closeNativeTabs(win, id, !!focused);
   } catch (e) {
     ztoolkit.log("[tabs] close failed", e);
   }
+  renderList(win, focused);
   scheduleRender(win, 60);
 }
 
 function moveTab(win: Window, draggedID: string, targetID: string) {
   const T = (win as any).Zotero_Tabs;
+  const state = bars.get(win);
+  const focused = state && captureFocus(state);
   try {
     const tabs = T._tabs ?? [];
     const from = tabs.findIndex((t: any) => t.id === draggedID);
@@ -498,31 +796,36 @@ function moveTab(win: Window, draggedID: string, targetID: string) {
   } catch (e) {
     ztoolkit.log("[tabs] move failed", e);
   }
+  renderList(win, focused);
   scheduleRender(win, 60);
 }
 
 /** close a set of tabs in one call (Zotero_Tabs.close accepts an array) */
-function closeMany(win: Window, ids: string[]) {
+function closeMany(win: Window, ids: string[], restoreFocus?: FocusSnapshot) {
   if (!ids.length) return;
+  const state = bars.get(win);
+  const focused = restoreFocus || (state && captureFocus(state));
   try {
-    (win as any).Zotero_Tabs.close(ids);
+    closeNativeTabs(win, ids, !!focused);
   } catch (e) {
     ztoolkit.log("[tabs] close failed", e);
   }
+  renderList(win, focused);
   scheduleRender(win, 80);
 }
 
-function closeOthers(win: Window, keepID: string) {
+function closeOthers(win: Window, keepID: string, focused?: FocusSnapshot) {
   const T = (win as any).Zotero_Tabs;
   closeMany(
     win,
     [...(T._tabs ?? [])]
       .filter((tab: any) => tab.id !== keepID && tab.type !== "library")
       .map((tab: any) => tab.id),
+    focused,
   );
 }
 
-function closeToTheRight(win: Window, fromID: string) {
+function closeToTheRight(win: Window, fromID: string, focused?: FocusSnapshot) {
   const T = (win as any).Zotero_Tabs;
   const tabs = [...(T._tabs ?? [])];
   const index = tabs.findIndex((t: any) => t.id === fromID);
@@ -533,6 +836,7 @@ function closeToTheRight(win: Window, fromID: string) {
       .slice(index + 1)
       .filter((tab: any) => tab.type !== "library")
       .map((tab: any) => tab.id),
+    focused,
   );
 }
 
@@ -570,13 +874,17 @@ function addItem(
 }
 
 function showTabMenu(win: Window, tab: TabInfo, x: number, y: number) {
+  const state = bars.get(win);
+  const focused = state && captureFocus(state);
   const popup = popupFor(win);
-  addItem(win, popup, getString("tabs-close"), () => closeTab(win, tab.id));
+  addItem(win, popup, getString("tabs-close"), () =>
+    closeTab(win, tab.id, focused),
+  );
   addItem(win, popup, getString("tabs-close-others"), () =>
-    closeOthers(win, tab.id),
+    closeOthers(win, tab.id, focused),
   );
   addItem(win, popup, getString("tabs-close-right"), () =>
-    closeToTheRight(win, tab.id),
+    closeToTheRight(win, tab.id, focused),
   );
   popup.appendChild(win.document.createXULElement("menuseparator"));
   if (tab.item) {
@@ -601,7 +909,7 @@ function showTabMenu(win: Window, tab: TabInfo, x: number, y: number) {
         "command",
         guard("tabs group assign", () => {
           assignToGroup(tab.itemKey, group.id);
-          renderList(win);
+          renderList(win, focused && { ...focused, groupID: group.id });
         }),
       );
       sub.appendChild(mi);
@@ -624,7 +932,7 @@ function showTabMenu(win: Window, tab: TabInfo, x: number, y: number) {
         if (!ok) return;
         const group = addGroup(out.value);
         assignToGroup(tab.itemKey, group.id);
-        renderList(win);
+        renderList(win, focused && { ...focused, groupID: group.id });
       }),
     );
     sub.appendChild(create);
@@ -634,7 +942,7 @@ function showTabMenu(win: Window, tab: TabInfo, x: number, y: number) {
       "command",
       guard("tabs ungroup", () => {
         assignToGroup(tab.itemKey, null);
-        renderList(win);
+        renderList(win, focused && { ...focused, groupID: undefined });
       }),
     );
     sub.appendChild(clear);
@@ -644,6 +952,8 @@ function showTabMenu(win: Window, tab: TabInfo, x: number, y: number) {
 }
 
 function showGroupMenu(win: Window, group: TabGroup, x: number, y: number) {
+  const state = bars.get(win);
+  const focused = state && captureFocus(state);
   const popup = popupFor(win);
   addItem(win, popup, getString("tabs-group-rename"), () => {
     const out = { value: group.name };
@@ -657,12 +967,12 @@ function showGroupMenu(win: Window, group: TabGroup, x: number, y: number) {
     );
     if (ok) {
       renameGroup(group.id, out.value);
-      renderList(win);
+      renderList(win, focused);
     }
   });
   addItem(win, popup, getString("tabs-group-delete"), () => {
     removeGroup(group.id);
-    renderList(win);
+    renderList(win, focused);
   });
   openAt(win, popup, x, y);
 }
@@ -670,10 +980,7 @@ function showGroupMenu(win: Window, group: TabGroup, x: number, y: number) {
 function showBarMenu(win: Window, x: number, y: number) {
   const popup = popupFor(win);
   addItem(win, popup, getString("tabs-save-session"), () => {
-    const items = readTabs(win)
-      .filter((t) => t.sessionKey)
-      .map((t) => t.sessionKey);
-    if (!items.length) return;
+    if (!readTabs(win).some((tab) => tab.sessionTarget)) return;
     const out = { value: new Date().toLocaleString() };
     const ok = Services.prompt.prompt(
       win as any,
@@ -683,7 +990,7 @@ function showBarMenu(win: Window, x: number, y: number) {
       null as any,
       { value: false },
     );
-    if (ok) saveSession(out.value, items);
+    if (ok) captureSession(win, out.value);
   });
   const list = sessions();
   if (list.length) {
@@ -738,7 +1045,21 @@ function openAt(win: Window, popup: any, x: number, y: number) {
 /** how many tabs a restore may open without asking */
 const RESTORE_WARN_AT = 12;
 
-async function restoreSession(win: Window, sessionID: string) {
+/** Capture tab order and the selected document, without using group keys. */
+export function captureSession(win: Window, name: string) {
+  const tabs = readTabs(win);
+  const items = tabs.flatMap((tab) =>
+    tab.sessionTarget ? [tab.sessionTarget] : [],
+  );
+  if (!items.length) return;
+  return saveSession(
+    name,
+    items,
+    tabs.find((tab) => tab.selected)?.sessionTarget,
+  );
+}
+
+export async function restoreSession(win: Window, sessionID: string) {
   const session = sessions().find((s) => s.id === sessionID);
   if (!session) return;
   if (session.items.length > RESTORE_WARN_AT) {
@@ -751,21 +1072,35 @@ async function restoreSession(win: Window, sessionID: string) {
     );
     if (!ok) return;
   }
+  let selectedItemID: number | undefined;
   for (const entry of session.items) {
     try {
-      const isNote = entry.startsWith("note:");
-      const key = isNote ? entry.slice(5) : entry;
-      const [libraryID, itemKey] = key.split("/");
+      if (win.closed || !addon.data.alive) return;
+      const legacy = typeof entry === "string";
+      const isNote = legacy ? entry.startsWith("note:") : entry.kind === "note";
+      const [libraryID, itemKey] = legacy
+        ? (isNote ? entry.slice(5) : entry).split("/")
+        : [entry.libraryID, entry.key];
       const id = Zotero.Items.getIDFromLibraryAndKey(
         Number(libraryID),
         itemKey,
       );
       if (!id) continue;
       const item = Zotero.Items.get(id as number) as Zotero.Item;
+      if (!item || item.deleted) continue;
+      // Explicit targets never fall back to a parent's different attachment.
+      if (!legacy && (isNote ? !item.isNote() : !item.isAttachment())) continue;
+      const selected =
+        !legacy &&
+        session.selected?.kind === entry.kind &&
+        session.selected.libraryID === entry.libraryID &&
+        session.selected.key === entry.key;
       if (isNote || item.isNote()) {
         await (Zotero as any).Notes.open(item.id, undefined, {
           openInBackground: true,
         });
+        if (win.closed || !addon.data.alive) return;
+        if (selected) selectedItemID = item.id;
         await Zotero.Promise.delay(150);
         continue;
       }
@@ -778,9 +1113,24 @@ async function restoreSession(win: Window, sessionID: string) {
       await Zotero.Reader.open(attachmentID, undefined, {
         openInBackground: true,
       });
+      if (win.closed || !addon.data.alive) return;
+      if (selected) selectedItemID = attachmentID;
       await Zotero.Promise.delay(150);
     } catch (e) {
       ztoolkit.log("[tabs] restore item failed", e);
+    }
+  }
+  if (win.closed || !addon.data.alive) return;
+  if (selectedItemID) {
+    try {
+      const tabs = (win as any).Zotero_Tabs;
+      const selected = tabs?._tabs?.find(
+        (tab: any) => tab.data?.itemID === selectedItemID,
+      );
+      if (selected && typeof tabs.select === "function")
+        tabs.select(selected.id);
+    } catch (e) {
+      ztoolkit.log("[tabs] restore selection failed", e);
     }
   }
   scheduleRender(win, 200);

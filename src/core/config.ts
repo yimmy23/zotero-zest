@@ -60,11 +60,22 @@ export interface TabGroupConfig {
   members: string[];
 }
 
+/** Exact document to reopen; grouping continues to use the parent item key. */
+export interface TabSessionTarget {
+  kind: "attachment" | "note";
+  libraryID: number;
+  key: string;
+}
+
+/** Strings are sessions saved by older copies (parent key or note:key). */
+export type TabSessionEntry = string | TabSessionTarget;
+
 export interface TabSessionConfig {
   id: string;
   name: string;
   saved: number;
-  items: string[];
+  items: TabSessionEntry[];
+  selected?: TabSessionTarget;
 }
 
 export interface ZestConfig {
@@ -175,14 +186,47 @@ function sanitizeTabGroup(raw: any): TabGroupConfig | null {
   };
 }
 
+function sanitizeSessionTarget(raw: any): TabSessionTarget | undefined {
+  const key = str(raw?.key, 80);
+  const libraryID = num(raw?.libraryID);
+  if (
+    (raw?.kind !== "attachment" && raw?.kind !== "note") ||
+    libraryID === undefined ||
+    !Number.isInteger(libraryID) ||
+    libraryID <= 0 ||
+    !key ||
+    key.includes("/")
+  )
+    return undefined;
+  return { kind: raw.kind, libraryID, key };
+}
+
 function sanitizeTabSession(raw: any): TabSessionConfig | null {
   const name = str(raw?.name, 60);
   if (!name) return null;
+  const items: TabSessionEntry[] = [];
+  for (const entry of Array.isArray(raw?.items) ? raw.items : []) {
+    const target =
+      typeof entry === "string" ? str(entry, 80) : sanitizeSessionTarget(entry);
+    if (target) items.push(target);
+    if (items.length === 200) break;
+  }
+  const selected = sanitizeSessionTarget(raw?.selected);
   return {
     id: str(raw?.id, 40) || newId("ts"),
     name,
     saved: Math.max(0, Math.round(num(raw?.saved) ?? 0)),
-    items: sanitizeKeyList(raw?.items, 200),
+    items,
+    ...(selected &&
+    items.some(
+      (entry) =>
+        typeof entry !== "string" &&
+        entry.kind === selected.kind &&
+        entry.libraryID === selected.libraryID &&
+        entry.key === selected.key,
+    )
+      ? { selected }
+      : {}),
   };
 }
 

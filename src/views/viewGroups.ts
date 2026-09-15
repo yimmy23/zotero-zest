@@ -172,6 +172,26 @@ export function moveView(id: string, delta: number) {
 
 /** the layout the user had before the last apply, so it can be restored */
 const previous = new WeakMap<Window, ViewGroup>();
+/** Actual host state after apply may differ from saved widths (fixed/flex
+ * columns, unavailable plugins). Retain identity only while that state holds. */
+const applied = new WeakMap<Window, { id: string; signature: string }>();
+
+function layoutSignature(view: ViewGroup): string {
+  const columns = view.columns.map((col, index) => ({
+    dataKey: col.dataKey,
+    hidden: !!col.hidden,
+    ordinal: typeof col.ordinal === "number" ? col.ordinal : index,
+    width: Math.round(Number(col.width) || 0) || undefined,
+  }));
+  columns.sort(
+    (a, b) => a.ordinal - b.ordinal || a.dataKey.localeCompare(b.dataKey),
+  );
+  return JSON.stringify([
+    columns,
+    view.sortField || null,
+    view.sortField ? (view.sortDirection ?? 1) : null,
+  ]);
+}
 
 export function hasPreviousLayout(win: Window): boolean {
   return previous.has(win);
@@ -189,6 +209,7 @@ export async function applyView(
   // remember where we came from (one level of undo)
   const snapshot = captureView(win, getString("views-previous"));
   if (snapshot) previous.set(win, snapshot);
+  applied.delete(win);
 
   try {
     const wanted = new Map(view.columns.map((c) => [c.dataKey, c]));
@@ -217,6 +238,9 @@ export async function applyView(
     await iv._resetColumns?.();
     if (typeof iv.sort === "function") await iv.sort();
     iv.tree?.invalidate?.();
+    const current = captureView(win, "");
+    if (current)
+      applied.set(win, { id: view.id, signature: layoutSignature(current) });
     return true;
   } catch (e) {
     ztoolkit.log("[views] apply failed", e);
@@ -523,24 +547,30 @@ export function uninstallAllViewShortcuts() {
 }
 
 /** Alt+, / Alt+. cycle through the saved views */
-export function cycleView(win: Window, delta: number) {
+export async function cycleView(win: Window, delta: number) {
   const list = views();
   if (!list.length) return;
   const index = currentIndex(list, win);
-  const next = list[(index + delta + list.length) % list.length];
-  void applyView(win, next);
+  const nextIndex =
+    index < 0
+      ? delta < 0
+        ? list.length - 1
+        : 0
+      : (index + delta + list.length) % list.length;
+  await applyView(win, list[nextIndex]);
 }
 
 function currentIndex(list: ViewGroup[], win: Window): number {
-  const cols = liveColumns(win);
-  const visible = new Set(cols.filter((c) => !c.hidden).map((c) => c.dataKey));
-  for (let i = 0; i < list.length; i++) {
-    const want = new Set(
-      list[i].columns.filter((c) => !c.hidden).map((c) => c.dataKey),
-    );
-    if (want.size === visible.size && [...want].every((k) => visible.has(k))) {
-      return i;
-    }
+  const current = captureView(win, "");
+  if (!current) return -1;
+  const signature = layoutSignature(current);
+  const last = applied.get(win);
+  if (last?.signature === signature) {
+    const index = list.findIndex((view) => view.id === last.id);
+    if (index >= 0) return index;
   }
-  return -1;
+  // Sorting, resizing, hiding or reordering by hand invalidates the remembered
+  // identity. A complete saved layout can still be recognized after reload.
+  applied.delete(win);
+  return list.findIndex((view) => layoutSignature(view) === signature);
 }

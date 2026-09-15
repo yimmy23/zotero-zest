@@ -174,6 +174,42 @@ function hostFixture() {
   };
 }
 
+test("toolbar survives outgoing teardown and repairs a legacy DOM sweep", () => {
+  const win = documentFixture();
+  const toolbar = win.document.createElement("div");
+  toolbar.id = "zotero-items-toolbar";
+  win.document.documentElement.appendChild(toolbar);
+  const mocks = {
+    "src/graph/pane.ts": {
+      onGraphVisibilityChange() {},
+      isGraphVisible: () => false,
+    },
+    "src/panes/statsDialog.ts": {},
+    "src/panes/annotMatrix.ts": {},
+    "src/modules/menus.ts": {},
+    "src/views/viewGroups.ts": {},
+    "src/tags/nestedTree.ts": {},
+  };
+  const a = baseHarness({}, {}, undefined, mocks).load("src/ui/toolbarMenu.ts");
+  const b = baseHarness({}, {}, undefined, mocks).load("src/ui/toolbarMenu.ts");
+  a.installToolbarMenu(win);
+  b.installToolbarMenu(win);
+  const current = win.document.getElementById("zest-tb-menu");
+  a.uninstallToolbarMenu(win);
+  assert.equal(current.isConnected, true);
+  assert.equal(b.toolbarMenuInstalled(win), true);
+  b.installToolbarMenu(win);
+  assert.equal(win.document.getElementById("zest-tb-menu"), current);
+  // Pre-fix releases delete by id during outgoing teardown.
+  current.remove();
+  assert.equal(b.toolbarMenuInstalled(win), false);
+  b.installToolbarMenu(win);
+  assert.equal(b.toolbarMenuInstalled(win), true);
+  assert.notEqual(win.document.getElementById("zest-tb-menu"), current);
+  b.uninstallAllToolbarMenus();
+  assert.equal(win.document.getElementById("zest-tb-menu"), null);
+});
+
 test("overlapping plugin copies keep the new stylesheet, accent and root flags", () => {
   const win = documentFixture();
   const Zotero = { getMainWindows: () => [win] };

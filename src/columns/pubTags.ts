@@ -1,7 +1,7 @@
 import { getPref, getNumPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { hexToRgb } from "../reading/heat";
-import { setReadableColorVariants } from "../ui/color";
+import { setSemanticBadge } from "../ui/color";
 import { HEAT_LEVELS } from "../ui/palette";
 import { accentColor } from "../ui/styles";
 import {
@@ -39,7 +39,8 @@ import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 
 /**
  * Fallback chain for the badges:
- *   1. the fields the user configured (default `sciUp, sci, sciif`)
+ *   1. the fields the user configured (default XinRui/CAS -> JCR -> IF;
+ *      English keeps JCR first)
  *   2. the common Chinese indexes — a domestic journal has none of the JCR
  *      fields, so the column would otherwise be empty for exactly the
  *      libraries that care most about it
@@ -55,7 +56,10 @@ const FALLBACK_FIELDS = [
 ];
 
 function shownValues(rec: ReturnType<typeof getJournalRecord>) {
-  const shown = displayValuesForUI(rec, rankFieldsForDisplay(displayFields()));
+  const shown = displayValuesForUI(
+    rec,
+    rankFieldsForDisplay(displayFields(), rec),
+  );
   if (shown.length) return shown;
   const fallback = displayValuesForUI(rec, FALLBACK_FIELDS);
   return fallback.slice(0, 2);
@@ -133,7 +137,7 @@ export function publicationTagsColumn(): ColumnSpec {
       const alpha = badgeOpacity();
       const textPref = String(getPref("rank.textColor") || "auto");
       for (const v of shown) {
-        const display = rankValueDisplay(v, v.sourceField);
+        const display = rankValueDisplay(v, v.sourceField, v.customized);
         const badge = doc.createElement("span");
         badge.className = "zest-badge zest-rank-badge";
         badge.textContent = display.text;
@@ -147,11 +151,12 @@ export function publicationTagsColumn(): ColumnSpec {
         const color = v.rank ? colorForRank(v.rank) : defaultRankColor();
         const rgb = hexToRgb(color);
         if (rgb) {
-          badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
           if (textPref === "auto") {
-            setReadableColorVariants(badge, rgb);
-            badge.classList.add("zest-readable-text");
-          } else badge.style.color = textPref;
+            setSemanticBadge(badge, rgb, alpha);
+          } else {
+            badge.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+            badge.style.color = textPref;
+          }
         }
         wrap.appendChild(badge);
       }

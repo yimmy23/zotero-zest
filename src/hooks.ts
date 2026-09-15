@@ -2,6 +2,7 @@ import { config } from "../package.json";
 import { guard } from "./utils/guard";
 import { initLocale } from "./utils/locale";
 import { api } from "./api";
+import { startCitations, stopCitations } from "./cite";
 import {
   registerPrefsScripts,
   onPrefsCommand,
@@ -196,6 +197,7 @@ function watchPluginSweep() {
             const w = win as unknown as Window;
             registerStyles(w);
             applyRootFlags(w, !!getPref("tags.hideInTitle"));
+            installToolbarMenu(w);
           }
           syncTagPanes();
           syncNativeBarVisibility();
@@ -227,8 +229,10 @@ async function onStartup() {
     Zotero.unlockPromise,
     Zotero.uiReadyPromise,
   ]);
+  if (!addon.data.alive) return;
 
   registerDevEval();
+  startCitations();
   migratePrefs();
   watchPluginSweep();
 
@@ -566,6 +570,7 @@ async function onShutdown() {
   // first thing: nothing that is still awaiting a startup wait may install
   // anything from here on
   addon.data.alive = false;
+  stopCitations();
   stopAuthorshipFetches();
   stopAbstractFetches();
   stopAbstractTranslations();
@@ -644,6 +649,7 @@ async function onAppShutdown() {
   // Zotero.Plugins shutdown sweep schedules registrations against a closed DB
   // while Zotero is already waiting for its shutdown barrier.
   addon.data.alive = false;
+  stopCitations();
   stopAuthorshipFetches();
   stopAbstractFetches();
   stopAbstractTranslations();

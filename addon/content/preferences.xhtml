@@ -15,9 +15,75 @@
       id="zest-pref-navigation"
       class="zest-pref-navigation"
       data-l10n-id="pref-navigation"
-    ></html:nav>
+    >
+      <html:section
+        class="zest-pref-nav-group"
+        aria-labelledby="zest-pref-nav-reading"
+      >
+        <html:h3
+          id="zest-pref-nav-reading"
+          data-l10n-id="pref-navigation-reading"
+        ></html:h3>
+        <html:ul
+          id="zest-pref-nav-reading-links"
+          class="zest-pref-nav-links"
+        ></html:ul>
+      </html:section>
+      <html:section
+        class="zest-pref-nav-group"
+        aria-labelledby="zest-pref-nav-bibliography"
+      >
+        <html:h3
+          id="zest-pref-nav-bibliography"
+          data-l10n-id="pref-navigation-bibliography"
+        ></html:h3>
+        <html:ul
+          id="zest-pref-nav-bibliography-links"
+          class="zest-pref-nav-links"
+        ></html:ul>
+      </html:section>
+      <html:section
+        class="zest-pref-nav-group"
+        aria-labelledby="zest-pref-nav-workspace"
+      >
+        <html:h3
+          id="zest-pref-nav-workspace"
+          data-l10n-id="pref-navigation-workspace"
+        ></html:h3>
+        <html:ul
+          id="zest-pref-nav-workspace-links"
+          class="zest-pref-nav-links"
+        ></html:ul>
+      </html:section>
+      <html:section
+        class="zest-pref-nav-group"
+        aria-labelledby="zest-pref-nav-appearance"
+      >
+        <html:h3
+          id="zest-pref-nav-appearance"
+          data-l10n-id="pref-navigation-appearance"
+        ></html:h3>
+        <html:ul
+          id="zest-pref-nav-appearance-links"
+          class="zest-pref-nav-links"
+        ></html:ul>
+      </html:section>
+      <html:section
+        class="zest-pref-nav-group"
+        aria-labelledby="zest-pref-nav-advanced"
+      >
+        <html:h3
+          id="zest-pref-nav-advanced"
+          data-l10n-id="pref-navigation-advanced"
+        ></html:h3>
+        <html:ul
+          id="zest-pref-nav-advanced-links"
+          class="zest-pref-nav-links"
+        ></html:ul>
+      </html:section>
+    </html:nav>
   </html:header>
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-columns"></html:h2></label>
     <checkbox
       preference="column.reading.enable"
@@ -50,36 +116,64 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-texttags-match"></html:label>
+      <html:label
+        data-l10n-id="pref-texttags-match"
+        id="zest-pref-texttags-match-label"
+        for="zest-pref-texttags-match"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="textTags.match"
+        aria-describedby="zest-pref-texttags-match-hint"
+        aria-labelledby="zest-pref-texttags-match-label"
+        id="zest-pref-texttags-match"
       ></html:input>
     </hbox>
-    <description
-      class="zest-pref-hint"
-      data-l10n-id="pref-texttags-match-hint"
-    ></description>
+    <html:details class="zest-pref-details">
+      <html:summary data-l10n-id="pref-texttags-syntax"></html:summary>
+      <description
+        id="zest-pref-texttags-match-hint"
+        class="zest-pref-hint"
+        data-l10n-id="pref-texttags-match-hint"
+      ></description>
+    </html:details>
     <hbox align="center">
-      <html:label data-l10n-id="pref-texttags-color"></html:label>
-      <html:input type="color" preference="textTags.color"></html:input>
+      <html:label
+        data-l10n-id="pref-texttags-color"
+        id="zest-pref-texttags-color-label"
+        for="zest-pref-texttags-color"
+      ></html:label>
+      <html:input
+        type="color"
+        preference="textTags.color"
+        aria-labelledby="zest-pref-texttags-color-label"
+        id="zest-pref-texttags-color"
+      ></html:input>
       <html:label
         data-l10n-id="pref-texttags-textcolor"
         style="margin-inline-start: 12px"
+        id="zest-pref-texttags-textcolor-label"
+        for="zest-pref-texttags-textcolor"
       ></html:label>
       <html:input
         type="text"
         style="width: 8em"
         preference="textTags.textColor"
+        aria-labelledby="zest-pref-texttags-textcolor-label"
+        id="zest-pref-texttags-textcolor"
       ></html:input>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rating-display"></html:label>
+      <html:label
+        data-l10n-id="pref-rating-display"
+        id="zest-pref-rating-display-label"
+      ></html:label>
       <menulist
         id="zest-pref-rating-display"
         preference="rating.display"
         native="true"
+        aria-labelledby="zest-pref-rating-display-label"
       >
         <menupopup>
           <menuitem data-l10n-id="pref-rating-display-column" value="column" />
@@ -102,35 +196,55 @@
       data-l10n-id="pref-rating-display-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rating-mark"></html:label>
+      <html:label
+        data-l10n-id="pref-rating-mark"
+        id="zest-pref-rating-mark-label"
+        for="zest-pref-rating-mark"
+      ></html:label>
       <html:input
         type="text"
         style="width: 3em"
         preference="rating.mark"
+        aria-labelledby="zest-pref-rating-mark-label"
+        id="zest-pref-rating-mark"
       ></html:input>
       <html:label
         data-l10n-id="pref-rating-option"
         style="margin-inline-start: 12px"
+        id="zest-pref-rating-option-label"
+        for="zest-pref-rating-option"
       ></html:label>
       <html:input
         type="text"
         style="width: 3em"
         preference="rating.option"
+        aria-labelledby="zest-pref-rating-option-label"
+        id="zest-pref-rating-option"
       ></html:input>
       <html:label
         data-l10n-id="pref-rating-color"
         style="margin-inline-start: 12px"
+        id="zest-pref-rating-color-label"
+        for="zest-pref-rating-color"
       ></html:label>
       <html:input
         type="text"
         style="width: 7em"
         preference="rating.color"
+        aria-labelledby="zest-pref-rating-color-label"
+        id="zest-pref-rating-color"
       ></html:input>
       <html:label
         data-l10n-id="pref-rating-key"
         style="margin-inline-start: 12px"
+        id="zest-pref-rating-key-label"
       ></html:label>
-      <menulist preference="rating.extraKey" native="true">
+      <menulist
+        preference="rating.extraKey"
+        native="true"
+        aria-labelledby="zest-pref-rating-key-label"
+        id="zest-pref-rating-key"
+      >
         <menupopup>
           <menuitem label="rate" value="rate" />
           <menuitem label="Rating" value="Rating" />
@@ -144,15 +258,24 @@
     />
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="appearance">
     <label><html:h2 data-l10n-id="pref-group-appearance"></html:h2></label>
     <description
       class="zest-pref-hint"
       data-l10n-id="pref-accent-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-accent-color"></html:label>
-      <html:input type="color" preference="ui.accent"></html:input>
+      <html:label
+        data-l10n-id="pref-accent-color"
+        id="zest-pref-accent-color-label"
+        for="zest-pref-accent-color"
+      ></html:label>
+      <html:input
+        type="color"
+        preference="ui.accent"
+        aria-labelledby="zest-pref-accent-color-label"
+        id="zest-pref-accent-color"
+      ></html:input>
       <html:div
         id="zest-pref-accent-presets"
         class="zest-pref-swatches"
@@ -186,7 +309,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="reading">
     <label><html:h2 data-l10n-id="pref-group-heat"></html:h2></label>
     <checkbox
       preference="titleDecor.heat"
@@ -205,11 +328,22 @@
       style="margin-inline-start: 20px"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-heat-color"></html:label>
-      <html:input type="color" preference="heat.color"></html:input>
+      <html:label
+        data-l10n-id="pref-heat-color"
+        id="zest-pref-heat-color-label"
+        for="zest-pref-heat-color"
+      ></html:label>
+      <html:input
+        type="color"
+        preference="heat.color"
+        aria-labelledby="zest-pref-heat-color-label"
+        id="zest-pref-heat-color"
+      ></html:input>
       <html:label
         data-l10n-id="pref-heat-opacity"
         style="margin-inline-start: 12px"
+        id="zest-pref-heat-opacity-label"
+        for="zest-pref-heat-opacity"
       ></html:label>
       <html:input
         type="number"
@@ -217,11 +351,13 @@
         max="1"
         step="0.05"
         preference="heat.opacity"
+        aria-labelledby="zest-pref-heat-opacity-label"
+        id="zest-pref-heat-opacity"
       ></html:input>
     </hbox>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="reading">
     <label><html:h2 data-l10n-id="pref-group-tracker"></html:h2></label>
     <checkbox
       preference="tracker.enable"
@@ -229,12 +365,18 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-tracker-idle"></html:label>
+      <html:label
+        data-l10n-id="pref-tracker-idle"
+        id="zest-pref-tracker-idle-label"
+        for="zest-pref-tracker-idle"
+      ></html:label>
       <html:input
         type="number"
         min="10"
         max="3600"
         preference="tracker.idleSeconds"
+        aria-labelledby="zest-pref-tracker-idle-label"
+        id="zest-pref-tracker-idle"
       ></html:input>
     </hbox>
     <checkbox
@@ -254,22 +396,32 @@
       style="margin-inline-start: 20px"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-statusauto-threshold"></html:label>
+      <html:label
+        data-l10n-id="pref-statusauto-threshold"
+        id="zest-pref-statusauto-threshold-label"
+        for="zest-pref-statusauto-threshold"
+      ></html:label>
       <html:input
         type="number"
         min="10"
         max="100"
         preference="statusAuto.readThreshold"
+        aria-labelledby="zest-pref-statusauto-threshold-label"
+        id="zest-pref-statusauto-threshold"
       ></html:input>
       <html:label
         data-l10n-id="pref-statusauto-minminutes"
         style="margin-inline-start: 12px"
+        id="zest-pref-statusauto-minminutes-label"
+        for="zest-pref-statusauto-minminutes"
       ></html:label>
       <html:input
         type="number"
         min="0"
         max="600"
         preference="statusAuto.minMinutes"
+        aria-labelledby="zest-pref-statusauto-minminutes-label"
+        id="zest-pref-statusauto-minminutes"
       ></html:input>
     </hbox>
     <description
@@ -278,7 +430,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="advanced">
     <label><html:h2 data-l10n-id="pref-group-data"></html:h2></label>
     <hbox align="center">
       <button
@@ -309,7 +461,7 @@
     <description class="zest-pref-hint" id="zest-pref-dbpath"></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-tags"></html:h2></label>
     <checkbox
       preference="nestedTags.show"
@@ -317,8 +469,16 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-nested-link"></html:label>
-      <menulist preference="nestedTags.linkSymbol" native="true">
+      <html:label
+        data-l10n-id="pref-nested-link"
+        id="zest-pref-nested-link-label"
+      ></html:label>
+      <menulist
+        preference="nestedTags.linkSymbol"
+        native="true"
+        aria-labelledby="zest-pref-nested-link-label"
+        id="zest-pref-nested-link"
+      >
         <menupopup>
           <menuitem value="/" label="/" />
           <menuitem value="\" label="\" />
@@ -335,8 +495,14 @@
       <html:label
         data-l10n-id="pref-nested-sort"
         style="margin-inline-start: 12px"
+        id="zest-pref-nested-sort-label"
       ></html:label>
-      <menulist preference="nestedTags.sort" native="true">
+      <menulist
+        preference="nestedTags.sort"
+        native="true"
+        aria-labelledby="zest-pref-nested-sort-label"
+        id="zest-pref-nested-sort"
+      >
         <menupopup>
           <menuitem value="az" data-l10n-id="pref-nested-sort-az" />
           <menuitem value="za" data-l10n-id="pref-nested-sort-za" />
@@ -359,7 +525,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="bibliography">
     <label><html:h2 data-l10n-id="pref-group-rank"></html:h2></label>
     <checkbox
       preference="column.pubtags.enable"
@@ -377,11 +543,17 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-fields"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-fields"
+        id="zest-pref-rank-fields-label"
+        for="zest-pref-rank-fields"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="rank.fields"
+        aria-labelledby="zest-pref-rank-fields-label"
+        id="zest-pref-rank-fields"
       ></html:input>
     </hbox>
     <description
@@ -389,11 +561,17 @@
       data-l10n-id="pref-rank-fields-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-sortby"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-sortby"
+        id="zest-pref-rank-sortby-label"
+        for="zest-pref-rank-sortby"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="rank.sortBy"
+        aria-labelledby="zest-pref-rank-sortby-label"
+        id="zest-pref-rank-sortby"
       ></html:input>
     </hbox>
     <description
@@ -401,23 +579,40 @@
       data-l10n-id="pref-rank-sortby-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-map"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-map"
+        id="zest-pref-rank-map-label"
+        for="zest-pref-rank-map"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="rank.map"
+        aria-describedby="zest-pref-rank-map-hint"
+        aria-labelledby="zest-pref-rank-map-label"
+        id="zest-pref-rank-map"
       ></html:input>
     </hbox>
-    <description
-      class="zest-pref-hint"
-      data-l10n-id="pref-rank-map-hint"
-    ></description>
+    <html:details class="zest-pref-details">
+      <html:summary data-l10n-id="pref-rank-map-syntax"></html:summary>
+      <description
+        id="zest-pref-rank-map-hint"
+        class="zest-pref-hint"
+        data-l10n-id="pref-rank-map-hint"
+      ></description>
+    </html:details>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-colors"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-colors"
+        id="zest-pref-rank-colors-label"
+        for="zest-pref-rank-colors"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="rank.colors"
+        aria-labelledby="zest-pref-rank-colors-label"
+        id="zest-pref-rank-colors"
       ></html:input>
     </hbox>
     <description
@@ -425,11 +620,17 @@
       data-l10n-id="pref-rank-colors-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-defaultcolor"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-defaultcolor"
+        id="zest-pref-rank-defaultcolor-label"
+        for="zest-pref-rank-defaultcolor"
+      ></html:label>
       <html:input
         type="color"
         preference="rank.defaultColor"
         class="zest-pref-autocolor"
+        aria-labelledby="zest-pref-rank-defaultcolor-label"
+        id="zest-pref-rank-defaultcolor"
       ></html:input>
       <button
         data-l10n-id="pref-color-auto"
@@ -445,29 +646,43 @@
       <html:label
         data-l10n-id="pref-rank-textcolor"
         style="margin-inline-start: 12px"
+        id="zest-pref-rank-textcolor-label"
+        for="zest-pref-rank-textcolor"
       ></html:label>
       <html:input
         type="text"
         style="width: 8em"
         preference="rank.textColor"
+        aria-labelledby="zest-pref-rank-textcolor-label"
+        id="zest-pref-rank-textcolor"
       ></html:input>
       <html:label
         data-l10n-id="pref-rank-opacity"
         style="margin-inline-start: 12px"
+        id="zest-pref-rank-opacity-label"
+        for="zest-pref-rank-opacity"
       ></html:label>
       <html:input
         type="text"
         style="width: 5em"
         preference="rank.opacity"
+        aria-labelledby="zest-pref-rank-opacity-label"
+        id="zest-pref-rank-opacity"
       ></html:input>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-rank-ttl"></html:label>
+      <html:label
+        data-l10n-id="pref-rank-ttl"
+        id="zest-pref-rank-ttl-label"
+        for="zest-pref-rank-ttl"
+      ></html:label>
       <html:input
         type="number"
         min="0"
         max="3650"
         preference="rank.ttlDays"
+        aria-labelledby="zest-pref-rank-ttl-label"
+        id="zest-pref-rank-ttl"
       ></html:input>
     </hbox>
     <checkbox
@@ -486,12 +701,17 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-key-label"></html:label>
+      <html:label
+        data-l10n-id="pref-key-label"
+        id="zest-pref-eskey-label"
+        for="zest-pref-eskey"
+      ></html:label>
       <html:input
         type="password"
         id="zest-pref-eskey"
         class="zest-pref-key"
         style="flex: 1"
+        aria-labelledby="zest-pref-eskey-label"
       ></html:input>
       <button
         data-l10n-id="pref-key-save"
@@ -518,26 +738,44 @@
       "
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-if-field"></html:label>
+      <html:label
+        data-l10n-id="pref-if-field"
+        id="zest-pref-if-field-label"
+        for="zest-pref-if-field"
+      ></html:label>
       <html:input
         type="text"
         style="width: 8em"
         preference="if.field"
+        aria-labelledby="zest-pref-if-field-label"
+        id="zest-pref-if-field"
       ></html:input>
       <html:label
         data-l10n-id="pref-if-max"
         style="margin-inline-start: 12px"
+        id="zest-pref-if-max-label"
+        for="zest-pref-if-max"
       ></html:label>
       <html:input
         type="number"
         min="1"
         max="100"
         preference="if.max"
+        aria-labelledby="zest-pref-if-max-label"
+        id="zest-pref-if-max"
       ></html:input>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-if-style"></html:label>
-      <menulist preference="if.style" native="true">
+      <html:label
+        data-l10n-id="pref-if-style"
+        id="zest-pref-if-style-label"
+      ></html:label>
+      <menulist
+        preference="if.style"
+        native="true"
+        aria-labelledby="zest-pref-if-style-label"
+        id="zest-pref-if-style"
+      >
         <menupopup>
           <menuitem value="heat" data-l10n-id="pref-if-style-heat" />
           <menuitem value="bar" data-l10n-id="pref-if-style-bar" />
@@ -547,11 +785,17 @@
     </hbox>
     <checkbox preference="if.info" data-l10n-id="pref-if-info" native="true" />
     <hbox align="center">
-      <html:label data-l10n-id="pref-if-color"></html:label>
+      <html:label
+        data-l10n-id="pref-if-color"
+        id="zest-pref-if-color-label"
+        for="zest-pref-if-color"
+      ></html:label>
       <html:input
         type="color"
         preference="if.color"
         class="zest-pref-autocolor"
+        aria-labelledby="zest-pref-if-color-label"
+        id="zest-pref-if-color"
       ></html:input>
       <button
         data-l10n-id="pref-color-auto"
@@ -567,7 +811,7 @@
     </hbox>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="advanced">
     <label><html:h2 data-l10n-id="pref-group-datasets"></html:h2></label>
     <hbox align="center">
       <button
@@ -586,7 +830,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="reading">
     <label><html:h2 data-l10n-id="pref-group-annots"></html:h2></label>
     <checkbox
       preference="column.annots.enable"
@@ -594,8 +838,16 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-annots-style"></html:label>
-      <menulist preference="annots.style" native="true">
+      <html:label
+        data-l10n-id="pref-annots-style"
+        id="zest-pref-annots-style-label"
+      ></html:label>
+      <menulist
+        preference="annots.style"
+        native="true"
+        aria-labelledby="zest-pref-annots-style-label"
+        id="zest-pref-annots-style"
+      >
         <menupopup>
           <menuitem value="bar" data-l10n-id="pref-annots-style-bar" />
           <menuitem value="stack" data-l10n-id="pref-annots-style-stack" />
@@ -605,11 +857,15 @@
       <html:label
         data-l10n-id="pref-annots-color"
         style="margin-inline-start: 12px"
+        id="zest-pref-annots-color-label"
+        for="zest-pref-annots-color"
       ></html:label>
       <html:input
         type="color"
         preference="annots.color"
         class="zest-pref-autocolor"
+        aria-labelledby="zest-pref-annots-color-label"
+        id="zest-pref-annots-color"
       ></html:input>
       <button
         data-l10n-id="pref-color-auto"
@@ -629,7 +885,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-views"></html:h2></label>
     <vbox id="zest-pref-views" class="zest-pref-list"></vbox>
     <description
@@ -638,7 +894,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-graph"></html:h2></label>
     <checkbox
       preference="graph.visible"
@@ -646,8 +902,16 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-graph-mode"></html:label>
-      <menulist preference="graph.mode" native="true">
+      <html:label
+        data-l10n-id="pref-graph-mode"
+        id="zest-pref-graph-mode-label"
+      ></html:label>
+      <menulist
+        preference="graph.mode"
+        native="true"
+        aria-labelledby="zest-pref-graph-mode-label"
+        id="zest-pref-graph-mode"
+      >
         <menupopup>
           <menuitem value="related" data-l10n-id="pref-graph-mode-related" />
           <menuitem value="author" data-l10n-id="pref-graph-mode-author" />
@@ -660,27 +924,37 @@
       </menulist>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-graph-height"></html:label>
+      <html:label
+        data-l10n-id="pref-graph-height"
+        id="zest-pref-graph-height-label"
+        for="zest-pref-graph-height"
+      ></html:label>
       <html:input
         type="number"
         min="160"
         max="900"
         preference="graph.height"
+        aria-labelledby="zest-pref-graph-height-label"
+        id="zest-pref-graph-height"
       ></html:input>
       <html:label
         data-l10n-id="pref-graph-maxnodes"
         style="margin-inline-start: 12px"
+        id="zest-pref-graph-maxnodes-label"
+        for="zest-pref-graph-maxnodes"
       ></html:label>
       <html:input
         type="number"
         min="30"
         max="1200"
         preference="graph.maxNodes"
+        aria-labelledby="zest-pref-graph-maxnodes-label"
+        id="zest-pref-graph-maxnodes"
       ></html:input>
     </hbox>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-collections"></html:h2></label>
     <checkbox
       preference="collectionCounts.enable"
@@ -688,8 +962,16 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-collections-mode"></html:label>
-      <menulist preference="collectionCounts.mode" native="true">
+      <html:label
+        data-l10n-id="pref-collections-mode"
+        id="zest-pref-collections-mode-label"
+      ></html:label>
+      <menulist
+        preference="collectionCounts.mode"
+        native="true"
+        aria-labelledby="zest-pref-collections-mode-label"
+        id="zest-pref-collections-mode"
+      >
         <menupopup>
           <menuitem value="0" data-l10n-id="pref-collections-mode-0" />
           <menuitem value="1" data-l10n-id="pref-collections-mode-1" />
@@ -699,7 +981,7 @@
     </hbox>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="advanced">
     <label><html:h2 data-l10n-id="pref-group-config"></html:h2></label>
     <hbox align="center">
       <button
@@ -724,7 +1006,7 @@
       data-l10n-id="pref-config-hint"
     ></description>
   </groupbox>
-  <groupbox>
+  <groupbox data-zest-pref-task="bibliography">
     <label><html:h2 data-l10n-id="pref-group-authors"></html:h2></label>
     <checkbox
       preference="column.authors.enable"
@@ -742,8 +1024,16 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-authors-preset"></html:label>
-      <menulist preference="authors.preset" native="true">
+      <html:label
+        data-l10n-id="pref-authors-preset"
+        id="zest-pref-authors-preset-label"
+      ></html:label>
+      <menulist
+        preference="authors.preset"
+        native="true"
+        aria-labelledby="zest-pref-authors-preset-label"
+        id="zest-pref-authors-preset"
+      >
         <menupopup>
           <menuitem value="all" data-l10n-id="pref-authors-preset-all" />
           <menuitem value="first" data-l10n-id="pref-authors-preset-first" />
@@ -762,6 +1052,8 @@
       <html:label
         data-l10n-id="pref-authors-count"
         style="margin-inline-start: 12px"
+        id="zest-pref-authors-count-label"
+        for="zest-pref-authors-count"
       ></html:label>
       <html:input
         type="number"
@@ -769,11 +1061,21 @@
         max="20"
         style="width: 5em"
         preference="authors.count"
+        aria-labelledby="zest-pref-authors-count-label"
+        id="zest-pref-authors-count"
       ></html:input>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-authors-order"></html:label>
-      <menulist preference="authors.order" native="true">
+      <html:label
+        data-l10n-id="pref-authors-order"
+        id="zest-pref-authors-order-label"
+      ></html:label>
+      <menulist
+        preference="authors.order"
+        native="true"
+        aria-labelledby="zest-pref-authors-order-label"
+        id="zest-pref-authors-order"
+      >
         <menupopup>
           <menuitem value="auto" data-l10n-id="pref-authors-order-auto" />
           <menuitem
@@ -789,8 +1091,14 @@
       <html:label
         data-l10n-id="pref-authors-given"
         style="margin-inline-start: 12px"
+        id="zest-pref-authors-given-label"
       ></html:label>
-      <menulist preference="authors.given" native="true">
+      <menulist
+        preference="authors.given"
+        native="true"
+        aria-labelledby="zest-pref-authors-given-label"
+        id="zest-pref-authors-given"
+      >
         <menupopup>
           <menuitem value="full" data-l10n-id="pref-authors-given-full" />
           <menuitem
@@ -807,37 +1115,57 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-authors-separator"></html:label>
+      <html:label
+        data-l10n-id="pref-authors-separator"
+        id="zest-pref-authors-separator-label"
+        for="zest-pref-authors-separator"
+      ></html:label>
       <html:input
         type="text"
         style="width: 5em"
         preference="authors.separator"
+        aria-labelledby="zest-pref-authors-separator-label"
+        id="zest-pref-authors-separator"
       ></html:input>
       <html:label
         data-l10n-id="pref-authors-etal"
         style="margin-inline-start: 12px"
+        id="zest-pref-authors-etal-label"
+        for="zest-pref-authors-etal"
       ></html:label>
       <html:input
         type="text"
         style="width: 6em"
         preference="authors.etAl"
+        aria-labelledby="zest-pref-authors-etal-label"
+        id="zest-pref-authors-etal"
       ></html:input>
       <html:label
         data-l10n-id="pref-authors-omitted"
         style="margin-inline-start: 12px"
+        id="zest-pref-authors-omitted-label"
+        for="zest-pref-authors-omitted"
       ></html:label>
       <html:input
         type="text"
         style="width: 4em"
         preference="authors.omitted"
+        aria-labelledby="zest-pref-authors-omitted-label"
+        id="zest-pref-authors-omitted"
       ></html:input>
     </hbox>
     <hbox align="center">
-      <html:label data-l10n-id="pref-authors-self"></html:label>
+      <html:label
+        data-l10n-id="pref-authors-self"
+        id="zest-pref-authors-self-label"
+        for="zest-pref-authors-self"
+      ></html:label>
       <html:input
         type="text"
         style="flex: 1"
         preference="authors.selfNames"
+        aria-labelledby="zest-pref-authors-self-label"
+        id="zest-pref-authors-self"
       ></html:input>
     </hbox>
     <description
@@ -846,7 +1174,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="bibliography">
     <label><html:h2 data-l10n-id="pref-group-citations"></html:h2></label>
     <checkbox
       preference="column.citations.enable"
@@ -869,12 +1197,17 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-s2key-label"></html:label>
+      <html:label
+        data-l10n-id="pref-s2key-label"
+        id="zest-pref-s2key-label"
+        for="zest-pref-s2key"
+      ></html:label>
       <html:input
         type="password"
         id="zest-pref-s2key"
         class="zest-pref-key"
         style="flex: 1"
+        aria-labelledby="zest-pref-s2key-label"
       ></html:input>
       <button
         data-l10n-id="pref-key-save"
@@ -898,13 +1231,19 @@
       data-l10n-id="pref-s2key-hint"
     ></description>
     <hbox align="center">
-      <html:label data-l10n-id="pref-cite-stale"></html:label>
+      <html:label
+        data-l10n-id="pref-cite-stale"
+        id="zest-pref-cite-stale-label"
+        for="zest-pref-cite-stale"
+      ></html:label>
       <html:input
         type="number"
         min="1"
         max="3650"
         style="width: 6em"
         preference="cite.staleDays"
+        aria-labelledby="zest-pref-cite-stale-label"
+        id="zest-pref-cite-stale"
       ></html:input>
     </hbox>
     <description
@@ -913,7 +1252,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="bibliography">
     <label><html:h2 data-l10n-id="pref-group-panel"></html:h2></label>
     <checkbox
       preference="info.enable"
@@ -945,7 +1284,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-sidebar"></html:h2></label>
     <checkbox
       preference="sidebar.stats"
@@ -968,7 +1307,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="workspace">
     <label><html:h2 data-l10n-id="pref-group-tabs"></html:h2></label>
     <checkbox
       preference="tabs.sidebar"
@@ -981,13 +1320,19 @@
       native="true"
     />
     <hbox align="center">
-      <html:label data-l10n-id="pref-tabs-width"></html:label>
+      <html:label
+        data-l10n-id="pref-tabs-width"
+        id="zest-pref-tabs-width-label"
+        for="zest-pref-tabs-width"
+      ></html:label>
       <html:input
         type="number"
         min="160"
         max="480"
         style="width: 6em"
         preference="tabs.width"
+        aria-labelledby="zest-pref-tabs-width-label"
+        id="zest-pref-tabs-width"
       ></html:input>
     </hbox>
     <description
@@ -996,7 +1341,7 @@
     ></description>
   </groupbox>
 
-  <groupbox>
+  <groupbox data-zest-pref-task="advanced">
     <label><html:h2 data-l10n-id="pref-group-about"></html:h2></label>
     <description data-l10n-id="pref-about-text"></description>
     <description id="zest-pref-build"

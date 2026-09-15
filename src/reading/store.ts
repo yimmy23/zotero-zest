@@ -36,14 +36,32 @@ function warnDBUnavailable(e: unknown) {
  *  - `atts`: per-attachment page maps (attKey → {pages, page, total});
  *    attKey '' = unattributed (legacy imports, files without a key);
  *  - `days`: YYYY-MM-DD → seconds (all attachments);
- *  - `total` = Σ over every attachment and every page bucket, INCLUDING the
- *    page-less bucket pageIndex -1 (snapshots / readers without a page
- *    notion) — the same definition live, after reload and after import.
+ *  - `unallocatedSeconds`: dated time not covered by the page totals;
+ *  - `total` = all page buckets (including page-less -1) plus unallocated
+ *    dated time. Pages and days are overlapping summaries of the same time,
+ *    so partial legacy records use the larger summary, never their sum.
+ *    The original rows remain intact; later page detail can account for
+ *    unallocated time without adding a duplicate synthetic page bucket.
  * `page`/`pages` (used by heat + auto-read) are the PRIMARY attachment's map
  * (the one with the most time), with the legacy '' bucket merged in by max.
  */
 
 export type ReadingKey = string;
+
+export interface ReadingRecord {
+  libraryID: number;
+  itemKey: string;
+  /** attKey → {pages, page}; missing → everything goes to '' */
+  atts?: Record<
+    string,
+    { pages?: number; page?: Map<number, number> | Record<string, number> }
+  >;
+  pages?: number;
+  page?: Map<number, number> | Record<string, number>;
+  days?: Map<string, number> | Record<string, number>;
+  firstRead?: number;
+  lastRead?: number;
+}
 
 export interface AttReading {
   pages: number;
@@ -58,6 +76,8 @@ export interface ItemReading {
   atts: Map<string, AttReading>;
   /** YYYY-MM-DD → seconds */
   days: Map<string, number>;
+  /** Derived dated seconds with no corresponding page-level accounting. */
+  unallocatedSeconds: number;
   total: number;
   firstRead: number; // epoch seconds, 0 = unknown
   lastRead: number; // epoch seconds
@@ -115,6 +135,7 @@ function newItem(libraryID: number, itemKey: string): ItemReading {
     itemKey,
     atts: new Map(),
     days: new Map(),
+    unallocatedSeconds: 0,
     total: 0,
     firstRead: 0,
     lastRead: 0,
@@ -155,11 +176,10 @@ function recompute(it: ItemReading) {
     primary = legacy;
     primaryKey = "";
   }
-  if (!total) {
-    // no page rows at all (e.g. only day rows) — fall back to days
-    for (const s of it.days.values()) total += s;
-  }
-  it.total = total;
+  let dated = 0;
+  for (const s of it.days.values()) dated += s;
+  it.unallocatedSeconds = Math.max(0, dated - total);
+  it.total = total + it.unallocatedSeconds;
   it.primaryAtt = primaryKey;
   if (!primary) {
     it.page = new Map();
@@ -360,140 +380,153 @@ class ReadingStore {
     this.emit([key]);
   }
 
+  /** Merge one record; file imports use mergeRecords for a single transaction. */
+  async mergeRecord(rec: ReadingRecord, mode: "max" | "sum"): Promise<void> {
+    return this.mergeRecords([rec], mode);
+  }
+
   /**
-   * Merge an imported / migrated record. mode "max" keeps the larger of
-   * existing vs incoming per page/day (idempotent re-import); "sum" adds.
-   * Snapshot the visible record before draining live deltas. Publish the
-   * merged snapshot only after commit, plus samples received during the write.
-   * Written to the DB immediately (throws when the DB is unavailable).
+   * Stage the complete import and commit all records in one DB transaction.
+   * A failed write publishes nothing, so retrying a sum import is safe.
+   * Keep planning synchronous: current items include pending live samples;
+   * flushPending detaches that buffer before the first subsequent await.
+   * New samples then remain in the next buffer and join the committed snapshot.
    */
-  async mergeRecord(
-    rec: {
-      libraryID: number;
-      itemKey: string;
-      /** attKey → {pages, page}; missing → everything goes to '' */
-      atts?: Record<
-        string,
-        { pages?: number; page?: Map<number, number> | Record<string, number> }
-      >;
-      pages?: number;
-      page?: Map<number, number> | Record<string, number>;
-      days?: Map<string, number> | Record<string, number>;
-      firstRead?: number;
-      lastRead?: number;
-    },
+  async mergeRecords(
+    records: readonly ReadingRecord[],
     mode: "max" | "sum",
   ): Promise<void> {
     if (this.stopped) throw new Error("reading store stopped");
+    if (!records.length) return;
     return this.enqueue(async () => {
       await this.loadIndex();
-      const key = readingKey(rec.libraryID, rec.itemKey);
-      const current = this.items.get(key);
-      const it = current
-        ? copyItem(current)
-        : newItem(rec.libraryID, rec.itemKey);
-      await this.flushPending();
+      const staged = new Map<ReadingKey, ItemReading>();
       const pageRows: PageRow[] = [];
       const attRows: AttRow[] = [];
       const dayRows: DayRow[] = [];
-      const toEntries = (
-        m: Map<number, number> | Record<string, number> | undefined,
-      ): Array<[number, number]> =>
-        !m
-          ? []
-          : m instanceof Map
-            ? [...m.entries()]
-            : Object.entries(m).map(([k, v]) => [Number(k), Number(v)]);
-      const attInputs: Array<
-        [
-          string,
-          {
-            pages?: number;
-            page?: Map<number, number> | Record<string, number>;
-          },
-        ]
-      > = rec.atts
-        ? Object.entries(rec.atts)
-        : [["", { pages: rec.pages, page: rec.page }]];
-      for (const [ak, input] of attInputs) {
-        const a = this.att(it, ak);
-        for (const [idx, sec] of toEntries(input.page)) {
+      const metaRows: MetaRow[] = [];
+      for (const rec of records) {
+        const key = readingKey(rec.libraryID, rec.itemKey);
+        const current = staged.get(key) || this.items.get(key);
+        const it = current
+          ? copyItem(current)
+          : newItem(rec.libraryID, rec.itemKey);
+        let incomingPageSeconds = 0;
+        let incomingDaySeconds = 0;
+        const toEntries = (
+          m: Map<number, number> | Record<string, number> | undefined,
+        ): Array<[number, number]> =>
+          !m
+            ? []
+            : m instanceof Map
+              ? [...m.entries()]
+              : Object.entries(m).map(([k, v]) => [Number(k), Number(v)]);
+        const attInputs: Array<
+          [
+            string,
+            {
+              pages?: number;
+              page?: Map<number, number> | Record<string, number>;
+            },
+          ]
+        > = rec.atts
+          ? Object.entries(rec.atts)
+          : [["", { pages: rec.pages, page: rec.page }]];
+        for (const [ak, input] of attInputs) {
+          const a = this.att(it, ak);
+          for (const [idx, sec] of toEntries(input.page)) {
+            if (
+              !Number.isInteger(idx) ||
+              idx < -1 ||
+              !Number.isFinite(sec) ||
+              !(sec > 0)
+            )
+              continue;
+            incomingPageSeconds += sec;
+            const cur = a.page.get(idx) || 0;
+            const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
+            if (next !== cur) {
+              a.page.set(idx, next);
+              pageRows.push({
+                libraryID: rec.libraryID,
+                itemKey: rec.itemKey,
+                attKey: ak,
+                pageIndex: idx,
+                seconds: mode === "sum" ? sec : next,
+              });
+            }
+          }
+          if (input.pages && input.pages > a.pages) {
+            a.pages = input.pages;
+            attRows.push({
+              libraryID: rec.libraryID,
+              itemKey: rec.itemKey,
+              attKey: ak,
+              pages: a.pages,
+            });
+          }
+        }
+        const dayEntries: Array<[string, number]> = rec.days
+          ? rec.days instanceof Map
+            ? [...rec.days.entries()]
+            : Object.entries(rec.days).map(([k, v]) => [k, Number(v)])
+          : [];
+        for (const [day, sec] of dayEntries) {
           if (
-            !Number.isInteger(idx) ||
-            idx < -1 ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
             !Number.isFinite(sec) ||
             !(sec > 0)
           )
             continue;
-          const cur = a.page.get(idx) || 0;
+          incomingDaySeconds += sec;
+          const cur = it.days.get(day) || 0;
           const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
           if (next !== cur) {
-            a.page.set(idx, next);
-            pageRows.push({
+            it.days.set(day, next);
+            dayRows.push({
               libraryID: rec.libraryID,
               itemKey: rec.itemKey,
-              attKey: ak,
-              pageIndex: idx,
+              day,
               seconds: mode === "sum" ? sec : next,
             });
           }
         }
-        if (input.pages && input.pages > a.pages) {
-          a.pages = input.pages;
-          attRows.push({
-            libraryID: rec.libraryID,
-            itemKey: rec.itemKey,
-            attKey: ak,
-            pages: a.pages,
-          });
+        if (rec.firstRead && (!it.firstRead || rec.firstRead < it.firstRead)) {
+          it.firstRead = rec.firstRead;
         }
-      }
-      const dayEntries: Array<[string, number]> = rec.days
-        ? rec.days instanceof Map
-          ? [...rec.days.entries()]
-          : Object.entries(rec.days).map(([k, v]) => [k, Number(v)])
-        : [];
-      for (const [day, sec] of dayEntries) {
-        if (
-          !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
-          !Number.isFinite(sec) ||
-          !(sec > 0)
-        )
-          continue;
-        const cur = it.days.get(day) || 0;
-        const next = mode === "sum" ? cur + sec : Math.max(cur, sec);
-        if (next !== cur) {
-          it.days.set(day, next);
-          dayRows.push({
-            libraryID: rec.libraryID,
-            itemKey: rec.itemKey,
-            day,
-            seconds: mode === "sum" ? sec : next,
-          });
-        }
-      }
-      if (rec.firstRead && (!it.firstRead || rec.firstRead < it.firstRead)) {
-        it.firstRead = rec.firstRead;
-      }
-      if (rec.lastRead && rec.lastRead > it.lastRead)
-        it.lastRead = rec.lastRead;
-      const metaRows: MetaRow[] = [
-        {
+        if (rec.lastRead && rec.lastRead > it.lastRead)
+          it.lastRead = rec.lastRead;
+        metaRows.push({
           libraryID: rec.libraryID,
           itemKey: rec.itemKey,
           firstRead: it.firstRead,
           lastRead: it.lastRead,
-        },
-      ];
+        });
+        recompute(it);
+        if (mode === "sum") {
+          const intended =
+            (current?.total || 0) +
+            Math.max(incomingPageSeconds, incomingDaySeconds);
+          // Without page↔day provenance, adding differently incomplete
+          // histories can hide time behind the other summary. Reject before
+          // flushing or writing; retain both source data and pending samples.
+          if (intended - it.total > Math.max(1, intended) * Number.EPSILON * 4)
+            throw new Error(getString("import-sum-unallocated"));
+        }
+        staged.set(key, it);
+      }
+      await this.flushPending();
       await zestDB.writeBatch(
         { pages: pageRows, atts: attRows, days: dayRows, meta: metaRows },
         mode === "sum" ? "add" : "max",
       );
-      const pending = this.pending.get(key);
-      if (pending) this.applyPending(it, pending);
-      recompute(it);
-      this.items.set(key, it);
-      this.emit([key]);
+      for (const [key, it] of staged) {
+        const pending = this.pending.get(key);
+        if (pending) this.applyPending(it, pending);
+        recompute(it);
+        this.items.set(key, it);
+      }
+      this.emit([...staged.keys()]);
     });
   }
 

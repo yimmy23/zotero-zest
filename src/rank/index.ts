@@ -7,9 +7,12 @@ import {
   normalizeISSN,
   allISSNs,
   journalLookupName,
+  journalCatalogIdentity,
+  JOURNAL_LOOKUP_VERSION,
+  legacyJournalNameKey,
   rankableVenueOf,
 } from "./normalize";
-import { inferRank } from "./rank";
+import { validatedRank } from "./rank";
 import { parseRewriteRules, applyRewrite } from "./map";
 import type { JournalRecord, RankValue } from "./types";
 import { datasetsLoaded, lookupDataset } from "./sources/localDataset";
@@ -88,7 +91,7 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
       values.push({
         field: v.field,
         value: v.value,
-        rank: typeof v.rank === "number" ? v.rank : undefined,
+        rank: validatedRank(v.field, v.value, v.rank),
         source: ["dataset", "easyscholar", "openalex"].includes(v.source)
           ? v.source
           : "dataset",
@@ -115,6 +118,18 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
     updated: Number(r.updated) || 0,
     misses: Array.isArray(r.misses) ? r.misses.slice(0, 4) : undefined,
     partial: r.partial === true ? true : undefined,
+    lookupVersion: Number.isInteger(r.lookupVersion) ? r.lookupVersion : 0,
+    requestedISSNs: Array.isArray(r.requestedISSNs)
+      ? ([
+          ...new Set(
+            r.requestedISSNs
+              .slice(0, 20)
+              .filter((id: unknown) => typeof id === "string")
+              .map(normalizeISSN)
+              .filter(Boolean),
+          ),
+        ] as string[])
+      : undefined,
   };
 }
 
@@ -126,53 +141,118 @@ export function journalKeyOf(item: Zotero.Item): {
   /** conservative name sent to external journal services */
   queryName: string;
   issn: string;
+  issns: string[];
+  catalogISSNs: string[];
   doi: string;
 } {
   let name = "";
   let issn = "";
+  let issns: string[] = [];
   let doi = "";
   try {
     name = rankableVenueOf(item);
-    issn = normalizeISSN((item.getField("ISSN") as string) || "");
-    if (!issn) {
-      const more = allISSNs((item.getField("ISSN") as string) || "");
-      issn = more[0] || "";
-    }
+    issns = allISSNs((item.getField("ISSN") as string) || "");
+    issn = issns[0] || "";
     doi = String(item.getField("DOI") || "").trim();
   } catch {
     // unloaded item
   }
-  const queryName = journalLookupName(name);
-  const nameKey = normalizeJournal(queryName);
+  let queryName = journalLookupName(name);
+  const catalog = journalCatalogIdentity(queryName);
+  const catalogMatches =
+    catalog && issns.every((id) => catalog.issns.includes(id));
+  // A known title with contradictory identifiers must not query a title-only
+  // rank provider and attach that title's rankings to another journal's ISSN.
+  if (catalog && !catalogMatches) queryName = "";
+  const nameKey = normalizeJournal(name);
   return {
     key: issn ? `issn:${issn}` : nameKey ? `name:${nameKey}` : "",
     nameKey,
     name,
     queryName,
     issn,
+    issns,
+    catalogISSNs: catalogMatches ? [...catalog.issns] : [],
     doi,
   };
 }
 
+function requestCacheKey(identity: ReturnType<typeof journalKeyOf>) {
+  return `query:${identity.nameKey}:${[...identity.issns].sort().join(",")}`;
+}
+
+/** Identity used by queues and manual batches before source verification. */
+export function journalRequestKeyOf(item: Zotero.Item): string {
+  const identity = journalKeyOf(item);
+  return identity.key ? requestCacheKey(identity) : "";
+}
+
 function cachedRecord(identity: ReturnType<typeof journalKeyOf>) {
-  const { key, nameKey, issn } = identity;
+  const { key, nameKey, issn, issns } = identity;
   if (!key) return undefined;
   const accepts = (raw: unknown) => {
     const record = sanitizeRecord(raw);
     if (!record) return null;
     // Legacy records and aliases can have come from the old name-first cache.
     // Reuse them only when their stored identity proves they are this journal.
-    if (issn)
-      return normalizeISSN(record.issn) === issn || record.issns?.includes(issn)
+    if (issn) {
+      if ((record.lookupVersion || 0) >= JOURNAL_LOOKUP_VERSION) {
+        if (issns.every((id) => record.issns?.includes(id))) return record;
+        // Reuse the same unverified input without treating its p/eISSNs as
+        // proven aliases or assigning name-only ranks to a different title.
+        return normalizeJournal(record.name) === nameKey &&
+          issns.length === record.requestedISSNs?.length &&
+          issns.every((id) => record.requestedISSNs?.includes(id))
+          ? record
+          : null;
+      }
+      const known = [normalizeISSN(record.issn), ...(record.issns || [])];
+      // Legacy records did not distinguish input IDs from source evidence.
+      // Their title must agree too; an old mistyped ISSN is not an alias proof.
+      return normalizeJournal(record.name) === nameKey &&
+        issns.every((id) => known.includes(id))
         ? record
         : null;
+    }
     return normalizeJournal(record.name) === nameKey ? record : null;
   };
+  const legacyKeys = [
+    identity.name,
+    ...(journalCatalogIdentity(identity.queryName)?.aliases || []),
+  ]
+    .map(legacyJournalNameKey)
+    .filter(Boolean);
+  const queryHit = cache.get<JournalRecord>(
+    NS,
+    requestCacheKey(identity),
+    accepts,
+    ttlMs(),
+  );
+  const keys = new Set([
+    key,
+    ...issns.map((id) => `issn:${id}`),
+    ...(nameKey ? [`name:${nameKey}`, nameKey] : []),
+    ...legacyKeys.flatMap((legacy) => [`name:${legacy}`, legacy]),
+  ]);
+  for (const candidate of keys) {
+    const hit = cache.get<JournalRecord>(NS, candidate, accepts, ttlMs());
+    if (hit)
+      return !queryHit || hit.data.updated >= queryHit.data.updated
+        ? hit
+        : queryHit;
+  }
+  return queryHit;
+}
+
+/** Keep trustworthy old values visible while retrying old negative answers. */
+function needsLookupUpgrade(record: JournalRecord): boolean {
   return (
-    cache.get<JournalRecord>(NS, key, accepts, ttlMs()) ||
-    (nameKey
-      ? cache.get<JournalRecord>(NS, nameKey, accepts, ttlMs())
-      : undefined)
+    (record.lookupVersion || 0) < JOURNAL_LOOKUP_VERSION &&
+    (!record.values.length ||
+      !!record.partial ||
+      !!record.misses?.length ||
+      (!!getPref("rank.useEasyScholar") &&
+        !record.values.some((value) => value.source !== "openalex")))
   );
 }
 
@@ -194,16 +274,17 @@ export function requestJournalRecord(
   const cached = cachedRecord(identity);
   const hit = cached?.data;
   if (!getPref("rank.autoFetch")) return hit;
-  const cacheKey = identity.key;
-  if (!cacheKey) return hit;
+  if (!identity.key) return hit;
+  const cacheKey = requestCacheKey(identity);
   const age = cached?.age;
   if (hit) {
     // a record built while one source was throttled or offline is shown as
     // it is, and re-asked once the back-off is over — not after 30 days
     if (
-      age !== undefined &&
-      ((hit.partial && age > FAILURE_TTL) ||
-        (!hit.values.length && age > MISS_TTL))
+      needsLookupUpgrade(hit) ||
+      (age !== undefined &&
+        ((hit.partial && age > FAILURE_TTL) ||
+          (!hit.values.length && age > MISS_TTL)))
     ) {
       const failedAt = failures.get(cacheKey);
       if (failedAt === undefined || Date.now() - failedAt >= FAILURE_TTL) {
@@ -297,11 +378,25 @@ export async function lookupJournal(
   const valid = () => !stopped && epoch === serviceEpoch && shouldContinue();
   if (!valid()) return null;
   const identity = journalKeyOf(item);
-  const { key: cacheKey, nameKey, name, queryName, issn, doi } = identity;
+  const {
+    key: cacheKey,
+    nameKey,
+    name,
+    queryName,
+    issn,
+    issns,
+    catalogISSNs,
+    doi,
+  } = identity;
   if (!cacheKey) return null;
+  const requestKey = requestCacheKey(identity);
+  let upgrade = false;
   if (!force) {
     const hit = cachedRecord(identity);
-    if (hit) return hit.data;
+    if (hit) {
+      upgrade = needsLookupUpgrade(hit.data);
+      if (!upgrade) return hit.data;
+    }
   }
 
   const values: RankValue[] = [];
@@ -316,14 +411,16 @@ export async function lookupJournal(
       const k = v.field.toLowerCase();
       if (seen.has(k)) continue;
       seen.add(k);
-      values.push({ ...v, rank: v.rank ?? inferRank(v.field, v.value) });
+      values.push({ ...v, rank: validatedRank(v.field, v.value, v.rank) });
     }
   };
 
   // 1. the user's own dataset always wins
   await datasetsLoaded();
   if (!valid()) return null;
-  push(lookupDataset(nameKey, issn));
+  const requiredISSNs = issns.join(", ");
+  let localValues = lookupDataset(nameKey, requiredISSNs, catalogISSNs);
+  let es: Awaited<ReturnType<typeof fetchEasyScholar>> | undefined;
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
   if (getPref("rank.useEasyScholar") && queryName) {
@@ -333,32 +430,43 @@ export async function lookupJournal(
       misses.push("easyscholar");
       unreachable = true;
     } else {
-      const es = await fetchEasyScholar(queryName, valid);
+      es = await fetchEasyScholar(queryName, valid);
       if (!valid()) return null;
-      if (es.values.length) push(es.values);
-      else if (es.error) {
-        misses.push("easyscholar");
-        if (es.error === "network" || es.error === "rate") unreachable = true;
-      }
     }
   }
 
-  // 3. OpenAlex, but only through the free singleton endpoints
+  // 3. OpenAlex singleton lookups, then exact-name autocomplete if necessary.
   let resolvedISSN = issn;
-  const verifiedISSNs = new Set(issn ? [issn] : []);
+  const verifiedISSNs = new Set(catalogISSNs);
+  let oa: OpenAlexJournal | null = null;
   if (getPref("rank.useOpenAlex")) {
-    let oa: OpenAlexJournal | null = null;
     const matches = (result: OpenAlexJournal) =>
-      !issn || result.issns.includes(issn);
+      issns.length
+        ? issns.every((id) => result.issns.includes(id))
+        : normalizeJournal(result.name) === nameKey &&
+          (!catalogISSNs.length ||
+            catalogISSNs.some((id) => result.issns.includes(id)));
     const networkWanted = () => valid() && !rankSourceThrottled();
-    const options = { noCache: force, shouldContinue: networkWanted };
-    if (issn && networkWanted()) oa = await fetchOpenAlexByISSN(issn, options);
+    const options = {
+      noCache: force || upgrade,
+      shouldContinue: networkWanted,
+    };
+    for (const id of new Set([...issns, ...catalogISSNs])) {
+      if (!networkWanted()) break;
+      const candidate = await fetchOpenAlexByISSN(id, options);
+      if (!valid()) return null;
+      if (candidate && matches(candidate)) {
+        oa = candidate;
+        break;
+      }
+    }
     if (!valid()) return null;
     if (!oa && doi && networkWanted()) {
       const byDoi = await fetchOpenAlexByDOI(doi, options);
       if (!valid()) return null;
       if (byDoi) {
-        // An explicit ISSN outranks a DOI pointing at a different venue.
+        // Without an ISSN the DOI must corroborate the title. A mistyped DOI
+        // must not move title-based rankings into an unrelated ISSN cache.
         if (matches(byDoi)) {
           oa = byDoi;
           resolvedISSN = issn || byDoi.issn || "";
@@ -376,17 +484,59 @@ export async function lookupJournal(
         }
       }
     }
-    if (oa) for (const id of oa.issns) verifiedISSNs.add(id);
-    if (oa?.values.length) push(oa.values);
-    else {
+    if (oa) {
+      resolvedISSN = issn || oa.issn || "";
+      for (const id of oa.issns) verifiedISSNs.add(id);
+      const canonicalName = catalogISSNs.length
+        ? queryName
+        : journalLookupName(oa.name);
+      // Resolve print/electronic dataset rows with IDs verified on the source.
+      localValues = lookupDataset(
+        normalizeJournal(canonicalName) || nameKey,
+        requiredISSNs,
+        oa.issns,
+      );
+      const differentTitle =
+        canonicalName && normalizeJournal(canonicalName) !== nameKey;
+      if (differentTitle && es) es = { ...es, values: [] };
+      // One bounded retry after an identifier-verified canonical name resolves
+      // an abbreviation/punctuation miss. Never retry on fuzzy suggestions.
+      if (
+        getPref("rank.useEasyScholar") &&
+        canonicalName &&
+        canonicalName !== queryName &&
+        !es?.values.length &&
+        !es?.error
+      ) {
+        if (networkWanted()) {
+          es = await fetchEasyScholar(canonicalName, valid);
+          if (!valid()) return null;
+        } else {
+          if (!misses.includes("easyscholar")) misses.push("easyscholar");
+          unreachable = true;
+        }
+      }
+    }
+    if (!oa?.values.length) {
       misses.push("openalex");
       // a keyless OpenAlex miss can equally mean "offline"; only treat it as a
       // real miss when something else already answered
-      if (!values.length || rankSourceThrottled()) unreachable = true;
+      if ((!localValues.length && !es?.values.length) || rankSourceThrottled())
+        unreachable = true;
     }
   }
 
+  if (es && !es.values.length) {
+    if (!misses.includes("easyscholar")) misses.push("easyscholar");
+    if (es.error === "network" || es.error === "rate") unreachable = true;
+  }
+  push(localValues);
+  if (es) push(es.values);
+  if (oa) push(oa.values);
+
   const rec: JournalRecord = {
+    lookupVersion: JOURNAL_LOOKUP_VERSION,
+    requestedISSNs: issns,
     key: cacheKey,
     name,
     issn: resolvedISSN || undefined,
@@ -403,12 +553,20 @@ export async function lookupJournal(
   if (!values.length && unreachable) {
     // remember the failure in memory only: nothing is written to the cache, so
     // the next launch (or the next ten minutes) tries again
-    failures.set(cacheKey, Date.now());
+    failures.set(requestKey, Date.now());
     return rec;
   }
-  if (rec.partial) failures.set(cacheKey, Date.now());
-  else failures.delete(cacheKey);
-  cache.set(NS, cacheKey, rec);
+  if (rec.partial) failures.set(requestKey, Date.now());
+  else failures.delete(requestKey);
+  // Until a catalogue or source corroborates the title/ID relationship, keep
+  // the result attached to this exact input. This also caches dual-ISSN misses
+  // once without publishing their unverified IDs as journal aliases.
+  const storageKey =
+    issns.length && !issns.every((id) => verifiedISSNs.has(id))
+      ? requestCacheKey(identity)
+      : cacheKey;
+  cache.set(NS, storageKey, rec);
+  if (issns.length && storageKey !== requestKey) cache.remove(NS, requestKey);
   for (const id of verifiedISSNs) {
     if (cacheKey !== `issn:${id}`) cache.set(NS, `issn:${id}`, rec);
   }
@@ -466,6 +624,8 @@ export function displayValues(
 /** A mapped UI value plus the canonical field that selected it. */
 export interface UIJournalRankValue extends RankValue {
   sourceField: string;
+  /** A Map rule changed the name or value: retain the user's exact wording. */
+  customized?: boolean;
 }
 
 /**
@@ -480,7 +640,16 @@ export function displayValuesForUI(
   const out: UIJournalRankValue[] = [];
   for (const sourceField of fields) {
     const value = displayValues(rec, [sourceField])[0];
-    if (value) out.push({ ...value, sourceField });
+    if (value) {
+      const raw = rec?.values.find(
+        (v) => v.field.toLowerCase() === sourceField.toLowerCase(),
+      );
+      out.push({
+        ...value,
+        sourceField,
+        customized: value.field !== raw?.field || value.value !== raw?.value,
+      });
+    }
   }
   return out;
 }

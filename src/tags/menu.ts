@@ -6,6 +6,7 @@ import { setTagRule, removeTagRule, ruleFor } from "./rules";
 import { parseTagRule } from "./match";
 import { getPref } from "../utils/prefs";
 import type { TagNode } from "./tree";
+import { planTagRenames } from "./rename";
 
 /**
  * Context menu of a nested-tag row: rename the whole branch, copy the segment
@@ -140,7 +141,7 @@ function prompt(win: Window, title: string, label: string, value: string) {
   return ok ? out.value : null;
 }
 
-async function renameBranch(win: Window, ctx: TagMenuContext) {
+export async function renameBranch(win: Window, ctx: TagMenuContext) {
   const names = ctx.realNames;
   if (!names.length) return;
   const next = prompt(
@@ -201,7 +202,19 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
       (t) => t.tag,
     ),
   );
-  const merges = pairs.filter(([, to]) => existing.has(to)).length;
+  let plan: ReturnType<typeof planTagRenames>;
+  try {
+    plan = planTagRenames(pairs, existing);
+  } catch (e) {
+    ztoolkit.log("[tags] rename plan rejected", e);
+    Services.prompt.alert(
+      win as any,
+      getString("tags-rename-title"),
+      getString("tags-rename-invalid"),
+    );
+    return;
+  }
+  const { ordered, merges } = plan;
   const message = merges
     ? getString("tags-rename-confirm-merge", {
         args: { count: pairs.length, merges },
@@ -210,14 +223,14 @@ async function renameBranch(win: Window, ctx: TagMenuContext) {
 
   await runBatch(
     getString("tags-rename-title"),
-    pairs,
+    ordered,
     async ([oldName, newName]) => {
       // the menu context is a snapshot; a sync or another client may have
       // removed the tag while the confirm dialog was open
       if (!Zotero.Tags.getID(oldName)) return;
       await Zotero.Tags.rename(ctx.libraryID, oldName, newName);
     },
-    { confirmMessage: message },
+    { confirmMessage: message, stopOnError: true },
   );
   ctx.onChanged();
 }

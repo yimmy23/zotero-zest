@@ -1,7 +1,7 @@
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
 import { readingStore } from "./store";
-import { askMergeMode } from "./exportImport";
+import { askMergeMode, resolveUniqueLibrary } from "./exportImport";
 
 /**
  * One-time importer for legacy zotero-style / Ethereal Style reading
@@ -34,6 +34,8 @@ export interface LegacyRecord {
   source: { kind: "note" | "note-v1" | "file"; ref: string };
   offsetFixed?: boolean;
   unresolved?: boolean;
+  /** A file key matches multiple libraries; never merge by enumeration order. */
+  ambiguous?: boolean;
   /** matched via the LOCAL numeric itemID — unreliable on any other
    *  machine/profile or after a database rebuild */
   viaItemID?: boolean;
@@ -47,6 +49,7 @@ export interface ScanReport {
   files: number;
   offsetFixed: number;
   unresolved: number;
+  ambiguous: number;
   merged: number;
   totalSeconds: number;
   details: string[];
@@ -144,7 +147,8 @@ function recordFromPayload(
       itemKey: String(key),
       totalPages: Math.max(Number(payload.pageNum) || 0, maxIdx + 1),
       secondsByPage: map,
-      source: { kind: "note-v1", ref: source.ref },
+      source:
+        source.kind === "file" ? source : { kind: "note-v1", ref: source.ref },
       offsetFixed,
     };
   }
@@ -238,24 +242,34 @@ async function scanFile(
 }
 
 function resolveItem(rec: LegacyRecord) {
+  delete rec.itemID;
+  delete rec.unresolved;
+  delete rec.ambiguous;
   const tryLib = (lib: number) => {
     try {
       const it = Zotero.Items.getByLibraryAndKey(lib, rec.itemKey);
-      return it && it.isRegularItem() ? it : null;
+      return it && !it.deleted && it.isRegularItem() ? it : null;
     } catch {
       return null;
     }
   };
-  let item = tryLib(rec.libraryID);
-  if (!item) {
-    for (const lib of Zotero.Libraries.getAll()) {
-      if (lib.libraryID === rec.libraryID) continue;
-      item = tryLib(lib.libraryID);
-      if (item) {
-        rec.libraryID = lib.libraryID;
-        break;
-      }
-    }
+  // Notes have an actual source library; missing/deleted items remain under
+  // that identity for a later restore. Numeric IDs are explicitly local too.
+  // Plain file keys have no library identity (the user-library default is a
+  // placeholder), even if that default happens to contain a matching item.
+  let item = null;
+  if (rec.source.kind !== "file" || rec.viaItemID) {
+    item = tryLib(rec.libraryID);
+  } else {
+    const libraryID = resolveUniqueLibrary(
+      rec.itemKey,
+      Zotero.Libraries.getAll().map((lib) => lib.libraryID),
+      (lib) => !!tryLib(lib),
+    );
+    if (typeof libraryID === "number") {
+      rec.libraryID = libraryID;
+      item = tryLib(libraryID);
+    } else if (libraryID === "ambiguous") rec.ambiguous = true;
   }
   if (item) rec.itemID = item.id;
   else rec.unresolved = true;
@@ -273,6 +287,7 @@ export async function scanLegacy(extraFiles: string[] = []): Promise<{
     files: 0,
     offsetFixed: 0,
     unresolved: 0,
+    ambiguous: 0,
     merged: 0,
     totalSeconds: 0,
     details: [],
@@ -298,13 +313,19 @@ export async function scanLegacy(extraFiles: string[] = []): Promise<{
   for (const r of records) {
     resolveItem(r);
     if (r.unresolved) report.unresolved++;
+    if (r.ambiguous) {
+      report.ambiguous++;
+      report.details.push(
+        `ambiguous file key skipped: ${r.itemKey} (${r.source.ref})`,
+      );
+    }
     for (const s of r.secondsByPage.values()) report.totalSeconds += s;
   }
   return { records, report };
 }
 
-/** Merge into the store (per (library,key)); unresolved records are kept
- *  under their original key so they revive if the item is restored. */
+/** Merge by identity. Unresolved notes/local IDs retain their source library
+ * for restore; files without a unique target stay in the untouched source. */
 export async function applyLegacy(
   records: LegacyRecord[],
   mode: "max" | "sum",
@@ -315,6 +336,19 @@ export async function applyLegacy(
   // then merge into the store with the chosen mode
   const byKey = new Map<string, LegacyRecord>();
   for (const r of records) {
+    const wasAmbiguous = r.ambiguous;
+    // Recheck after the confirmation dialog: a scan is not a durable mapping.
+    resolveItem(r);
+    if (r.ambiguous && !wasAmbiguous) {
+      report.ambiguous++;
+      report.details.push(
+        `ambiguous file key skipped: ${r.itemKey} (${r.source.ref})`,
+      );
+    }
+    if (r.source.kind === "file" && !r.viaItemID && r.unresolved) {
+      report.skipped++;
+      continue;
+    }
     const k = `${r.libraryID}/${r.itemKey}`;
     const cur = byKey.get(k);
     if (!cur) {
@@ -326,19 +360,26 @@ export async function applyLegacy(
     }
     cur.totalPages = Math.max(cur.totalPages, r.totalPages);
   }
-  let done = 0;
-  for (const r of byKey.values()) {
-    await readingStore.mergeRecord(
-      {
-        libraryID: r.libraryID,
-        itemKey: r.itemKey,
-        pages: r.totalPages,
-        page: r.secondsByPage,
-      },
-      mode,
-    );
-    report.merged++;
-    onProgress?.(++done, byKey.size);
+  const merged = [...byKey.values()];
+  await readingStore.mergeRecords(
+    merged.map((r) => ({
+      libraryID: r.libraryID,
+      itemKey: r.itemKey,
+      pages: r.totalPages,
+      page: r.secondsByPage,
+    })),
+    mode,
+  );
+  report.merged += merged.length;
+  report.totalSeconds = merged.reduce(
+    (sum, r) =>
+      sum + [...r.secondsByPage.values()].reduce((n, sec) => n + sec, 0),
+    0,
+  );
+  try {
+    onProgress?.(merged.length, merged.length);
+  } catch (e) {
+    ztoolkit.log("[migrate] progress update failed after commit", e);
   }
 }
 
@@ -382,7 +423,6 @@ export async function migrateLegacyUI() {
       report.details.push(`id-matched records accepted: ${idMatched}`);
     }
   }
-  const hours = (report.totalSeconds / 3600).toFixed(1);
   const mode = askMergeMode(records.length);
   if (!mode) return;
   const pw2 = new ztoolkit.ProgressWindow(getString("migrate-title"), {
@@ -398,13 +438,14 @@ export async function migrateLegacyUI() {
   } catch (e) {
     ztoolkit.log("[migrate] failed", e);
     pw2.changeLine({
-      text: getString("import-parse-failed", { args: { error: String(e) } }),
+      text: getString("import-write-failed", { args: { error: String(e) } }),
       type: "fail",
       progress: 100,
     });
     pw2.startCloseTimer(6000);
     return;
   }
+  const hours = (report.totalSeconds / 3600).toFixed(1);
   pw2.changeLine({
     text: getString("migrate-done", {
       args: { merged: report.merged, hours },
@@ -423,6 +464,7 @@ export async function migrateLegacyUI() {
         files: report.files,
         offset: report.offsetFixed,
         unresolved: report.unresolved,
+        ambiguous: report.ambiguous,
         merged: report.merged,
         hours,
       },

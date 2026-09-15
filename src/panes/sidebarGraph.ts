@@ -34,7 +34,7 @@ export function mountSidebarGraph(
   style.textContent = `
     .zest-sidebar-graph { color:var(--fill-primary); font-size:var(--zotero-font-size); min-width:0; }
     .zest-sidebar-graph-bar { display:grid; grid-template-columns:minmax(0,1fr) 30px 30px; gap:6px; align-items:stretch; margin-bottom:8px; }
-    .zest-sidebar-graph-button,.zest-sidebar-graph-mode { appearance:none; box-sizing:border-box; color:inherit; font:inherit; border:1px solid var(--fill-quinary); border-radius:6px; background:var(--material-background); margin:0; min-width:0; max-width:100%; min-height:30px; padding:5px 8px; }
+    .zest-sidebar-graph-button,.zest-sidebar-graph-mode { appearance:none; box-sizing:border-box; color:inherit; font:inherit; border:1px solid var(--fill-quinary); border-radius:var(--zest-control-radius,8px); background:var(--material-background); margin:0; min-width:0; max-width:100%; min-height:30px; padding:5px 8px; }
     .zest-sidebar-graph-mode { width:100%; padding-inline-end:28px; background-image:linear-gradient(45deg,transparent 50%,currentColor 50%),linear-gradient(135deg,currentColor 50%,transparent 50%); background-position:right 12px center,right 8px center; background-size:4px 4px,4px 4px; background-repeat:no-repeat; }
     .zest-sidebar-graph-bar > .zest-sidebar-graph-button { display:inline-flex; align-items:center; justify-content:center; padding:0; }
     .zest-sidebar-graph-button:hover:not(:disabled) { background:var(--fill-quinary); }
@@ -142,6 +142,13 @@ export function mountSidebarGraph(
         centerItemID: scope.itemID,
         authorRoles: "firstlast",
         minShared: 2,
+        shouldContinue: () =>
+          !disposed &&
+          active &&
+          current === generation &&
+          addon.data.alive &&
+          !doc?.defaultView?.closed &&
+          !scope.host.closed,
       });
       if (disposed || !active || current !== generation) return;
       data = result;

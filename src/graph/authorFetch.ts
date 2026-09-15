@@ -24,6 +24,12 @@ const DETAILS_RETRY_TTL = 30 * 1000;
 const MAX_PER_CALL = 30;
 const MAX_ERRORS = 3;
 
+export interface AuthorshipProgress {
+  attempted: number;
+  updated: number;
+  stopped?: boolean;
+}
+
 export interface AuthorshipFetchOptions {
   /** Background rendering must explicitly opt into network access. */
   automatic?: boolean;
@@ -31,6 +37,7 @@ export interface AuthorshipFetchOptions {
   details?: boolean;
   /** The caller's pane/item is still current. */
   shouldContinue?: () => boolean;
+  onProgress?: (progress: AuthorshipProgress) => void;
 }
 
 let stopped = false;
@@ -92,6 +99,16 @@ export async function ensureAuthorships(
   let changed = false;
   let budget = MAX_PER_CALL;
   let errors = 0;
+  let updated = 0;
+  let stoppedEarly = false;
+  const progress = () => {
+    if (valid())
+      options.onProgress?.({
+        attempted: MAX_PER_CALL - budget,
+        updated,
+        stopped: stoppedEarly,
+      });
+  };
   for (const item of items) {
     if (!valid() || budget <= 0 || errors >= MAX_ERRORS) break;
     let doi: string;
@@ -124,6 +141,7 @@ export async function ensureAuthorships(
       if (upgrading && itemValid()) cache.set(DETAILS_RETRY_NS, retryKey, 1);
     };
     budget--;
+    progress();
     let result: HttpResult;
     try {
       result = await fetchAuthorships(doi, itemValid);
@@ -131,17 +149,23 @@ export async function ensureAuthorships(
       ztoolkit.log("[graph] authorship fetch failed", e);
       backOffUpgrade();
       errors++;
+      stoppedEarly = true;
+      progress();
       continue;
     }
     if (!valid() || result.kind === "cancelled") break;
     if (!itemValid()) continue;
     if (result.kind === "throttled" || result.kind === "unreachable") {
       backOffUpgrade();
+      stoppedEarly = true;
+      progress();
       break;
     }
     if (result.kind !== "ok" && result.kind !== "not-found") {
       backOffUpgrade();
       errors++;
+      stoppedEarly = true;
+      progress();
       continue;
     }
     const rows = compactAuthorships(result.value?.authorships, doi);
@@ -150,6 +174,7 @@ export async function ensureAuthorships(
       cache.remove(MISS_NS, retryKey);
       cache.remove(DETAILS_RETRY_NS, retryKey);
       changed = true;
+      updated++;
       errors = 0;
     } else if (
       result.kind === "not-found" ||
@@ -159,7 +184,10 @@ export async function ensureAuthorships(
     } else {
       backOffUpgrade();
       errors++;
+      stoppedEarly = true;
     }
+    progress();
   }
+  progress();
   return changed;
 }

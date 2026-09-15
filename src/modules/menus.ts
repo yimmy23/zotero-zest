@@ -20,7 +20,11 @@ import { openRatingImport } from "../panes/ratingImport";
 import { guard } from "../utils/guard";
 import { toggleSidebar } from "../tabs/sidebar";
 import { importBetterAuthors } from "../columns/authors";
-import { journalKeyOf, rankSourceThrottled, refreshJournal } from "../rank";
+import {
+  journalRequestKeyOf,
+  rankSourceThrottled,
+  refreshJournal,
+} from "../rank";
 import { updateCitations, citableItems } from "../cite";
 
 /**
@@ -72,13 +76,12 @@ async function setRatingForAll(items: Zotero.Item[], n: number) {
 
 async function refreshJournalsFor(items: Zotero.Item[]) {
   if (!items.length) return;
-  // one request per JOURNAL, not per item — dedupe before the batch
+  // Share the service's complete request identity, including conflicting IDs.
   const byJournal = new Map<string, Zotero.Item>();
   for (const it of items) {
     let key = "";
     try {
-      const id = journalKeyOf(it);
-      key = id.key || (id.issn ? `issn:${id.issn}` : "");
+      key = journalRequestKeyOf(it);
     } catch {
       // unloaded item
     }
@@ -87,6 +90,7 @@ async function refreshJournalsFor(items: Zotero.Item[]) {
   }
   const targets = [...byJournal.values()];
   if (!targets.length) return;
+  const throttled = new Error("rank source throttled");
   await runBatch(
     getString("rank-menu-refresh", "label"),
     targets,
@@ -94,20 +98,26 @@ async function refreshJournalsFor(items: Zotero.Item[]) {
       // once the rank service is throttled, every further journal in this batch
       // would get the same "too fast" answer and be recorded as a miss — stop
       // instead of spending the rest of the batch on refusals
-      if (rankSourceThrottled()) throw new Error("rank source throttled");
+      if (rankSourceThrottled()) throw throttled;
       await refreshJournal(item);
+      if (rankSourceThrottled()) throw throttled;
     },
     {
       confirmMessage: getString("batch-confirm-count", {
         args: { count: targets.length },
       }),
+      stopOnError: (error) => error === throttled,
     },
   );
 }
 
-async function updateCitationsFor(items: Zotero.Item[], onlyStale: boolean) {
+export async function updateCitationsFor(
+  items: Zotero.Item[],
+  onlyStale: boolean,
+) {
   const targets = citableItems(items, onlyStale);
   const win = Zotero.getMainWindow();
+  if (!addon.data.alive || win?.closed) return;
   if (!targets.length) {
     Services.prompt.alert(
       win as any,
@@ -116,32 +126,54 @@ async function updateCitationsFor(items: Zotero.Item[], onlyStale: boolean) {
     );
     return;
   }
-  const tally = { updated: 0, unchanged: 0, missing: 0, failed: 0 };
-  await runBatch(
+  const tally = {
+    updated: 0,
+    unchanged: 0,
+    missing: 0,
+    notFound: 0,
+    failed: 0,
+  };
+  const throttled = new Error("citation source throttled");
+  const result = await runBatch(
     getString("menu-citations-update", "label"),
     targets,
-    async (item) => {
-      const outcome = await updateCitations(item, !onlyStale);
+    async (item, _index, shouldContinue) => {
+      let outcome;
+      try {
+        outcome = await updateCitations(item, !onlyStale, shouldContinue);
+      } catch (error) {
+        tally.failed++;
+        throw error;
+      }
+      if (outcome.status === "cancelled") return "cancelled";
       if (outcome.status === "updated") tally.updated++;
       else if (outcome.status === "unchanged") tally.unchanged++;
       else if (outcome.status === "no-id") tally.missing++;
-      else tally.failed++;
-      // every further item would get the same refusal: stop the batch
-      // (the runner reports how many were left untouched)
-      if (outcome.status === "throttled")
-        throw new Error("citation source throttled");
+      else if (outcome.status === "not-found") tally.notFound++;
+      else {
+        tally.failed++;
+        throw outcome.status === "throttled"
+          ? throttled
+          : new Error("citation update failed");
+      }
     },
     {
       confirmMessage: getString("batch-confirm-count", {
         args: { count: targets.length },
       }),
+      // Ordinary failures remain item-local; throttling stops the selection.
+      stopOnError: (error) => error === throttled,
     },
   );
-  Services.prompt.alert(
-    win as any,
-    getString("menu-citations-update", "label"),
-    getString("citations-done", { args: tally }),
-  );
+  if (!result) return;
+  const summary = { ...tally, stopped: result.stopped };
+  if (!result.cancelled && addon.data.alive && !win?.closed)
+    Services.prompt.alert(
+      win as any,
+      getString("menu-citations-update", "label"),
+      getString("citations-done", { args: summary }),
+    );
+  return { ...summary, cancelled: !!result.cancelled };
 }
 
 async function clearReadingData(items: Zotero.Item[]) {

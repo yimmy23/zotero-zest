@@ -133,27 +133,16 @@ export function isOurCitationLine(line: string): boolean {
  * inside Extra — is preserved verbatim.
  */
 export function withCitationLine(extra: string, line: string): string {
-  // same rule as utils/extra.ts: a CRLF Extra stays CRLF — rejoining with
-  // "\n" would rewrite every line the docstring promises to leave alone
-  const eol = (extra || "").includes("\r\n") ? "\r\n" : "\n";
-  const lines = (extra || "").split(/\r?\n/);
-  const out: string[] = [];
   let placed = false;
-  for (const l of lines) {
-    if (isOurCitationLine(l)) {
-      // first hit keeps its position; any later duplicate of OUR line goes
-      if (!placed) {
-        out.push(line);
-        placed = true;
-      }
-      continue;
-    }
-    out.push(l);
-  }
-  if (!placed) {
-    // drop a trailing blank line so the appended record does not leave a gap
-    while (out.length && !out[out.length - 1].trim()) out.pop();
-    out.push(line);
-  }
-  return out.join(eol);
+  // Keep each untouched line and its own ending byte-for-byte. Splitting and
+  // joining would also rewrite mixed line endings and trailing blank lines.
+  const next = extra.replace(/([^\r\n]*)(\r\n|\n|$)/g, (raw, text, eol) => {
+    if (!isOurCitationLine(text)) return raw;
+    if (placed) return "";
+    placed = true;
+    return `${line}${eol}`;
+  });
+  if (placed) return next;
+  const eol = extra.includes("\r\n") ? "\r\n" : "\n";
+  return `${extra}${extra ? eol : ""}${line}`;
 }

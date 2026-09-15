@@ -3,6 +3,8 @@ import {
   newId,
   type TabGroupConfig,
   type TabSessionConfig,
+  type TabSessionEntry,
+  type TabSessionTarget,
 } from "../core/config";
 
 /**
@@ -19,6 +21,7 @@ import {
 
 export type TabGroup = TabGroupConfig;
 export type TabSession = TabSessionConfig;
+export type { TabSessionEntry, TabSessionTarget };
 
 /**
  * Groups and sessions are first-class fields of zest-config.json — the config
@@ -116,12 +119,17 @@ export function groupOf(memberKey: string): TabGroup | undefined {
   return groups().find((g) => g.members.includes(memberKey));
 }
 
-export function saveSession(name: string, items: string[]): TabSession {
+export function saveSession(
+  name: string,
+  items: TabSessionEntry[],
+  selected?: TabSessionTarget,
+): TabSession {
   const session: TabSession = {
     id: newId("ts"),
     name: name.slice(0, 60) || new Date().toISOString().slice(0, 16),
     saved: Date.now(),
     items,
+    ...(selected ? { selected } : {}),
   };
   zestConfig.update((draft) => {
     draft.tabSessions = [...draft.tabSessions, session].slice(-20);

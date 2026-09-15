@@ -501,6 +501,29 @@ test("keyboard shortcuts target only local search and export menu; advanced filt
   assert.equal(toggle.getAttribute("aria-expanded"), "true");
 });
 
+test("folded matrix filters count comments-only and clear the count on reset", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const toggle = find(app.win, ".zest-matrix-filter-toggle");
+  const filters = find(app.win, ".zest-matrix-filters");
+  const comments = find(app.win, ".zest-matrix-comments");
+  toggle.click();
+  comments.checked = true;
+  comments.dispatch("change");
+  toggle.click();
+  assert.equal(filters.hidden, true);
+  assert.equal(toggle.getAttribute("aria-expanded"), "false");
+  assert.equal(rendered(app.win).length, 1);
+  assert.equal(toggle.querySelector("span").textContent, "matrix-filters · 1");
+  find(app.win, ".zest-matrix-reset").click();
+  assert.equal(comments.checked, false);
+  assert.equal(filters.hidden, true);
+  assert.equal(rendered(app.win).length, 2);
+  assert.equal(toggle.querySelector("span").textContent, "matrix-filters");
+  app.closeMatrix();
+});
+
 test("closing cancels debounce timers and captured callbacks cannot repaint", async () => {
   const app = setup();
   app.openMatrix(app.host);

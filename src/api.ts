@@ -11,7 +11,8 @@ import { getRating } from "./columns/rating";
 import { citationOf } from "./cite/index";
 import { getJournalRecord, displayValues } from "./rank/index";
 import { displayFields } from "./rank/rank";
-import { numberOf } from "./rank/types";
+import { rankFieldsForDisplay } from "./rank/display";
+import { numberOf, valueOf } from "./rank/types";
 import { getSummary, computeSummary } from "./annots/density";
 import { textTagsOf } from "./columns/textTags";
 import { getPref } from "./utils/prefs";
@@ -239,9 +240,12 @@ export const api = {
   /* ---- journal ---- */
 
   /**
-   * The badges the journal columns show, in the order the user configured
-   * (`rank.fields`): [{ field: "中科院分区", value: "1区", source: "easyscholar" }].
-   * Falls back to everything on the record when nothing matches.
+   * Configured journal ranks after Map rewrites. Shipped default field lists
+   * use the same XinRui/CAS fallback and locale order as the columns; custom
+   * lists retain their exact order. Values remain raw, without UI translation
+   * or source prefixes: [{ field: "xr", value: "医学1区", source: "easyscholar" }].
+   * Falls back to the full record only when no configured field matches;
+   * Map-hidden matches stay hidden, even when they leave an empty result.
    */
   journalRanks: (
     item: ItemLike,
@@ -250,8 +254,10 @@ export const api = {
       const it = resolve(item);
       const rec = it ? getJournalRecord(it) : undefined;
       if (!rec) return [];
-      const shown = displayValues(rec, displayFields());
-      const list = shown.length ? shown : rec.values;
+      const fields = rankFieldsForDisplay(displayFields(), rec);
+      const list = fields.some((field) => valueOf(rec, field))
+        ? displayValues(rec, fields)
+        : rec.values;
       return list.map((v) => ({
         field: v.field,
         value: v.value,

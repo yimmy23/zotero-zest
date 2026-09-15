@@ -1,6 +1,6 @@
 import { http, politeParam, type RequestOptions } from "../../core/http";
 import { normalizeISSN, normalizeJournal } from "../normalize";
-import type { RankValue } from "../types";
+import { parseRankNumber, type RankValue } from "../types";
 
 /**
  * OpenAlex — the keyless fallback. Since February 2026 OpenAlex bills by
@@ -12,8 +12,8 @@ import type { RankValue } from "../types";
  *   /sources?search=...       search     10 credits
  *
  * A keyless client only gets 1000 credits a day, so Zest only ever uses the
- * free singleton lookups: ISSN first, DOI second. It NEVER searches by journal
- * name — that would burn the daily budget in a hundred rows.
+ * singleton lookups: ISSN first, DOI second. A final autocomplete request can
+ * resolve an exact title to an ISSN; paid fuzzy source search is never used.
  *
  * What OpenAlex gives is a citation average, not an impact factor; it is
  * surfaced under its own field name (`oa2yr`) and labelled as such.
@@ -45,8 +45,8 @@ export interface OpenAlexJournal {
 function sourceISSNs(src: OaSource): string[] {
   return [
     ...new Set(
-      [src.issn_l, ...(src.issn || [])]
-        .map((id) => normalizeISSN(id))
+      [src.issn_l, ...(Array.isArray(src.issn) ? src.issn : [])]
+        .map((id) => (typeof id === "string" ? normalizeISSN(id) : ""))
         .filter(Boolean),
     ),
   ];
@@ -55,11 +55,15 @@ function sourceISSNs(src: OaSource): string[] {
 function valuesFrom(src: OaSource): RankValue[] {
   const out: RankValue[] = [];
   const two = src.summary_stats?.["2yr_mean_citedness"];
-  if (typeof two === "number" && Number.isFinite(two)) {
+  if (typeof two === "number" && parseRankNumber(two) !== undefined) {
     out.push({ field: "oa2yr", value: two.toFixed(2), source: "openalex" });
   }
   const h = src.summary_stats?.h_index;
-  if (typeof h === "number" && Number.isFinite(h)) {
+  if (
+    typeof h === "number" &&
+    parseRankNumber(h) !== undefined &&
+    Number.isInteger(h)
+  ) {
     out.push({ field: "oahindex", value: String(h), source: "openalex" });
   }
   return out;
@@ -107,15 +111,19 @@ export async function fetchOpenAlexByName(
     ...options,
     responseType: "json",
   });
-  const hit = (res?.results || []).find(
+  const hits = (Array.isArray(res?.results) ? res.results : []).filter(
     (r: any) => normalizeJournal(r?.display_name || "") === wanted,
   );
-  const issn = normalizeISSN(
-    String(hit?.external_id || "").replace(/^.*\//, ""),
+  const identifiers = new Set<string>(
+    hits.map((hit: any) =>
+      normalizeISSN(String(hit?.external_id || "").replace(/^.*\//, "")),
+    ),
   );
-  if (!issn) return null;
+  // Homonymous sources need an identifier; result order is not evidence.
+  if (identifiers.size !== 1 || identifiers.has("")) return null;
+  const issn = [...identifiers][0];
   const full = await fetchOpenAlexByISSN(issn, options);
-  return full ? { ...full, issn } : null;
+  return full && normalizeJournal(full.name) === wanted ? full : null;
 }
 
 /** free singleton lookup by DOI → the work's host source (journal) */
@@ -141,7 +149,8 @@ export async function fetchOpenAlexByDOI(
       return {
         ...full,
         issn: normalizeISSN(issn),
-        issns: [...new Set([...full.issns, ...sourceISSNs(src)])],
+        // Only the full source record verifies aliases for cache writes.
+        issns: full.issns,
       };
   }
   return {

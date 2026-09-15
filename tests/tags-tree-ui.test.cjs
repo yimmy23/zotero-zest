@@ -226,9 +226,11 @@ test("all separator choices are supported, including plus, tilde and angle brack
     ),
     "utf8",
   );
-  const block = source.match(
-    /<menulist preference="nestedTags.linkSymbol"[\s\S]*?<\/menulist>/,
-  )[0];
+  const separatorMenu = source.match(
+    /<menulist\b[^>]*\bpreference="nestedTags.linkSymbol"[^>]*>[\s\S]*?<\/menulist>/,
+  );
+  assert.ok(separatorMenu, "the separator preference menu remains available");
+  const block = separatorMenu[0];
   const choices = [...block.matchAll(/value="([^"]+)"/g)].map((m) =>
     m[1].replace("&lt;", "<"),
   );
@@ -307,6 +309,46 @@ test("child and automatic preferences update an existing filter without another 
   f.prefs["extensions.zotero.tagSelector.showAutomatic"] = false;
   await f.api.refreshTagTree(w);
   assert.equal(f.filters.get(w)([automatic]).length, 0);
+});
+
+test("tree selections keep branches structured and use display paths for regex descendants", async () => {
+  const f = fixture();
+  f.prefs["textTags.match"] = "/^\\[([^\\]]+)\\]/";
+  f.prefs["nestedTags.linkSymbol"] = ":";
+  f.scope(["[Method:A] first", "[Method:B] second", "[Topic:Lung] third"]);
+  const w = f.window(),
+    other = f.window();
+  await f.api.refreshTagTree(w);
+  await f.api.refreshTagTree(other);
+  f.row(w, "Method").click();
+  const selected = f.api.selectedTagBranches(w);
+  assert.equal(selected.branches.length, 1);
+  assert.equal(selected.branches[0].path, "Method");
+  assert.deepEqual(Array.from(selected.branches[0].names), [
+    "[Method:A] first",
+    "[Method:B] second",
+  ]);
+  assert.equal(selected.linkSymbol, ":");
+  assert.equal(f.api.selectedTagBranches(other).branches.length, 0);
+  assert.equal(f.api.selectedTagBranches().branches.length, 0);
+  const items = [
+    new f.Item([{ tag: "[Method:A] first" }]),
+    new f.Item([{ tag: "[Method:B] second" }]),
+    new f.Item([{ tag: "[Method:C] unseen" }]),
+    new f.Item([{ tag: "[Methodology:A] neighbor" }]),
+    new f.Item([{ tag: "[Method:A] first" }, { tag: "[Topic:Lung] third" }]),
+  ];
+  assert.deepEqual(f.filters.get(w)(items), [
+    items[0],
+    items[1],
+    items[2],
+    items[4],
+  ]);
+  // Snapshot mutation cannot change the live selected branch.
+  selected.branches[0].names.length = 0;
+  assert.equal(f.api.selectedTagBranches(w).branches[0].names.length, 2);
+  f.row(w, "Topic").click();
+  assert.deepEqual(f.filters.get(w)(items), [items[4]]);
 });
 
 test("native/master preference paths clear selections and filters in every window", async () => {

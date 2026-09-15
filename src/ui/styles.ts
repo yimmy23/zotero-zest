@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { getPref } from "../utils/prefs";
 import { createDOMOwnership } from "../utils/domOwnership";
+import { TABS_SIDEBAR_STYLES } from "../tabs/sidebarStyles";
 
 const ownership = createDOMOwnership();
 const styles = new WeakMap<Window, { node: HTMLElement; root: HTMLElement }>();
@@ -90,6 +91,7 @@ export function registerStyles(win: Window) {
        (see applyAccent), so the user can retune the whole plugin from one
        colour picker. */
     :root {
+      --zest-control-radius: 8px;
       --zest-accent: ${ACCENT_FALLBACK};
       /* one step away from the background: mixing toward the theme's TEXT
          colour darkens it in the light theme and lightens it in the dark one,
@@ -189,13 +191,13 @@ export function registerStyles(win: Window) {
     /* #Tags badges */
     .virtualized-table .cell.zest-texttags .zest-badges { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
     .zest-badge {
-      display: inline-block; padding: 0 5px; border-radius: 4px; line-height: 1.45;
+      display: inline-block; padding: 0 5px; border-radius: 6px; line-height: 1.45;
       font-size: calc(var(--zotero-font-size, 13px) * .923); white-space: nowrap;
       background-color: var(--fill-quinary); color: var(--fill-primary);
     }
-    .zest-badge.zest-readable-text { color: var(--zest-readable-light, var(--fill-primary)); }
-    @media (prefers-color-scheme: dark) {
-      .zest-badge.zest-readable-text { color: var(--zest-readable-dark, var(--fill-primary)); }
+    .zest-badge.zest-readable-text {
+      color:var(--fill-primary); background-color:var(--material-background);
+      background-color:color-mix(in srgb,rgb(var(--zest-badge-rgb)) calc(var(--zest-badge-opacity,.16)*100%),var(--material-background));
     }
 
     /* Journal rank badges + impact factor (heat wash behind the number, or a bar) */
@@ -243,7 +245,7 @@ export function registerStyles(win: Window) {
     .zest-tagtree-tab {
       appearance:none; border:1px solid transparent; background-color:transparent; cursor:pointer;
       display:flex; align-items:center; justify-content:center; flex:1 1 auto; min-width:0;
-      gap:3px; min-height:24px; margin:0; padding:2px 3px; border-radius:5px;
+      gap:3px; min-height:24px; margin:0; padding:2px 3px; border-radius:var(--zest-control-radius);
       color:var(--fill-secondary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.846);
     }
     .zest-tagtree-tab span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -259,7 +261,7 @@ export function registerStyles(win: Window) {
       display:flex; align-items:center; gap:3px; padding:5px 7px 3px; flex:0 0 auto; min-width:0;
     }
     .zest-tagtree-btn {
-      appearance:none; border:1px solid transparent; border-radius:5px; margin:0; padding:0;
+      appearance:none; border:1px solid transparent; border-radius:var(--zest-control-radius); margin:0; padding:0;
       width:25px; height:25px; flex:0 0 auto; justify-content:center; cursor:pointer;
       background-color:transparent; color:var(--fill-secondary); box-shadow:none;
     }
@@ -268,7 +270,7 @@ export function registerStyles(win: Window) {
     .zest-tagtree-searchbar {
       display:flex; align-items:center; gap:5px; flex:0 0 auto; min-width:0;
       margin:2px 8px 5px; padding:1px 6px; border:1px solid var(--fill-quinary);
-      border-radius:6px; background-color:var(--material-background,transparent); color:var(--fill-secondary);
+      border-radius:var(--zest-control-radius); background-color:var(--material-background,transparent); color:var(--fill-secondary);
     }
     .zest-tagtree-searchbar:focus-within { border-color:var(--fill-secondary); }
     .zest-tagtree-search {
@@ -281,14 +283,14 @@ export function registerStyles(win: Window) {
     .zest-tagtree-selection { display:flex; align-items:center; gap:5px; padding:5px 8px; border-bottom:1px solid var(--fill-quinary); }
     .zest-tagtree-count { flex:0 0 auto; white-space:nowrap; color:var(--fill-secondary); font-size:calc(var(--zotero-font-size,13px)*.846); }
     .zest-tagtree-chips { display:flex; flex:1 1 auto; gap:4px; min-width:0; overflow:auto; scrollbar-width:thin; }
-    .zest-tagtree-chip { appearance:none; display:inline-flex; align-items:center; flex:0 0 auto; max-width:100%; gap:6px; margin:0; padding:3px 6px; border:1px solid var(--fill-quinary); border-radius:5px; background-color:var(--fill-quinary); color:var(--fill-primary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.846); cursor:pointer; box-shadow:none; }
+    .zest-tagtree-chip { appearance:none; display:inline-flex; align-items:center; flex:0 0 auto; max-width:100%; gap:6px; margin:0; padding:3px 6px; border:1px solid var(--fill-quinary); border-radius:var(--zest-control-radius); background-color:var(--fill-quinary); color:var(--fill-primary); font:inherit; font-size:calc(var(--zotero-font-size,13px)*.846); cursor:pointer; box-shadow:none; }
     .zest-tagtree-chip span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .zest-tagtree-chip:hover { border-color:var(--fill-tertiary); }
     .zest-tagtree-body { padding:4px 6px 6px; }
     .zest-tagtree-row {
       display:flex; align-items:center; min-width:0; gap:5px; min-height:26px;
       padding:3px 5px 3px calc(3px + var(--zest-tag-depth,0)*11px);
-      border:1px solid transparent; cursor:pointer; border-radius:5px; white-space:nowrap;
+      border:1px solid transparent; cursor:pointer; border-radius:var(--zest-control-radius); white-space:nowrap;
       font-size:calc(var(--zotero-font-size,13px)*.923);
     }
     .zest-tagtree-branch .zest-tagtree-label { font-weight:550; }
@@ -311,22 +313,25 @@ export function registerStyles(win: Window) {
     .zest-tagtree-num { flex:0 0 auto; min-width:20px; padding:1px 4px; border-radius:4px; text-align:center; background-color:var(--fill-quinary); color:var(--fill-secondary); font-size:.85em; font-variant-numeric:tabular-nums; }
     .zest-tagtree-row.selected .zest-tagtree-num { color: inherit; opacity: .8; }
     .zest-tagtree-empty { padding:8px; color:var(--fill-secondary); font-size:calc(var(--zotero-font-size,13px)*.923); line-height:1.5; }
-    .zest-tagtree-retry { display:block; margin:6px 0 0; padding:3px 8px; color:var(--fill-primary); border:1px solid var(--fill-quinary); border-radius:5px; background-color:var(--material-background,transparent); box-shadow:none; }
+    .zest-tagtree-retry { display:block; margin:6px 0 0; padding:3px 8px; color:var(--fill-primary); border:1px solid var(--fill-quinary); border-radius:var(--zest-control-radius); background-color:var(--material-background,transparent); box-shadow:none; }
 
     /* toolbar button: Zotero's own chrome, one extra "graph is open" state.
        fill:currentColor + context-properties is exactly what Zotero does
        for #zotero-tb-add and friends, so the mark tracks the toolbar colour
        (light, dark, and the disabled/hover states) instead of being fixed. */
     #zest-tb-menu {
+      border-radius: var(--zest-control-radius);
       fill: currentColor;
       -moz-context-properties: fill, fill-opacity;
     }
     #zest-tb-menu.zest-tb-on {
       background-color: var(--fill-quinary);
-      border-radius: 5px;
     }
 
     /* ---------- literature info panel ---------- */
+    :is(.zest-info, .zest-annot-cards, .zest-tagtree, .zest-tabbar) :is(button, summary) {
+      border-radius: var(--zest-control-radius);
+    }
     /* read-only libraries: the controls stay visible (the values are real)
        but must not look clickable */
     .zest-info-btn:disabled, .zest-info-input:disabled {
@@ -360,6 +365,12 @@ export function registerStyles(win: Window) {
       font-size: calc(var(--zotero-font-size, 13px) * .923); overflow-wrap: anywhere;
     }
     .zest-info-value { min-width: 0; overflow-wrap: anywhere; }
+    .zest-info-citation-key { grid-template-columns: fit-content(40%) minmax(0, 1fr); }
+    .zest-info-citation-key-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 4px; }
+    .zest-info-citation-key-value { font-family: monospace; }
+    .zest-info-citation-key-value.zest-info-placeholder { font-family: inherit; color: var(--fill-secondary); }
+    .zest-info-citation-key-controls > .zest-info-btn { margin: 0; }
+    .zest-info-citation-key-message { grid-column: 1 / -1; color: var(--fill-secondary); font-size: .82em; }
     .zest-info-metadata { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; }
     .zest-info-metadata > .zest-info-key { grid-column: 1; grid-row: 1; padding: 0; font-size: .82em; font-weight: 500; }
     .zest-info-metadata > .zest-info-value { grid-column: 1 / -1; grid-row: 2; }
@@ -371,7 +382,7 @@ export function registerStyles(win: Window) {
     .zest-info-author-role { flex-shrink: 0; margin-inline-start: 5px; font-size: .76em; color: var(--fill-secondary); white-space: nowrap; }
     .zest-info-author-entry[hidden], .zest-info-institutions > li[hidden] { display: none; }
     .zest-info-author, .zest-info-star, .zest-info-heat-seg { appearance: none; margin: 0; padding: 0; min-width: 0; border: 0; background: transparent; font: inherit; color: inherit; }
-    .zest-info-author { max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; cursor: pointer; border-radius: 2px; }
+    .zest-info-author { max-width: 100%; text-align: start; white-space: normal; overflow-wrap: anywhere; cursor: pointer; border-radius: var(--zest-control-radius); }
     .zest-info-author:hover { text-decoration: underline; text-underline-offset: 3px; }
     .zest-info-institutions { margin: 0; padding: 0; list-style: none; font-size: .92em; line-height: 1.5; color: var(--fill-secondary); }
     .zest-info-institutions > li { margin: 0; padding-inline-start: 9px; border-inline-start: 2px solid var(--fill-quinary); }
@@ -396,7 +407,7 @@ export function registerStyles(win: Window) {
     .zest-info-ranks { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px; min-width: 0; }
     .zest-info-ranks > .zest-rank-badge { flex: 0 0 auto; max-width: 100%; }
     .zest-info-btn, .zest-info-link, .zest-affiliations-fetch, .zest-abstract-fetch {
-      appearance: none; margin: 0; border: 1px solid transparent; border-radius: 5px; padding: 2px 6px; cursor: pointer;
+      appearance: none; margin: 0; border: 1px solid transparent; border-radius: var(--zest-control-radius); padding: 2px 6px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);
       font: inherit; font-size: calc(var(--zotero-font-size, 13px) * .923); line-height: 1.4;
     }
@@ -420,7 +431,7 @@ export function registerStyles(win: Window) {
     .zest-info-star { cursor: pointer; color: var(--fill-quinary); }
     .zest-info-star.on { color: var(--zest-star-color, var(--accent-yellow)); }
     .zest-info-input {
-      width: 100%; box-sizing: border-box; min-width: 0; margin: 0; padding: 3px 6px; border-radius: 5px; font: inherit;
+      width: 100%; box-sizing: border-box; min-width: 0; margin: 0; padding: 3px 6px; border-radius: var(--zest-control-radius); font: inherit;
       border: 1px solid var(--fill-quarternary);
       background-color: var(--material-background, transparent); color: var(--fill-primary);
       resize: vertical; min-height: 3.5em; max-height: 14em; line-height: 1.5;
@@ -467,10 +478,10 @@ export function registerStyles(win: Window) {
     .zest-annot-card {
       border-inline-start: 3px solid var(--zest-readable-light, var(--zest-accent));
       border-radius: 6px; padding: 8px 10px;
-      background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .13);
+      background-color: color-mix(in srgb, var(--zest-annotation-color, var(--zest-accent)) 8%, var(--material-background, transparent));
       cursor: default;
     }
-    .zest-annot-card:hover { background-color: rgba(var(--zest-annot-rgb, 64, 114, 229), .23); }
+    .zest-annot-card:hover { background-color: color-mix(in srgb, var(--zest-annotation-color, var(--zest-accent)) 12%, var(--material-background, transparent)); }
     @media (prefers-color-scheme: dark) {
       .zest-annot-card { border-inline-start-color: var(--zest-readable-dark, var(--zest-accent)); }
     }
@@ -479,11 +490,14 @@ export function registerStyles(win: Window) {
       flex: 1 1 auto; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-size: calc(var(--zotero-font-size, 13px) * .923);
     }
-    .zest-annot-copy {
-      appearance: none; border: 0; border-radius: 4px; padding: 0 5px; cursor: pointer;
-      background-color: transparent; color: var(--fill-secondary);
-    }
-    .zest-annot-copy:hover { background-color: var(--fill-quinary); }
+    .zest-annot-actions { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:8px; }
+    .zest-annot-actions .zest-annotation-action { display:inline-flex; align-items:center; gap:4px; appearance:none; margin:0; border:1px solid var(--fill-quinary); border-radius:var(--zest-control-radius); padding:3px 7px; cursor:pointer; background-color:var(--material-background,transparent); color:var(--fill-primary); font:inherit; font-size:.86em; }
+    .zest-annot-actions .zest-annotation-action:hover { background-color:var(--fill-quinary); }
+    .zest-annot-actions .zest-annotation-action:focus-visible { outline:2px solid var(--color-focus-border,var(--fill-primary)); outline-offset:2px; }
+    .zest-annot-actions .zest-annotation-action:disabled { opacity:.55; cursor:default; }
+    .zest-annot-action-status { flex-basis:100%; color:var(--fill-secondary); font-size:.86em; }
+    .zest-annot-action-status:empty { display:none; }
+    .zest-annot-text,.zest-annot-comment { user-select:text; -moz-user-select:text; }
     .zest-annot-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
     .zest-annot-comment {
       margin-top: 3px; padding-inline-start: 6px; color: var(--fill-secondary);
@@ -497,40 +511,12 @@ export function registerStyles(win: Window) {
     }
     .zest-annot-empty { color: var(--fill-secondary); padding: 6px 0; font-size: calc(var(--zotero-font-size, 13px) * .923); }
 
-    /* ---------- vertical tab manager ---------- */
-    .zest-tabbar { display: flex; flex-direction: column; min-width: 160px; overflow: hidden;
-      background-color: var(--material-sidepane, var(--material-background, transparent));
-      border-inline-end: 1px solid var(--fill-quinary); }
-    .zest-tabbar-splitter { border: 0; background-color: var(--fill-quinary); min-width: 1px; }
-    .zest-tabbar-head { display: flex; gap: 4px; padding: 7px 6px; align-items: center; flex-wrap: nowrap;
-      border-bottom: 1px solid var(--fill-quinary); }
-    .zest-tabbar-search { flex: 1 1 auto; min-width: 0; padding: 4px 7px; border-radius: 5px;
-      border: 1px solid var(--fill-quinary);
-      background-color: var(--material-background, transparent); color: var(--fill-primary);
-      font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    .zest-tabbar-btn { appearance: none; border: 0; border-radius: 4px; padding: 1px 6px; cursor: pointer;
-      background-color: transparent; color: var(--fill-secondary); }
-    .zest-tabbar-btn:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-list { flex: 1 1 auto; overflow: auto; padding: 3px 0 8px; }
-    .zest-tabbar-group { display: flex; align-items: center; gap: 4px; padding: 7px 8px 4px; cursor: pointer;
-      color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .846); text-transform: uppercase; letter-spacing: .04em; }
-    .zest-tabbar-group:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-row { display: flex; align-items: center; gap: 5px; padding: 5px 8px; cursor: pointer;
-      border-radius: 4px; margin: 0 4px; font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    .zest-tabbar-row:hover { background-color: var(--fill-quinary); }
-    .zest-tabbar-row.selected { background-color: var(--zest-accent-wash-strong); color: var(--fill-primary); font-weight: 600; }
-    .zest-tabbar-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .zest-tabbar-close { appearance: none; border: 0; background: transparent; cursor: pointer;
-      color: inherit; opacity: 0; padding: 0 2px; }
-    .zest-tabbar-row:hover .zest-tabbar-close, .zest-tabbar-row:focus-within .zest-tabbar-close { opacity: .7; }
-    .zest-tabbar-close:hover { opacity: 1; }
-    .zest-tabbar-empty { padding: 12px; color: var(--fill-secondary); font-size: calc(var(--zotero-font-size, 13px) * .923); }
-    :root.zest-hide-native-tabs #tab-bar-container > div { display: none !important; }
+    ${TABS_SIDEBAR_STYLES}
 
     /* ---------- graph pane ---------- */
     .zest-graph-splitter { border: 0; background-color: var(--fill-quinary); min-height: 3px; }
     .zest-graph-splitter:hover { background-color: var(--zest-accent-wash-strong); }
-    .zest-graph-pane { display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }
+    .zest-graph-pane { position:relative; display: flex; flex-direction: column; min-height: 160px; overflow: hidden; background-color: var(--material-background, transparent); }
     .zest-graph-header {
       display: flex; align-items: center; gap: 6px 10px; padding: 8px 12px;
       flex-wrap: wrap; flex: 0 0 auto;
@@ -542,7 +528,7 @@ export function registerStyles(win: Window) {
       max-width: 100%; border: 1px solid var(--fill-quinary);
       border-radius: 7px; background-color: var(--fill-quinary); }
     .zest-graph-mode {
-      appearance: none; margin: 0; border: 1px solid transparent; border-radius: 5px; padding: 3px 8px; cursor: pointer;
+      appearance: none; margin: 0; border: 1px solid transparent; border-radius: var(--zest-control-radius); padding: 3px 8px; cursor: pointer;
       background-color: transparent; color: var(--fill-primary);
       font-size: inherit; line-height: 1.35; white-space: nowrap; min-height: 25px;
     }
@@ -551,8 +537,20 @@ export function registerStyles(win: Window) {
       background-color: var(--material-button, var(--material-background));
       border-color: var(--fill-quarternary); box-shadow: 0 1px 2px var(--fill-quinary); }
     .zest-graph-actions { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; flex: 0 0 auto; }
+    .zest-graph-header { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:6px; }
+    .zest-graph-header > .zest-graph-title { grid-column:1; grid-row:1; min-width:0; }
+    .zest-graph-header > .zest-graph-modes { grid-column:1/-1; grid-row:2; justify-self:start; max-width:100%; flex-wrap:wrap; }
+    .zest-graph-options { grid-column:2; grid-row:1; }
+    .zest-graph-header > .zest-graph-close { grid-column:3; grid-row:1; }
+    .zest-graph-options > summary { list-style:none; }
+    .zest-graph-options > summary::after { content:"▾"; margin-inline-start:4px; }
+    .zest-graph-options:not([open]) > .zest-graph-options-body { display:none; }
+    .zest-graph-options[open] > summary { background-color:var(--fill-quarternary,var(--fill-quinary)); }
+    .zest-graph-options-body { position:absolute; inset-inline-end:8px; top:calc(var(--zotero-font-size,13px) * 1.246 + 28px); max-height:calc(100% - var(--zotero-font-size,13px) * 1.246 - 36px); overflow:auto; z-index:5; box-sizing:border-box; width:max-content; max-width:calc(100% - 16px); padding:10px; display:flex; flex-direction:column; gap:10px; border:1px solid var(--fill-tertiary); border-radius:8px; background-color:var(--material-background); box-shadow:0 3px 8px var(--fill-quinary); }
+    .zest-graph-options-body .zest-graph-modes,.zest-graph-options-body .zest-graph-actions { flex-wrap:wrap; max-width:100%; margin:0; }
+    .zest-graph-options-body .zest-graph-btn { white-space:normal; }
     .zest-graph-btn {
-      appearance: none; margin: 0; border: 1px solid var(--fill-quinary); border-radius: 6px; padding: 4px 8px; cursor: pointer;
+      appearance: none; margin: 0; border: 1px solid var(--fill-quinary); border-radius: var(--zest-control-radius); padding: 4px 8px; cursor: pointer;
       background-color: var(--fill-quinary); color: var(--fill-primary);
       font-size: inherit; line-height: 1.35; min-height: 29px; white-space: nowrap;
     }

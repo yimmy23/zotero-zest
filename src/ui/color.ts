@@ -21,19 +21,14 @@ export function rgbToHsl(
   return [h / 6, s, l];
 }
 
-/**
- * Text colour derived from a badge colour that stays readable on the badge's
- * translucent background: same hue, lightness clamped to ≤ 40 % on light
- * themes and ≥ 70 % on dark themes (the original plugin's "auto" rule,
- * extended for dark mode).
- */
+/** Theme-aware decorative border colour; preserve neutral hues. */
 export function readableTextColor(
   rgb: [number, number, number],
   dark: boolean,
 ): string {
   const [h, s] = rgbToHsl(rgb[0], rgb[1], rgb[2]);
   const l = dark ? 0.72 : 0.36;
-  const sat = Math.max(0.35, s);
+  const sat = s;
   return `hsl(${Math.round(h * 360)}, ${Math.round(sat * 100)}%, ${Math.round(l * 100)}%)`;
 }
 
@@ -49,5 +44,23 @@ export function setReadableColorVariants(
   element.style.setProperty(
     "--zest-readable-dark",
     readableTextColor(rgb, true),
+  );
+}
+
+/** Tint the native surface while keeping native text legible in both themes. */
+export function setSemanticBadge(
+  element: HTMLElement,
+  rgb: [number, number, number],
+  opacity = 0.16,
+): void {
+  element.classList.add("zest-readable-text");
+  element.style.setProperty("--zest-badge-rgb", rgb.join(","));
+  element.style.setProperty(
+    "--zest-badge-opacity",
+    // Strong fills can erase native text contrast, especially on dark surfaces.
+    // Custom text colours bypass this helper and retain the exact preference.
+    String(
+      Number.isFinite(opacity) ? Math.min(0.25, Math.max(0, opacity)) : 0.16,
+    ),
   );
 }

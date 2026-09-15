@@ -4,8 +4,9 @@ import { guard } from "../utils/guard";
 import { openAttachmentAt } from "../utils/items";
 import { setReadableColorVariants } from "../ui/color";
 import { hexToRgb } from "../reading/heat";
-import { selectedTagNames, onTagSelectionChange } from "../tags/nestedTree";
-import { iconButton } from "../ui/icons";
+import { selectedTagBranches, onTagSelectionChange } from "../tags/nestedTree";
+import { compileTagBranches } from "../tags/branchFilter";
+import { annotationActionButton, annotationCopyText } from "../annots/actions";
 
 /**
  * "Zest · Annotations" item-pane section — locator cards.
@@ -29,6 +30,7 @@ let sectionID: string | false = false;
 let unsubscribeSelection: (() => void) | undefined;
 /** props.refresh per rendered body, so the tag tree can repaint the cards */
 const refreshers = new Map<Element, () => void>();
+const renders = new WeakMap<Element, object>();
 
 export function registerAnnotSection() {
   if (sectionID) return;
@@ -67,7 +69,10 @@ export function registerAnnotSection() {
     },
     onDestroy: (props: any) => {
       try {
-        if (props?.body) refreshers.delete(props.body);
+        if (props?.body) {
+          refreshers.delete(props.body);
+          renders.delete(props.body);
+        }
       } catch {
         // window gone
       }
@@ -78,6 +83,7 @@ export function registerAnnotSection() {
     // every item change lands — same fix as infoSection.ts
     onItemChange: (props: any) => {
       try {
+        if (props?.body) renders.delete(props.body);
         const item = props?.item;
         props?.setEnabled?.(
           props?.tabType !== "reader" &&
@@ -104,6 +110,7 @@ export function registerAnnotSection() {
 export function unregisterAnnotSection() {
   unsubscribeSelection?.();
   unsubscribeSelection = undefined;
+  for (const body of refreshers.keys()) renders.delete(body);
   refreshers.clear();
   if (!sectionID) return;
   try {
@@ -181,15 +188,6 @@ export function collectAnnotations(item: Zotero.Item): CardAnnotation[] {
   return out;
 }
 
-/** AND across selected prefixes, prefix-match inside each (same rule as the tree) */
-export function matchesPrefixes(tags: string[], prefixes: string[]): boolean {
-  if (!prefixes.length) return true;
-  for (const p of prefixes) {
-    if (!tags.some((t) => t === p || t.startsWith(p))) return false;
-  }
-  return true;
-}
-
 function renderCards(props: any) {
   const body: HTMLElement = props.body;
   const doc: Document = props.doc || body.ownerDocument;
@@ -216,19 +214,20 @@ function renderCards(props: any) {
   // first one's tree
   const win = (props.doc?.defaultView || body.ownerDocument?.defaultView) as
     Window | undefined;
-  const prefixes = selectedTagNames(win);
-  const shown = all.filter((a) => matchesPrefixes(a.tags, prefixes));
+  const selection = selectedTagBranches(win);
+  const matches = compileTagBranches(selection);
+  const shown = all.filter((a) => matches(a.tags));
 
   props.setSectionSummary?.(shown.length ? String(shown.length) : "");
   props.setL10nArgs?.(JSON.stringify({ count: shown.length }));
 
-  if (prefixes.length) {
+  if (selection.branches.length) {
     const chips = doc.createElement("div");
     chips.className = "zest-annot-filters";
-    for (const p of prefixes) {
+    for (const branch of selection.branches) {
       const chip = doc.createElement("span");
       chip.className = "zest-annot-chip";
-      chip.textContent = p;
+      chip.textContent = branch.path;
       chips.appendChild(chip);
     }
     body.appendChild(chips);
@@ -250,7 +249,11 @@ function renderCards(props: any) {
     return;
   }
 
-  for (const card of shown) body.appendChild(renderCard(doc, card));
+  const render = {};
+  renders.set(body, render);
+  const current = () =>
+    addon.data.alive && body.isConnected && renders.get(body) === render;
+  for (const card of shown) body.appendChild(renderCard(doc, card, current));
 }
 
 function emptyState(doc: Document, text: string): HTMLElement {
@@ -260,13 +263,18 @@ function emptyState(doc: Document, text: string): HTMLElement {
   return div;
 }
 
-function renderCard(doc: Document, card: CardAnnotation): HTMLElement {
+function renderCard(
+  doc: Document,
+  card: CardAnnotation,
+  current: () => boolean,
+): HTMLElement {
   const el = doc.createElement("div");
   el.className = "zest-annot-card";
   const rgb = hexToRgb(card.color);
   if (rgb) {
     el.style.setProperty("--zest-annot-rgb", `${rgb[0]},${rgb[1]},${rgb[2]}`);
     setReadableColorVariants(el, rgb);
+    el.style.setProperty("--zest-annotation-color", `rgb(${rgb.join(",")})`);
   }
 
   const head = doc.createElement("div");
@@ -285,27 +293,38 @@ function renderCard(doc: Document, card: CardAnnotation): HTMLElement {
   where.title = attName;
   head.appendChild(where);
 
-  const copy = iconButton(
-    doc,
-    "copy",
-    getString("anno-copy"),
-    "zest-annot-copy",
-    13,
-  );
+  el.appendChild(head);
+  const actions = doc.createElement("div");
+  actions.className = "zest-annot-actions";
+  const copy = annotationActionButton(doc, "copy", "zest-annot-copy");
+  const status = doc.createElement("span");
+  status.className = "zest-annot-action-status";
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  copy.disabled = !annotationCopyText(card);
   copy.addEventListener(
     "click",
     guard("annot copy", (ev: Event) => {
       ev.stopPropagation();
-      const text = [card.text, card.comment].filter(Boolean).join("\n");
+      if (!current() || !copy.isConnected) return;
       try {
-        (Zotero.Utilities.Internal as any).copyTextToClipboard(text);
+        Zotero.Utilities.Internal.copyTextToClipboard(annotationCopyText(card));
+        status.textContent = getString("matrix-copied");
       } catch (e) {
+        status.textContent = getString("matrix-copy-failed");
         ztoolkit.log("[annots] copy failed", e);
       }
     }),
   );
-  head.appendChild(copy);
-  el.appendChild(head);
+  const open = annotationActionButton(doc, "open", "zest-annot-open");
+  open.addEventListener(
+    "click",
+    guard("annot locate", (event: Event) => {
+      event.stopPropagation();
+      if (current() && open.isConnected) void openAnnotation(card);
+    }),
+  );
+  actions.append(copy, open, status);
 
   const text = doc.createElement("div");
   text.className = "zest-annot-text";
@@ -333,10 +352,19 @@ function renderCard(doc: Document, card: CardAnnotation): HTMLElement {
     el.appendChild(tags);
   }
 
+  el.appendChild(actions);
   el.title = getString("anno-card-tip");
-  el.addEventListener(
+  head.addEventListener(
     "dblclick",
-    guard("annot open", () => openAnnotation(card)),
+    guard("annot open", (event: MouseEvent) => {
+      if (
+        (event.target as Element)?.closest?.("button") ||
+        !current() ||
+        !el.isConnected
+      )
+        return;
+      void openAnnotation(card);
+    }),
   );
   return el;
 }

@@ -40,7 +40,7 @@ export function selectedInfoText(root: HTMLElement): string {
   }
 }
 
-function copyText(text: string): boolean {
+export function copyInfoText(text: string): boolean {
   try {
     const internal = Zotero.Utilities?.Internal;
     if (typeof internal?.copyTextToClipboard !== "function") return false;
@@ -92,7 +92,7 @@ export function installInfoCopy(root: HTMLElement): () => void {
     )
       return;
     const text = selectedInfoText(root);
-    if (text && copyText(text)) {
+    if (text && copyInfoText(text)) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -151,7 +151,8 @@ export function installInfoCopy(root: HTMLElement): () => void {
       }
     };
     const onCommand = guard("info copy command", () => {
-      if (active && closeMenu === cleanup && root.isConnected) copyText(text);
+      if (active && closeMenu === cleanup && root.isConnected)
+        copyInfoText(text);
       cleanup();
     });
     command.addEventListener("command", onCommand);

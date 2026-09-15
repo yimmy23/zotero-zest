@@ -1,5 +1,5 @@
 import { getString } from "../utils/locale";
-import type { RankValue } from "./types";
+import { valueOf, type JournalRecord, type RankValue } from "./types";
 
 /**
  * Locale-aware text for rank badges. The cached/API value stays untouched:
@@ -150,20 +150,52 @@ function chineseUI(): boolean {
 const SHIPPED_RANK_FIELD_ORDERS = new Set([
   // 1.0.9 and earlier: CAS -> IF -> JCR
   "sciup,sciif,sci",
-  // Current default: CAS -> JCR -> IF
+  // Previous default: CAS -> JCR -> IF
   "sciup,sci,sciif",
+  // Current default: XinRui (CAS fallback) -> JCR -> IF
+  "xr,sci,sciif",
 ]);
 
 /**
- * Canonicalize both the current and legacy shipped defaults by locale. This
- * gives existing Chinese users the new CAS -> JCR -> IF order without
- * rewriting their preference, while English keeps JCR -> CAS -> IF. Any other
- * field order is user-authored and always wins.
+ * Missing/unknown values must not suppress a usable CAS fallback. Preserve
+ * unfamiliar subject names and ranking labels rather than trying to guess
+ * their meaning; only explicit missing sentinels and malformed values fail.
  */
-export function rankFieldsForDisplay(fields: string[]): string[] {
+function usableXinRui(rec: JournalRecord | undefined): boolean {
+  const value = valueOf(rec, "xr")?.value;
+  if (typeof value !== "string") return false;
+  const text = value.trim().normalize("NFKC").replace(/\s+/g, "");
+  if (!text || /^[{[]/.test(text)) return false;
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text)) return /^[1-5]$/.test(text);
+  const zone = text.match(
+    /([+-]?(?:\d+(?:\.\d*)?|\.\d+)|[零〇一二两三四五六七八九十百千万亿壹贰貳叁參肆伍陆陸柒捌玖拾佰仟萬億]+)区[。.!！]*$/,
+  );
+  if (zone) {
+    const number = Number(zone[1]);
+    return Number.isNaN(number)
+      ? /^[一二两三四五壹贰貳叁參肆伍]$/.test(zone[1])
+      : Number.isInteger(number) && number >= 1 && number <= 5;
+  }
+  return !/^(?:n\/?a|n\.a\.?|none|null|undefined|unknown|nan|[+-]?infinity|false|true|not(?:available|found|ranked)|暂无(?:数据|分区|排名)?|无(?:数据|分区|排名)?|未知|未(?:分区|收录|评级)|不(?:适用|详)|[-—–/?？]+)$/i.test(
+    text,
+  );
+}
+
+/**
+ * Resolve the one primary partition slot in shipped defaults without writing
+ * preferences or modifying the record. Chinese puts XinRui (or CAS) first;
+ * English keeps JCR first. All other field lists are user-authored and win,
+ * including lists that explicitly request both ranking systems. Resolve
+ * before Map so a user-hidden field stays hidden instead of reviving CAS.
+ */
+export function rankFieldsForDisplay(
+  fields: string[],
+  rec?: JournalRecord,
+): string[] {
   const normalized = fields.map((field) => field.toLowerCase()).join(",");
   if (!SHIPPED_RANK_FIELD_ORDERS.has(normalized)) return fields;
-  return chineseUI() ? ["sciUp", "sci", "sciif"] : ["sci", "sciUp", "sciif"];
+  const primary = usableXinRui(rec) ? "xr" : "sciUp";
+  return chineseUI() ? [primary, "sci", "sciif"] : ["sci", primary, "sciif"];
 }
 
 interface CategoryDisplay {
@@ -179,10 +211,10 @@ function categoryDisplay(raw: string): CategoryDisplay | null {
   return ids ? { long: getString(ids[0]), short: getString(ids[1]) } : null;
 }
 
-function isCasField(field: string): "upgraded" | "basic" | null {
+function rankingSystem(field: string): "xr" | "cas" | null {
   const key = field.toLowerCase();
-  if (/^sciup(?:small|top)?$/.test(key)) return "upgraded";
-  if (key === "scibase") return "basic";
+  if (/^xr(?:small|top|warn)?$/.test(key)) return "xr";
+  if (/^sciup(?:small|top)?$/.test(key) || key === "scibase") return "cas";
   return null;
 }
 
@@ -191,24 +223,9 @@ function isKnownLocalizedField(field: string): boolean {
 }
 
 function zoneDisplay(
-  field: string,
   category: CategoryDisplay | null,
   zone: string,
 ): RankValueDisplay {
-  const edition = isCasField(field);
-  if (edition && category) {
-    return {
-      text: getString("rank-value-cas-zone-short", {
-        args: { category: category.short, zone },
-      }),
-      description: getString(
-        edition === "upgraded"
-          ? "rank-value-cas-upgraded-zone-long"
-          : "rank-value-cas-basic-zone-long",
-        { args: { category: category.long, zone } },
-      ),
-    };
-  }
   if (category) {
     return {
       text: getString("rank-value-category-zone-short", {
@@ -226,20 +243,16 @@ function zoneDisplay(
 }
 
 function gradeDisplay(
-  field: string,
   category: CategoryDisplay,
   grade: string,
 ): RankValueDisplay {
-  const cas = !!isCasField(field);
   return {
-    text: getString(
-      cas ? "rank-value-cas-grade-short" : "rank-value-category-grade-short",
-      { args: { category: category.short, grade } },
-    ),
-    description: getString(
-      cas ? "rank-value-cas-grade-long" : "rank-value-category-grade-long",
-      { args: { category: category.long, grade } },
-    ),
+    text: getString("rank-value-category-grade-short", {
+      args: { category: category.short, grade },
+    }),
+    description: getString("rank-value-category-grade-long", {
+      args: { category: category.long, grade },
+    }),
   };
 }
 
@@ -251,15 +264,31 @@ function gradeDisplay(
 export function rankValueDisplay(
   value: RankValue,
   sourceField = value.field,
+  customized = false,
 ): RankValueDisplay {
   const raw = String(value.value ?? "");
-  if (!raw || !isKnownLocalizedField(sourceField)) {
+  if (!raw || customized || !isKnownLocalizedField(sourceField)) {
     return original(raw);
   }
-  // Chinese users keep the source wording byte-for-byte, including source
-  // punctuation. Other Zotero locales fall back to the bundled English FTL.
-  if (chineseUI()) return original(raw);
+  // Source wording stays intact in Chinese. Every partition badge also names
+  // its ranking system, even for an unfamiliar category in an English UI.
+  const display = chineseUI() ? original(raw) : localizedValueDisplay(raw);
+  const system = rankingSystem(sourceField);
+  if (!system) return display;
+  return {
+    text: getString(
+      system === "xr" ? "rank-value-xr-short" : "rank-value-cas-short",
+      { args: { value: display.text } },
+    ),
+    description: getString(
+      system === "xr" ? "rank-value-xr-long" : "rank-value-cas-long",
+      { args: { value: display.description } },
+    ),
+  };
+}
 
+/** Translate recognized labels only; unknown subject names remain verbatim. */
+function localizedValueDisplay(raw: string): RankValueDisplay {
   const cleaned = raw.trim().replace(/[。．]+$/, "");
   const exact = EXACT_VALUE_IDS[cleaned as keyof typeof EXACT_VALUE_IDS];
   if (exact) {
@@ -278,11 +307,7 @@ export function rankValueDisplay(
   if (zoned) {
     const category = zoned[1] ? categoryDisplay(zoned[1]) : null;
     if (!zoned[1] || category) {
-      return zoneDisplay(
-        sourceField,
-        category,
-        CHINESE_TIERS[zoned[2]] || zoned[2],
-      );
+      return zoneDisplay(category, CHINESE_TIERS[zoned[2]] || zoned[2]);
     }
   }
 
@@ -301,11 +326,7 @@ export function rankValueDisplay(
   if (categoryGrade) {
     const category = categoryDisplay(categoryGrade[1]);
     if (category) {
-      return gradeDisplay(
-        sourceField,
-        category,
-        categoryGrade[2].toUpperCase(),
-      );
+      return gradeDisplay(category, categoryGrade[2].toUpperCase());
     }
   }
   const gradeCategory = cleaned.match(
@@ -314,11 +335,7 @@ export function rankValueDisplay(
   if (gradeCategory) {
     const category = categoryDisplay(gradeCategory[2]);
     if (category) {
-      return gradeDisplay(
-        sourceField,
-        category,
-        gradeCategory[1].toUpperCase(),
-      );
+      return gradeDisplay(category, gradeCategory[1].toUpperCase());
     }
   }
 

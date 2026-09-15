@@ -15,7 +15,12 @@ import {
 import { clearRankCache } from "../rank";
 import { fetchEasyScholar } from "../rank/sources/easyscholar";
 import { http } from "../core/http";
-import { getSecret, setSecret, secretIsInPrefs } from "../core/secrets";
+import {
+  getSecret,
+  setSecret,
+  secretIsInPrefs,
+  secretClearPending,
+} from "../core/secrets";
 import { views, removeView, renameView } from "../views/viewGroups";
 import { setPref } from "../utils/prefs";
 import { setTimeout } from "../utils/timers";
@@ -79,17 +84,25 @@ export async function registerPrefsScripts(_window: Window) {
   });
 }
 
-/** One local jump list, using the existing Fluent section headings. */
-function buildPrefNavigation(d: Document) {
+/** Task groups reuse every existing section heading and its Fluent label. */
+export function buildPrefNavigation(d: Document) {
   const root = d.getElementById("zest-prefs");
   const navigation = d.getElementById(
     "zest-pref-navigation",
   ) as HTMLElement | null;
-  if (!root || !navigation || navigation.dataset.zestBuilt) return;
-  navigation.dataset.zestBuilt = "true";
+  if (!root || !navigation || navigation.getAttribute("data-zest-built"))
+    return;
+  navigation.setAttribute("data-zest-built", "true");
   for (const heading of root.querySelectorAll<HTMLElement>("groupbox h2")) {
     const stringID = heading.getAttribute("data-l10n-id");
     if (!stringID) continue;
+    const task = heading
+      .closest("groupbox")
+      ?.getAttribute("data-zest-pref-task");
+    const links =
+      d.getElementById(`zest-pref-nav-${task}-links`) ||
+      d.getElementById("zest-pref-nav-advanced-links");
+    if (!links) continue;
     heading.tabIndex = -1;
     const button = d.createElement("button");
     button.type = "button";
@@ -102,7 +115,9 @@ function buildPrefNavigation(d: Document) {
       heading.scrollIntoView({ block: "start" });
       heading.focus({ preventScroll: true });
     });
-    navigation.appendChild(button);
+    const entry = d.createElement("li");
+    entry.appendChild(button);
+    links.appendChild(entry);
   }
 }
 
@@ -270,11 +285,13 @@ async function refreshKeyField(name?: KeyField) {
     }
     if (status) {
       const key = input?.dataset.hasKey === "1";
-      status.textContent = secretIsInPrefs(which)
-        ? getString("pref-key-plaintext")
-        : key
-          ? getString("pref-key-stored")
-          : "";
+      status.textContent = secretClearPending(which)
+        ? getString("pref-key-clear-pending")
+        : secretIsInPrefs(which)
+          ? getString("pref-key-plaintext")
+          : key
+            ? getString("pref-key-stored")
+            : "";
     }
   }
 }
@@ -528,8 +545,9 @@ async function saveKey(name: KeyField = "easyscholar") {
   if (!input) return;
   // untouched field (still showing the bullets, or clicked in and left):
   // nothing to save
-  if (!keyFieldEdited(input)) return;
-  const value = input.value.trim();
+  const edited = keyFieldEdited(input);
+  if (!edited && !secretClearPending(name)) return;
+  const value = edited ? input.value.trim() : "";
   const where = await setSecret(name, value);
   // a new easyScholar key can change the ranks themselves; a Semantic Scholar
   // key only lifts the rate limit, so the counts already fetched stay valid
@@ -537,9 +555,13 @@ async function saveKey(name: KeyField = "easyscholar") {
   await refreshKeyField(name);
   alertUser(
     getString("pref-key-save"),
-    where === "login-manager"
-      ? getString("pref-key-saved")
-      : getString("pref-key-plaintext"),
+    where === "clear-pending"
+      ? getString("pref-key-clear-pending")
+      : !value
+        ? getString("pref-key-cleared")
+        : where === "login-manager"
+          ? getString("pref-key-saved")
+          : getString("pref-key-plaintext"),
   );
 }
 

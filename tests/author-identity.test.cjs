@@ -336,3 +336,73 @@ test("unreadable local creators cannot expose cached author identities", () => {
   );
   assert.deepEqual(h.logs, []);
 });
+
+test("known OpenAlex IDs override initials, conflicting names, and surname aliases globally", () => {
+  const h = fixture();
+  const a = h.item([creator("Smith", "J.")], [row("J Smith", "A1")]);
+  const b = h.item([creator("Smith", "John")], [row("John Smith", "A2")]);
+  const alias = h.item(
+    [creator("Smyth", "John Robert")],
+    [row("John Robert Smyth", "A1")],
+  );
+  const c = h.item(
+    [creator("Smith", "J. R.")],
+    [row("John Richard Smith", "A3")],
+  );
+  const resolver = h.api.buildAuthorResolver([a, b, alias, c]);
+  for (const ref of [
+    { family: "Smith", given: "J.", oaId: "A1" },
+    { family: "Smith", given: "J. R.", oaId: "A1" },
+    { family: "Smyth", given: "", oaId: "A1" },
+    { family: "Different", given: "Anything", oaId: "A1" },
+  ]) {
+    assert.deepEqual([...resolver.memberItemIDs(ref)], [a.id, alias.id]);
+    assert.equal(resolver.findCategory(ref).id, "a:oa:A1");
+  }
+  assert.deepEqual(
+    [...resolver.memberItemIDs({ family: "Smith", given: "J.", oaId: "A404" })],
+    [],
+  );
+  assert.equal(
+    resolver.findCategory({ family: "Smith", given: "John", oaId: "A404" }),
+    null,
+  );
+  assert.deepEqual(
+    [...resolver.memberItemIDs({ family: "Smith", given: "J." })].sort(),
+    [a.id, b.id, alias.id, c.id].sort(),
+  );
+});
+
+test("token candidate indexing preserves middle-name, initial and joined-name ambiguity", async () => {
+  const h = fixture();
+  const names = [
+    "John Robert",
+    "John Richard",
+    "John",
+    "J. R.",
+    "Xiao-Ming",
+    "Xiaoming",
+    "Lei",
+    "Li",
+    "L.",
+    "",
+    "J. Paul",
+    "John Paul",
+  ];
+  const items = names.map((name) => h.item([creator("Wang", name)]));
+  const sync = h.api.buildAuthorResolver(items);
+  const asyncResolver = await h.api.buildAuthorResolverAsync(items, 1);
+  const categories = items.map((item) => sync.categoriesFor(item)[0].id);
+  assert.equal(categories[4], categories[5]);
+  assert.equal(categories[10], categories[11]);
+  assert.notEqual(categories[0], categories[1]);
+  assert.notEqual(categories[2], categories[0]);
+  assert.notEqual(categories[3], categories[0]);
+  assert.notEqual(categories[6], categories[7]);
+  assert.notEqual(categories[8], categories[6]);
+  for (const item of items)
+    assert.deepEqual(
+      Array.from(asyncResolver.categoriesFor(item), (cat) => cat.id),
+      Array.from(sync.categoriesFor(item), (cat) => cat.id),
+    );
+});
