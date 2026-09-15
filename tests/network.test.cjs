@@ -115,6 +115,8 @@ test("keyed Semantic Scholar throttling is not saved as a six-hour citation miss
   const outcome = await cite.updateCitations({
     libraryID: 1,
     key: "TEST",
+    isRegularItem: () => true,
+    isEditable: () => true,
     getField: (field) => (field === "DOI" ? "10.1234/test" : ""),
   });
   assert.equal(outcome.status, "throttled");

@@ -5,7 +5,7 @@ import {
   ConfigStore,
   type DatasetMeta,
 } from "../../core/config";
-import { normalizeJournal, normalizeISSN, allISSNs } from "../normalize";
+import { normalizeJournal, allISSNs } from "../normalize";
 import type { RankValue } from "../types";
 
 /**
@@ -94,13 +94,20 @@ function readStoredRows(raw: string): DatasetRow[] {
   for (const r of list) {
     if (!r || typeof r !== "object") continue;
     const fields: Record<string, string> = {};
+    const identifiers = new Set(allISSNs(r.issn));
     for (const [k, v] of Object.entries<any>(r.fields || {})) {
       if (typeof k !== "string" || !k) continue;
       const value = v === null || v === undefined ? "" : String(v);
+      // Older imports accidentally stored second ISSN columns as metrics.
+      // Repair only the in-memory index; the user's stored file is untouched.
+      if (isISSNKey(k)) {
+        for (const id of allISSNs(value)) identifiers.add(id);
+        continue;
+      }
       if (value) fields[k.slice(0, 60)] = value.slice(0, 120);
     }
     const name = typeof r.name === "string" ? r.name : undefined;
-    const issn = typeof r.issn === "string" ? r.issn : undefined;
+    const issn = [...identifiers].join(", ") || undefined;
     if (!name && !issn) continue;
     out.push({ name, issn, fields });
   }
@@ -142,19 +149,32 @@ function index(id: string, rows: DatasetRow[]) {
 export function lookupDataset(
   normalizedName: string,
   issn?: string,
+  /** Aliases already tied together by a journal catalogue or source record. */
+  verifiedAliases: string[] = [],
 ): RankValue[] {
   const out: RankValue[] = [];
   const seen = new Set<string>();
   for (const ds of loaded.values()) {
-    const cleanISSN = normalizeISSN(issn);
+    const required = allISSNs(issn);
+    const identifiers = [...new Set([...required, ...verifiedAliases])];
     const named = ds.byName.get(normalizedName);
+    const candidates = new Set(
+      identifiers.map((id) => ds.byISSN.get(id)).filter(Boolean),
+    );
+    // Conflicting identifier rows are ambiguous, even if their titles agree.
+    if (candidates.size > 1) continue;
+    const identified = [...candidates][0];
+    const rowIDs = allISSNs(identified?.issn);
+    const identityMatches = required.every(
+      (id) =>
+        rowIDs.includes(id) ||
+        (verifiedAliases.includes(id) &&
+          rowIDs.some((known) => verifiedAliases.includes(known))),
+    );
     const nameMatches =
-      named &&
-      (!cleanISSN ||
-        !allISSNs(named.issn).length ||
-        allISSNs(named.issn).includes(cleanISSN));
+      named && (!required.length || !allISSNs(named.issn).length);
     const row =
-      (cleanISSN ? ds.byISSN.get(cleanISSN) : undefined) ||
+      (identityMatches ? identified : undefined) ||
       (nameMatches ? named : undefined);
     if (!row) continue;
     for (const [field, value] of Object.entries(row.fields)) {
@@ -181,7 +201,25 @@ const NAME_KEYS = [
   "期刊",
   "期刊名称",
 ];
-const ISSN_KEYS = ["issn", "issn-l", "eissn", "国际标准刊号"];
+const ISSN_KEYS = [
+  "issn",
+  "issnl",
+  "pissn",
+  "eissn",
+  "printissn",
+  "electronicissn",
+  "onlineissn",
+  "国际标准刊号",
+];
+
+function isISSNKey(key: string) {
+  return ISSN_KEYS.includes(
+    key
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_-]+/g, ""),
+  );
+}
 
 export function parseDataset(
   text: string,
@@ -193,7 +231,7 @@ export function parseDataset(
 function rowFrom(obj: Record<string, unknown>): DatasetRow | null {
   const fields: Record<string, string> = {};
   let name: string | undefined;
-  let issn: string | undefined;
+  const identifiers = new Set<string>();
   for (const [rawKey, rawValue] of Object.entries(obj)) {
     const key = String(rawKey).trim();
     if (!key) continue;
@@ -207,12 +245,13 @@ function rowFrom(obj: Record<string, unknown>): DatasetRow | null {
       name = value;
       continue;
     }
-    if (!issn && ISSN_KEYS.includes(lower)) {
-      issn = value;
+    if (isISSNKey(key)) {
+      for (const id of allISSNs(value)) identifiers.add(id);
       continue;
     }
     fields[key] = value;
   }
+  const issn = [...identifiers].join(", ") || undefined;
   if (!name && !issn) return null;
   return { name, issn, fields };
 }

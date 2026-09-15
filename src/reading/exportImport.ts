@@ -1,7 +1,7 @@
 import { csvCell } from "../utils/csv";
 import { config } from "../../package.json";
 import { getString } from "../utils/locale";
-import { readingStore, dayOf } from "./store";
+import { readingStore, dayOf, type ReadingRecord } from "./store";
 
 /**
  * Reading data export / import — first-class citizens.
@@ -364,6 +364,22 @@ function validTarget(libraryID: number, key: string): boolean {
   }
 }
 
+/** Keys without a source library are usable only with one eligible target. */
+export function resolveUniqueLibrary(
+  itemKey: string,
+  libraryIDs: number[],
+  eligible: (libraryID: number, key: string) => boolean = validTarget,
+): number | "missing" | "ambiguous" {
+  const matches = [...new Set(libraryIDs)].filter((id) =>
+    eligible(id, itemKey),
+  );
+  return matches.length === 1
+    ? matches[0]
+    : matches.length
+      ? "ambiguous"
+      : "missing";
+}
+
 function resolveLibrary(
   it: ExportedItem,
   libraryIDs: number[],
@@ -397,12 +413,7 @@ function resolveLibrary(
   }
   // A machine-local libraryID cannot disambiguate another computer's export.
   // Check every current library, so a duplicate key is reported, not guessed.
-  const matches = libraryIDs.filter((id) => validTarget(id, it.itemKey));
-  return matches.length === 1
-    ? matches[0]
-    : matches.length
-      ? "ambiguous"
-      : "missing";
+  return resolveUniqueLibrary(it.itemKey, libraryIDs);
 }
 
 /** Resolve portable identities, validate targets, then merge matched records. */
@@ -424,38 +435,46 @@ export async function importItems(
   } catch {
     // Stable identities can still resolve if library enumeration is unavailable.
   }
-  for (const [index, it] of items.entries()) {
+  const records: ReadingRecord[] = [];
+  for (const it of items) {
     const libraryID = resolveLibrary(it, libraryIDs);
     if (typeof libraryID !== "number") {
       result.skipped++;
       if (libraryID === "ambiguous") result.ambiguous++;
-      onProgress?.(index + 1, items.length);
       continue;
     }
     const atts = it.attachments || {
       "": { pages: it.pages, pages_seconds: it.pages_seconds },
     };
-    await readingStore.mergeRecord(
-      {
-        libraryID,
-        itemKey: it.itemKey,
-        atts: Object.fromEntries(
-          Object.entries(atts).map(([ak, a]) => [
-            ak,
-            { pages: a.pages, page: a.pages_seconds },
-          ]),
-        ),
-        days: it.days,
-        firstRead: it.firstRead,
-        lastRead: it.lastRead,
-      },
-      mode,
+    records.push({
+      libraryID,
+      itemKey: it.itemKey,
+      atts: Object.fromEntries(
+        Object.entries(atts).map(([ak, a]) => [
+          ak,
+          { pages: a.pages, page: a.pages_seconds },
+        ]),
+      ),
+      days: it.days,
+      firstRead: it.firstRead,
+      lastRead: it.lastRead,
+    });
+    const pageSeconds = Object.values(atts).reduce(
+      (sum, a) =>
+        sum + Object.values(a.pages_seconds).reduce((n, s) => n + s, 0),
+      0,
     );
-    for (const a of Object.values(atts))
-      for (const s of Object.values(a.pages_seconds)) result.seconds += s;
+    const daySeconds = Object.values(it.days).reduce((sum, s) => sum + s, 0);
+    result.seconds += Math.max(pageSeconds, daySeconds);
     result.items++;
     result.matched++;
-    onProgress?.(index + 1, items.length);
+  }
+  await readingStore.mergeRecords(records, mode);
+  // A presentation failure after commit must not be reported as a failed import.
+  try {
+    onProgress?.(items.length, items.length);
+  } catch (e) {
+    ztoolkit.log("[import] progress update failed after commit", e);
   }
   return result;
 }

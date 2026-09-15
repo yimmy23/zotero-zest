@@ -20,6 +20,44 @@ test("appending an owned key leaves mixed LF and CRLF text byte-for-byte intact"
   );
 });
 
+test("replacing and deleting an owned key preserves every untouched line and ending", () => {
+  const { upsertExtraText } = createHarness().load("src/utils/extra.ts");
+  for (const ending of ["\n", "\r\n"]) {
+    const prefix = "Private note  \r\n\nOtherPlugin: value\n";
+    const suffix = "Foreign: keep \r\n\n  \r\n";
+    const before = `${prefix}rAtE: 2${ending}${suffix}`;
+    assert.equal(
+      upsertExtraText(before, ["rate", "Rating"], "4"),
+      `${prefix}rAtE: 4${ending}${suffix}`,
+    );
+    assert.equal(
+      upsertExtraText(before, ["rate", "Rating"], null),
+      prefix + suffix,
+    );
+    assert.equal(upsertExtraText(before, ["rate", "Rating"], "2"), null);
+  }
+});
+
+test("owned duplicates are removed without deleting alternate aliases or foreign text", () => {
+  const { upsertExtraText } = createHarness().load("src/utils/extra.ts");
+  const before = "rate: 2\nRating: user value \r\nPrivate\nRATE: 3\r\n\n  ";
+  assert.equal(
+    upsertExtraText(before, ["rate", "Rating"], "4"),
+    "rate: 4\nRating: user value \r\nPrivate\n\n  ",
+  );
+  assert.equal(
+    upsertExtraText(before, ["rate", "Rating"], null),
+    "Rating: user value \r\nPrivate\n\n  ",
+  );
+});
+
+test("deleting a final owned line preserves the previous user's line delimiter", () => {
+  const { upsertExtraText } = createHarness().load("src/utils/extra.ts");
+  assert.equal(upsertExtraText("Note\r\nrate: 2", ["rate"], null), "Note\r\n");
+  assert.equal(upsertExtraText("rate: 2", ["rate"], null), "");
+  assert.equal(upsertExtraText("Note\r\n\n  ", ["rate"], null), null);
+});
+
 test("translated abstracts retain structured headings and stop at a real Extra field", () => {
   const { getExtraBlockText } = createHarness().load("src/utils/extra.ts");
   const headings = [

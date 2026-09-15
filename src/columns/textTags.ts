@@ -2,7 +2,7 @@ import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { parseTagRule } from "../tags/match";
 import { hexToRgb } from "../reading/heat";
-import { setReadableColorVariants } from "../ui/color";
+import { setSemanticBadge } from "../ui/color";
 import { BADGE_COLOR_DEFAULT } from "../ui/palette";
 import { makeCell, rowItem, type ColumnSpec } from "./registry";
 
@@ -77,10 +77,11 @@ export function textTagsColumn(): ColumnSpec {
         if (rgb) {
           const tc = (getPref("textTags.textColor") as string) || "auto";
           if (tc === "auto") {
-            setReadableColorVariants(b, rgb);
-            b.classList.add("zest-readable-text");
-          } else b.style.color = tc;
-          b.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.16)`;
+            setSemanticBadge(b, rgb);
+          } else {
+            b.style.color = tc;
+            b.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.16)`;
+          }
         }
         wrap.appendChild(b);
       }

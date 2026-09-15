@@ -1,6 +1,6 @@
 import { http } from "../../core/http";
 import { getSecret } from "../../core/secrets";
-import type { RankValue } from "../types";
+import { parseRankNumber, type RankValue } from "../types";
 
 /**
  * easyScholar (https://www.easyscholar.cc) — the only source for the Chinese
@@ -93,8 +93,15 @@ export async function fetchEasyScholar(
     for (const entry of custom.rank) {
       const [uuid, levelRaw] = String(entry).split("&&&");
       const meta = info.get(uuid);
-      const level = Number(levelRaw);
-      if (!meta || !Number.isFinite(level)) continue;
+      const level = parseRankNumber(levelRaw);
+      if (
+        !meta ||
+        level === undefined ||
+        !Number.isInteger(level) ||
+        level < 1 ||
+        level > 5
+      )
+        continue;
       const label =
         meta[
           [
@@ -108,7 +115,7 @@ export async function fetchEasyScholar(
       values.push({
         field: String(meta.abbName || uuid),
         value: String(label),
-        rank: Math.min(5, Math.max(1, level)),
+        rank: level,
         source: "easyscholar",
       });
     }

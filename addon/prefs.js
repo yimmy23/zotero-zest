@@ -82,7 +82,8 @@ pref("nestedTags.matchChildTags", true);
 pref("column.pubtags.enable", false);
 pref("column.if.enable", false);
 pref("column.venue.enable", false);
-pref("rank.fields", "sciUp, sci, sciif");
+// Default partition slot: XinRui when available, otherwise CAS (sciUp).
+pref("rank.fields", "xr, sci, sciif");
 pref("rank.sortBy", "");
 pref("rank.map", "");
 pref("rank.colors", "");

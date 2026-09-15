@@ -1,12 +1,14 @@
 import { READING_STATS_PALETTE } from "./palette";
+import { DIALOG_CONTROLS_CSS } from "./dialogControls";
 
 /** Shared tokens for standalone reading windows, outside Zotero's stylesheet. */
 export function dialogThemeCSS(): string {
   const { light, dark } = READING_STATS_PALETTE;
   return `
+    ${DIALOG_CONTROLS_CSS}
     :root { --zest-focus:AccentColor; }
     /* Keep rem sizing independent of the native chrome stylesheet's font. */
-    :root { font-size:16px; color-scheme:light dark; --zest-bg:#f2f2f2; --zest-surface:#ffffff; --zest-fg:rgba(0,0,0,.85); --zest-muted:rgba(0,0,0,.55); --zest-line:rgba(0,0,0,.15); --zest-fill:#e6e6e6; --zest-shadow:0 2px 8px #00000004,0 12px 28px #00000003; --zest-stats-blue:${light.blue}; --zest-stats-violet:${light.violet}; --zest-stats-bronze:${light.bronze}; --zest-accent:var(--zest-stats-blue); }
+    :root { font-size:calc(var(--zest-body-font,14px) * 8 / 7); color-scheme:light dark; --zest-bg:#f2f2f2; --zest-surface:#ffffff; --zest-fg:rgba(0,0,0,.85); --zest-muted:rgba(0,0,0,.55); --zest-line:rgba(0,0,0,.15); --zest-fill:#e6e6e6; --zest-shadow:0 2px 8px #00000004,0 12px 28px #00000003; --zest-stats-blue:${light.blue}; --zest-stats-violet:${light.violet}; --zest-stats-bronze:${light.bronze}; --zest-accent:var(--zest-stats-blue); }
     @media(prefers-color-scheme:dark) { :root { --zest-bg:#303030; --zest-surface:#1e1e1e; --zest-fg:rgba(255,255,255,.9); --zest-muted:rgba(255,255,255,.55); --zest-line:rgba(255,255,255,.18); --zest-fill:#3c3c3c; --zest-shadow:0 4px 20px #00000014; --zest-stats-blue:${dark.blue}; --zest-stats-violet:${dark.violet}; --zest-stats-bronze:${dark.bronze}; } }
   `;
 }
@@ -94,6 +96,8 @@ export function bindSidebarTheme(
       if (!style) return;
       for (const [name, native] of Object.entries(sidebarTokens))
         write(name, style.getPropertyValue(native).trim());
+      // Resolve rem in the native document before crossing the frame boundary.
+      write("--zest-body-font", style.getPropertyValue("font-size").trim());
       write("--zest-shadow", "none");
       const scheme = media
         ? media.matches
@@ -111,9 +115,44 @@ export function bindSidebarTheme(
     dirty = true;
     sync();
   };
+  const nativeRoot = body.ownerDocument?.documentElement;
+  let observer: MutationObserver | undefined;
+  try {
+    if (typeof host.MutationObserver === "function")
+      observer = new host.MutationObserver(changed);
+  } catch {
+    // Reactivation still refreshes tokens when observation is unavailable.
+  }
+  const observe = () => {
+    try {
+      if (!observer) return;
+      // Zotero sets font tokens on #zotero-pane, not just the document root.
+      const ancestors = new Set<Element>();
+      for (
+        let element: Element | null = body;
+        element;
+        element = element.parentElement
+      )
+        ancestors.add(element);
+      if (nativeRoot) ancestors.add(nativeRoot);
+      for (const element of ancestors)
+        observer.observe(element, {
+          attributes: true,
+          attributeFilter: ["style", "class"],
+        });
+    } catch {
+      // Native roots may already be gone during window teardown.
+    }
+  };
   const binding: SidebarThemeBinding = {
     setActive(value) {
       if (disposed) return;
+      if (active !== value) {
+        if (value) {
+          dirty = true;
+          observe();
+        } else observer?.disconnect();
+      }
       active = value;
       sync();
     },
@@ -121,12 +160,14 @@ export function bindSidebarTheme(
       if (disposed) return;
       disposed = true;
       media?.removeEventListener?.("change", changed);
+      observer?.disconnect();
       for (const name of owned.keys()) restore(name);
       if (bindings.get(win) === binding) bindings.delete(win);
     },
   };
   bindings.set(win, binding);
   media?.addEventListener?.("change", changed);
+  observe();
   sync();
   return binding;
 }

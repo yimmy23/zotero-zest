@@ -54,7 +54,7 @@ export function cleanDOI(item: Zotero.Item): string {
 }
 
 /** PMID is a real field since Zotero 10 (schema 40); older items carry it in Extra */
-function pmidOf(item: Zotero.Item): string {
+export function pmidOf(item: Zotero.Item): string {
   try {
     const field = String(item.getField("PMID") || "").trim();
     if (/^\d+$/.test(field)) return field;
@@ -74,6 +74,7 @@ export async function fetchCrossref(
   item: Zotero.Item,
   force = false,
   onFailure?: CiteFailure,
+  shouldContinue?: () => boolean,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
@@ -85,6 +86,7 @@ export async function fetchCrossref(
     {
       responseType: "json",
       noCache: force,
+      shouldContinue,
     },
     onFailure,
   );
@@ -96,6 +98,7 @@ export async function fetchOpenAlexCitations(
   item: Zotero.Item,
   force = false,
   onFailure?: CiteFailure,
+  shouldContinue?: () => boolean,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   if (!doi) return null;
@@ -105,12 +108,17 @@ export async function fetchOpenAlexCitations(
     {
       responseType: "json",
       noCache: force,
+      shouldContinue,
     },
     onFailure,
   );
   // free ride for the author graph: same request, remember who wrote it
   const rows = compactAuthorships(res?.authorships, doi);
-  if (rows && cleanDOI(item).toLowerCase() === doi.toLowerCase())
+  if (
+    rows &&
+    shouldContinue?.() !== false &&
+    cleanDOI(item).toLowerCase() === doi.toLowerCase()
+  )
     cache.set(OA_AUTHORS_NS, authorshipsKey(item), rows);
   const n = res?.cited_by_count;
   return typeof n === "number" ? { count: n, source: "OpenAlex" } : null;
@@ -120,12 +128,14 @@ export async function fetchSemanticScholar(
   item: Zotero.Item,
   force = false,
   onFailure?: CiteFailure,
+  shouldContinue?: () => boolean,
 ): Promise<CiteResult | null> {
   const doi = cleanDOI(item);
   const pmid = pmidOf(item);
   const id = doi ? `DOI:${doi}` : pmid ? `PMID:${pmid}` : "";
   if (!id) return null;
   const key = await getSecret("semanticscholar");
+  if (shouldContinue?.() === false) return null;
   const url = `https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(id)}?fields=citationCount`;
   const res = await requestBody(
     url,
@@ -137,6 +147,7 @@ export async function fetchSemanticScholar(
       secret: !!key,
       displayURL: key ? `${url} (with key)` : undefined,
       noCache: force,
+      shouldContinue,
     },
     onFailure,
   );

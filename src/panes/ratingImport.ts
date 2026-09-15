@@ -60,7 +60,6 @@ function outcome(row: RatingImportRow): string {
 
 function css() {
   return `${dialogThemeCSS()}
-    body { margin:0; font:menu; background:var(--zest-bg); color:var(--zest-fg); }
     .zest-rating-import { box-sizing:border-box; max-width:1100px; margin:auto; padding:24px; }
     .zest-rating-import h1 { margin:0; font-size:1.35rem; }
     .zest-rating-import p { color:var(--zest-muted); }
@@ -72,7 +71,8 @@ function css() {
     .zest-rating-import .zest-rating-ready { color:var(--zest-stats-blue); font-weight:600; }
     .zest-rating-import-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:16px; }
     .zest-rating-import-actions { display:flex; gap:8px; }
-    .zest-rating-import button { padding:7px 12px; }
+    .zest-rating-import-actions { flex-wrap:wrap; }
+    @media(max-width:520px) { .zest-rating-import { padding:12px; } .zest-rating-import-footer { flex-wrap:wrap; } }
     .zest-rating-import-status { min-height:1.5em; color:var(--zest-muted); }
   `;
 }
@@ -150,7 +150,12 @@ function render(state: ImportState) {
   root.append(table);
   const footer = element(doc, "div", "zest-rating-import-footer");
   const pager = element(doc, "div");
-  const previous = element(doc, "button", "", label("rating-import-previous"));
+  const previous = element(
+    doc,
+    "button",
+    "zest-flat-btn",
+    label("rating-import-previous"),
+  );
   previous.disabled = state.page === 0 || state.committing;
   previous.addEventListener("click", () => {
     if (!state.disposed && state.page) {
@@ -158,7 +163,12 @@ function render(state: ImportState) {
       render(state);
     }
   });
-  const next = element(doc, "button", "", label("rating-import-next"));
+  const next = element(
+    doc,
+    "button",
+    "zest-flat-btn",
+    label("rating-import-next"),
+  );
   next.disabled = state.page >= pages - 1 || state.committing;
   next.addEventListener("click", () => {
     if (!state.disposed && state.page < pages - 1) {
@@ -178,12 +188,17 @@ function render(state: ImportState) {
     next,
   );
   const actions = element(doc, "div", "zest-rating-import-actions");
-  const cancel = element(doc, "button", "", label("rating-import-cancel"));
+  const cancel = element(
+    doc,
+    "button",
+    "zest-flat-btn",
+    label("rating-import-cancel"),
+  );
   cancel.addEventListener("click", () => closeRatingImport(state.owner));
   const confirm = element(
     doc,
     "button",
-    "",
+    "zest-flat-btn",
     state.committing
       ? label("rating-import-working")
       : label("rating-import-confirm", { count: state.preview.eligible }),

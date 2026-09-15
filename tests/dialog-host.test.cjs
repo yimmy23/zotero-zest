@@ -28,7 +28,10 @@ test("shared chrome host loads native select popup styles outside the replaced b
 
 test("shared dialog theme preserves rem sizing after native chrome styles load", () => {
   const { dialogThemeCSS } = createHarness().load("src/ui/dialogTheme.ts");
-  assert.match(dialogThemeCSS(), /:root\s*\{\s*font-size:16px;/);
+  assert.match(
+    dialogThemeCSS(),
+    /:root\s*\{\s*font-size:calc\(var\(--zest-body-font,14px\) \* 8 \/ 7\);/,
+  );
 });
 
 test("preferences focus rings use Zotero's native focus token", () => {
@@ -68,6 +71,13 @@ function themeFixture() {
     "--color-border": "rgba(0, 0, 0, 0.15)",
     "--color-quinary-on-sidepane": "#e6e6e6",
     "--color-focus-border": "-moz-mac-focusring",
+    "--zotero-font-size": "1rem",
+  };
+  const nativeStyle = {
+    fontSize: "13px",
+    getPropertyValue(name) {
+      return name === "font-size" ? this.fontSize : tokens[name] || "";
+    },
   };
   const declarations = new Map();
   let writes = 0;
@@ -96,20 +106,39 @@ function themeFixture() {
     },
   };
   const win = { closed: false, document: { documentElement: { style } } };
+  const nativeRoot = { parentElement: null };
+  const nativePane = { parentElement: nativeRoot };
+  const observers = [];
   let reads = 0;
   const host = {
     closed: false,
+    MutationObserver: class {
+      constructor(callback) {
+        this.callback = callback;
+        this.targets = new Map();
+        observers.push(this);
+      }
+      observe(target, options) {
+        this.targets.set(target, options);
+      }
+      disconnect() {
+        this.targets.clear();
+      }
+    },
     getComputedStyle(element) {
       assert.equal(element, body);
       reads++;
-      return { getPropertyValue: (name) => tokens[name] || "" };
+      return nativeStyle;
     },
     matchMedia(query) {
       assert.equal(query, "(prefers-color-scheme: dark)");
       return media;
     },
   };
-  const body = { ownerDocument: { defaultView: host } };
+  const body = {
+    ownerDocument: { defaultView: host, documentElement: nativeRoot },
+    parentElement: nativePane,
+  };
   return {
     ...createHarness().load("src/ui/dialogTheme.ts"),
     win,
@@ -117,12 +146,24 @@ function themeFixture() {
     body,
     style,
     tokens,
+    nativeStyle,
     media,
     listeners,
+    nativeRoot,
+    nativePane,
+    observers,
     reads: () => reads,
     writes: () => writes,
     change() {
       for (const listener of [...listeners]) listener();
+    },
+    mutate(attributeName, target = nativeRoot) {
+      for (const observer of observers) {
+        if (
+          observer.targets.get(target)?.attributeFilter.includes(attributeName)
+        )
+          observer.callback([{ type: "attributes", attributeName, target }]);
+      }
     },
   };
 }
@@ -188,6 +229,83 @@ test("hidden sidebar themes defer style reads and writes until reactivated", () 
   binding.setActive(true);
   assert.equal(app.reads(), 2);
   assert.equal(app.writes(), resumedWrites);
+  binding.dispose();
+});
+
+test("sidebar font bridge uses resolved native pixels instead of the raw rem token", () => {
+  const app = themeFixture();
+  assert.equal(app.tokens["--zotero-font-size"], "1rem");
+  assert.equal(app.nativeStyle.fontSize, "13px");
+  const binding = app.bindSidebarTheme(app.win, app.body);
+  assert.equal(app.style.getPropertyValue("--zest-body-font"), "13px");
+  assert.equal(app.reads(), 1);
+  binding.dispose();
+});
+
+test("visible sidebar themes follow ancestor font and root class changes", () => {
+  const app = themeFixture();
+  const binding = app.bindSidebarTheme(app.win, app.body);
+  assert.equal(app.observers.length, 1);
+  assert.deepEqual(
+    [...app.observers[0].targets.keys()],
+    [app.body, app.nativePane, app.nativeRoot],
+  );
+  for (const options of app.observers[0].targets.values()) {
+    assert.equal(options.attributes, true);
+    assert.deepEqual(Array.from(options.attributeFilter), ["style", "class"]);
+    assert.equal(options.subtree, undefined);
+  }
+  app.nativeStyle.fontSize = "20px";
+  app.mutate("style", app.nativePane);
+  assert.equal(app.style.getPropertyValue("--zest-body-font"), "20px");
+  app.tokens["--fill-primary"] = "native-class-text";
+  app.mutate("class");
+  assert.equal(app.style.getPropertyValue("--zest-fg"), "native-class-text");
+  assert.equal(app.reads(), 3);
+  app.mutate("title");
+  binding.setActive(true);
+  assert.equal(app.reads(), 3);
+  binding.dispose();
+});
+
+test("hidden sidebar themes stop observing and resample fonts on real reactivation", () => {
+  const app = themeFixture();
+  const binding = app.bindSidebarTheme(app.win, app.body);
+  const observer = app.observers[0];
+  assert.ok(observer);
+  binding.setActive(false);
+  assert.equal(observer.targets.size, 0);
+  const before = app.writes();
+  app.nativeStyle.fontSize = "20px";
+  app.mutate("style", app.nativePane);
+  assert.equal(app.reads(), 1);
+  assert.equal(app.writes(), before);
+  binding.setActive(true);
+  assert.equal(observer.targets.has(app.nativeRoot), true);
+  assert.equal(observer.targets.has(app.nativePane), true);
+  assert.equal(app.reads(), 2);
+  assert.equal(app.style.getPropertyValue("--zest-body-font"), "20px");
+  binding.setActive(true);
+  assert.equal(app.reads(), 2);
+  binding.dispose();
+  assert.equal(observer.targets.size, 0);
+  const disposedWrites = app.writes();
+  observer.callback([{ type: "attributes", attributeName: "style" }]);
+  binding.setActive(true);
+  assert.equal(app.reads(), 2);
+  assert.equal(app.writes(), disposedWrites);
+});
+
+test("sidebar theme reactivation refreshes fonts when mutation observers are unavailable", () => {
+  const app = themeFixture();
+  app.host.MutationObserver = undefined;
+  const binding = app.bindSidebarTheme(app.win, app.body);
+  binding.setActive(false);
+  app.nativeStyle.fontSize = "20px";
+  assert.equal(app.reads(), 1);
+  binding.setActive(true);
+  assert.equal(app.reads(), 2);
+  assert.equal(app.style.getPropertyValue("--zest-body-font"), "20px");
   binding.dispose();
 });
 

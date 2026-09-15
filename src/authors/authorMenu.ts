@@ -33,33 +33,95 @@ export interface AuthorRef extends AuthorLookupRef {
 
 const FILTER_NAME = "author";
 
-/** per-window auto-clear: the filter dies with the next collection switch */
-const watchers = new Map<Window, { target: any; listener: () => void }>();
+interface FilterRequest {
+  libraryID?: number;
+  generation: number;
+  scope?: string;
+  expectedScope?: string;
+  target?: any;
+  listener?: () => void;
+  unload: () => void;
+}
 
-function armAutoClear(win: Window) {
-  if (watchers.has(win)) return;
+/** Includes pending requests, so clearing before the resolver settles works. */
+const requests = new Map<Window, FilterRequest>();
+const generations = new WeakMap<Window, number>();
+let stopped = false;
+
+/** Zotero 10 exposes plural selection APIs; older hosts have a singular one. */
+function collectionScope(win: Window): string | undefined {
+  try {
+    const zp = (win as any).ZoteroPane;
+    const rows = zp?.getCollectionTreeRows
+      ? zp.getCollectionTreeRows()
+      : [zp?.getCollectionTreeRow?.()];
+    if (!Array.isArray(rows) || !rows.length) return undefined;
+    const ids = rows.map((row: any) => row?.id);
+    if (ids.some((id) => typeof id !== "string" || !id)) return undefined;
+    return ids.sort().join("|");
+  } catch {
+    return undefined;
+  }
+}
+
+function currentRequest(win: Window, request: FilterRequest): boolean {
+  if (
+    requests.get(win) !== request ||
+    generations.get(win) !== request.generation
+  )
+    return false;
+  if (stopped || !addon.data.alive || win.closed) {
+    clearAuthorFilter(win);
+    return false;
+  }
+  const scope = collectionScope(win);
+  if (scope !== undefined && scope !== request.scope) {
+    if (scope === request.expectedScope) {
+      request.scope = scope;
+      request.expectedScope = undefined;
+    } else {
+      clearAuthorFilter(win);
+      return false;
+    }
+  }
+  return true;
+}
+
+function beginRequest(win: Window): FilterRequest {
+  clearAuthorFilter(win);
+  const request: FilterRequest = {
+    generation: generations.get(win)!,
+    scope: collectionScope(win),
+    unload: () => clearAuthorFilter(win),
+  };
+  requests.set(win, request);
+  win.addEventListener?.("unload", request.unload);
   try {
     const target = (win as any).ZoteroPane?.collectionsView?.onSelect;
-    if (!target?.addListener) return;
-    const armedAt = Date.now();
-    const listener = guard("author filter auto-clear", () => {
-      // the collection switch WE made (over to the library root) can settle
-      // after the fixed post-switch delay on a slow library — its own
-      // onSelect must not wipe the filter that was just applied
-      if (Date.now() - armedAt < 1000) return;
-      clearAuthorFilter(win);
-    });
-    target.addListener(listener);
-    watchers.set(win, { target, listener });
+    if (target?.addListener) {
+      const listener = guard("author filter auto-clear", () => {
+        // Suppress only a known transition to our library root. A user
+        // collection switch cancels immediately, including while resolving.
+        if (collectionScope(win) === undefined) clearAuthorFilter(win);
+        else currentRequest(win, request);
+      });
+      request.target = target;
+      request.listener = listener;
+      target.addListener(listener);
+    }
   } catch {
-    // no listener API — the menu's clear entry still works
+    // Scope is also checked after each await if notifications are unavailable.
   }
+  return request;
 }
 
 /** every window's filter and watcher — plugin shutdown */
 export function clearAllAuthorFilters() {
-  for (const win of [...watchers.keys()]) clearAuthorFilter(win);
-  resolverCache = null;
+  stopped = true;
+  for (const win of [...requests.keys()]) clearAuthorFilter(win);
+  cacheRevision++;
+  resolverCache.clear();
+  resolverBuilds.clear();
   if (notifierID) {
     try {
       Zotero.Notifier.unregisterObserver(notifierID);
@@ -71,18 +133,20 @@ export function clearAllAuthorFilters() {
 }
 
 export function clearAuthorFilter(win: Window) {
-  const w = watchers.get(win);
+  generations.set(win, (generations.get(win) ?? 0) + 1);
+  const w = requests.get(win);
   if (w) {
+    requests.delete(win);
     try {
-      w.target.removeListener?.(w.listener);
+      w.target?.removeListener?.(w.listener);
     } catch {
       // ignore
     }
-    watchers.delete(win);
+    win.removeEventListener?.("unload", w.unload);
   }
   if (activeItemFilters(win).includes(FILTER_NAME)) {
     setItemFilter(win, FILTER_NAME, null);
-    void refreshItemView(win);
+    if (!stopped && addon.data.alive && !win.closed) void refreshItemView(win);
   }
 }
 
@@ -100,20 +164,20 @@ function toast(text: string) {
 }
 
 /**
- * Show the whole library filtered down to this author's items.
- * Returns how many items matched (0 = nothing found, no filter applied).
- */
-/**
  * The library-wide resolver is expensive on big libraries, so it is built
  * chunked (yielding to the event loop) and cached for a couple of minutes —
  * repeated clicks in the same session are instant, and a just-changed
  * creator is at worst two minutes late.
  */
-let resolverCache: {
-  libraryID: number;
-  builtAt: number;
-  resolver: AuthorResolver;
-} | null = null;
+const resolverCache = new Map<
+  number,
+  {
+    builtAt: number;
+    resolver: AuthorResolver;
+  }
+>();
+const resolverBuilds = new Map<number, Promise<AuthorResolver | null>>();
+let cacheRevision = 0;
 const RESOLVER_TTL_MS = 2 * 60 * 1000;
 
 /** any item change invalidates the cached clustering — a freshly added
@@ -125,7 +189,9 @@ function armCacheInvalidation() {
     notifierID = Zotero.Notifier.registerObserver(
       {
         notify: () => {
-          resolverCache = null;
+          cacheRevision++;
+          resolverCache.clear();
+          resolverBuilds.clear();
         },
       },
       ["item"],
@@ -136,31 +202,57 @@ function armCacheInvalidation() {
   }
 }
 
-async function libraryResolver(libraryID: number): Promise<AuthorResolver> {
-  if (
-    resolverCache &&
-    resolverCache.libraryID === libraryID &&
-    Date.now() - resolverCache.builtAt < RESOLVER_TTL_MS
-  ) {
-    return resolverCache.resolver;
+async function libraryResolver(
+  libraryID: number,
+): Promise<AuthorResolver | null> {
+  const cached = resolverCache.get(libraryID);
+  if (cached && Date.now() - cached.builtAt < RESOLVER_TTL_MS) {
+    return cached.resolver;
   }
-  const all = (await Zotero.Items.getAll(
-    libraryID,
-    true,
-    false,
-  )) as Zotero.Item[];
-  const resolver = await buildAuthorResolverAsync(
-    all.filter((i) => i.isRegularItem()),
-  );
-  resolverCache = { libraryID, builtAt: Date.now(), resolver };
+  const pending = resolverBuilds.get(libraryID);
+  if (pending) return pending;
+  // Register before reading items: changes during a build must invalidate it.
   armCacheInvalidation();
-  return resolver;
+  const revision = cacheRevision;
+  const alive = () =>
+    !stopped &&
+    addon.data.alive &&
+    revision === cacheRevision &&
+    [...requests].some(
+      ([win, request]) =>
+        request.libraryID === libraryID && currentRequest(win, request),
+    );
+  const build = (async () => {
+    const all = (await Zotero.Items.getAll(
+      libraryID,
+      true,
+      false,
+    )) as Zotero.Item[];
+    if (!alive()) return null;
+    const resolver = await buildAuthorResolverAsync(
+      all.filter((i) => i.isRegularItem()),
+      { shouldContinue: alive },
+    );
+    if (!alive()) return null;
+    resolverCache.set(libraryID, { builtAt: Date.now(), resolver });
+    return resolver;
+  })();
+  resolverBuilds.set(libraryID, build);
+  try {
+    return await build;
+  } finally {
+    if (resolverBuilds.get(libraryID) === build)
+      resolverBuilds.delete(libraryID);
+  }
 }
 
+/** Show this author's whole library; 0 means no match, cancelled or failed. */
 export async function applyAuthorFilter(
   win: Window,
   ref: AuthorRef,
 ): Promise<number> {
+  if (stopped || !addon.data.alive || win.closed) return 0;
+  const request = beginRequest(win);
   const zp = (win as any).ZoteroPane;
   // Zotero 10 replaced getSelectedLibraryID() with the plural form
   let libraryID: number = Zotero.Libraries.userLibraryID;
@@ -170,30 +262,54 @@ export async function applyAuthorFilter(
   } catch {
     // keep the user library
   }
-  const resolver = await libraryResolver(libraryID);
-  const ids = resolver.memberItemIDs(ref);
-  if (!ids.size) {
-    toast(getString("author-filter-none", { args: { name: ref.label } }));
+  try {
+    request.libraryID = libraryID;
+    const resolver = await libraryResolver(libraryID);
+    if (!currentRequest(win, request)) return 0;
+    if (!resolver) {
+      clearAuthorFilter(win);
+      return 0;
+    }
+    const ids = resolver.memberItemIDs(ref);
+    if (!ids.size) {
+      clearAuthorFilter(win);
+      toast(getString("author-filter-none", { args: { name: ref.label } }));
+      return 0;
+    }
+    // Whole library first. The watcher accepts only this exact row identity,
+    // never an arbitrary one-second period of unrelated collection changes.
+    request.expectedScope = `L${libraryID}`;
+    try {
+      await zp?.collectionsView?.selectLibrary?.(libraryID);
+      if (!currentRequest(win, request)) return 0;
+      await Zotero.Promise.delay(300);
+      if (!currentRequest(win, request)) return 0;
+    } catch {
+      if (!currentRequest(win, request)) return 0;
+      // Stay on the current view if the native switch failed.
+    }
+    request.expectedScope = undefined;
+    if (
+      !setItemFilter(win, FILTER_NAME, (rows) =>
+        rows.filter((i) => ids.has(i.id)),
+      )
+    ) {
+      clearAuthorFilter(win);
+      return 0;
+    }
+    await refreshItemView(win);
+    if (!currentRequest(win, request)) return 0;
+    toast(
+      getString("author-filter-toast", {
+        args: { name: ref.label, count: ids.size },
+      }),
+    );
+    return ids.size;
+  } catch (e) {
+    if (currentRequest(win, request)) clearAuthorFilter(win);
+    ztoolkit.log("[author] filter failed", e);
     return 0;
   }
-  // whole library first ("all their items", not "their items in this
-  // folder") — and only THEN arm the auto-clear, or the switch itself
-  // would wipe the filter we are about to set
-  try {
-    await zp?.collectionsView?.selectLibrary?.(libraryID);
-    await Zotero.Promise.delay(300);
-  } catch {
-    // stay on the current view
-  }
-  setItemFilter(win, FILTER_NAME, (rows) => rows.filter((i) => ids.has(i.id)));
-  armAutoClear(win);
-  await refreshItemView(win);
-  toast(
-    getString("author-filter-toast", {
-      args: { name: ref.label, count: ids.size },
-    }),
-  );
-  return ids.size;
 }
 
 // ------------------------------------------------------------ online links

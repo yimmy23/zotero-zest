@@ -52,7 +52,7 @@ function addItem(
 
 export function installToolbarMenu(win: Window) {
   onGraphVisibilityChange(syncToolbarMenus);
-  if (buttons.has(win)) return;
+  if (toolbarMenuInstalled(win)) return;
   const doc = win.document;
   doc.getElementById(BUTTON_ID)?.remove(); // leftover from a hot reload
   const toolbar = doc.getElementById("zotero-items-toolbar");
@@ -153,7 +153,8 @@ export function uninstallToolbarMenu(win: Window) {
   buttons.delete(win);
   try {
     button?.remove();
-    win.document.getElementById(BUTTON_ID)?.remove();
+    // The id may now belong to the incoming plugin copy. Only remove the
+    // node this copy created, even when it has already been detached.
   } catch {
     // window gone
   }
@@ -165,5 +166,8 @@ export function uninstallAllToolbarMenus() {
 
 /** exported for the probe */
 export function toolbarMenuInstalled(win: Window): boolean {
-  return buttons.has(win);
+  const button = buttons.get(win);
+  return (
+    !!button?.isConnected && win.document.getElementById(BUTTON_ID) === button
+  );
 }

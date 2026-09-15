@@ -80,6 +80,12 @@ class Element {
   get children() {
     return this.childNodes.filter((node) => node.nodeType === 1);
   }
+  get isConnected() {
+    return (
+      this === this.ownerDocument.documentElement ||
+      !!this.parentElement?.isConnected
+    );
+  }
   get value() {
     if (this.tagName === "progress") return this._value ?? 0;
     if (this.tagName === "select") {

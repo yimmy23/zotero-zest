@@ -1,4 +1,5 @@
 import { cache } from "../core/storage";
+import { runSync, runSliced, sortSteps, type WorkOptions } from "./work";
 
 /**
  * Author identity for the graph's author mode: decides which creator
@@ -267,37 +268,65 @@ function matchStrength(
 }
 
 /** Match the whole author list once, requiring unique evidence in both directions. */
+function* matchAuthorshipsSteps(
+  creators: AuthorshipCreator[],
+  rows: CachedAuthorship[],
+): Generator<void, Array<CachedAuthorship | undefined>> {
+  const scores: number[][] = [];
+  for (const creator of creators) {
+    const score: number[] = [];
+    for (const row of rows) {
+      score.push(matchStrength(creator, row));
+      yield;
+    }
+    scores.push(score);
+  }
+  const owners: number[] = [];
+  for (let row = 0; row < rows.length; row++) {
+    let best = 0;
+    let owner = -1;
+    for (let creator = 0; creator < scores.length; creator++) {
+      const strength = scores[creator][row];
+      if (strength > best) {
+        best = strength;
+        owner = creator;
+      } else if (strength === best) owner = -1;
+      yield;
+    }
+    owners.push(owner);
+  }
+  const matches: Array<CachedAuthorship | undefined> = [];
+  for (let creator = 0; creator < scores.length; creator++) {
+    let best = 0;
+    let match: CachedAuthorship | undefined;
+    for (let row = 0; row < rows.length; row++) {
+      if (owners[row] === creator) {
+        const strength = scores[creator][row];
+        if (strength > best) {
+          best = strength;
+          match = rows[row];
+        } else if (strength === best) match = undefined;
+      }
+      yield;
+    }
+    matches.push(match);
+  }
+  // Repeated provider IDs under different display names are not two people.
+  const counts = new Map<string, number>();
+  for (const row of matches) {
+    if (row) counts.set(row.i, (counts.get(row.i) || 0) + 1);
+    yield;
+  }
+  return matches.map((row) =>
+    row && counts.get(row.i) === 1 ? row : undefined,
+  );
+}
+
 export function matchAuthorships(
   creators: AuthorshipCreator[],
   rows: CachedAuthorship[],
 ): Array<CachedAuthorship | undefined> {
-  const scores = creators.map((creator) =>
-    rows.map((row) => matchStrength(creator, row)),
-  );
-  const owners = rows.map((_, index) => {
-    const best = Math.max(0, ...scores.map((score) => score[index]));
-    const candidates = scores.flatMap((score, creator) =>
-      best > 0 && score[index] === best ? [creator] : [],
-    );
-    return candidates.length === 1 ? candidates[0] : -1;
-  });
-  const matches = scores.map((score, creator) => {
-    const best = Math.max(
-      0,
-      ...score.map((strength, row) => (owners[row] === creator ? strength : 0)),
-    );
-    const candidates = rows.filter(
-      (_, row) => best > 0 && owners[row] === creator && score[row] === best,
-    );
-    return candidates.length === 1 ? candidates[0] : undefined;
-  });
-  // Repeated provider IDs under different display names are not two people.
-  const counts = new Map<string, number>();
-  for (const row of matches)
-    if (row) counts.set(row.i, (counts.get(row.i) || 0) + 1);
-  return matches.map((row) =>
-    row && counts.get(row.i) === 1 ? row : undefined,
-  );
+  return runSync(matchAuthorshipsSteps(creators, rows));
 }
 
 // ------------------------------------------------------------- clustering
@@ -322,21 +351,93 @@ interface Cluster {
 interface Form {
   tokens: string[];
   occs: Occ[];
+  key: string;
 }
 
 function newCluster(f: Form): Cluster {
-  return { rep: f.tokens, occs: [...f.occs] };
+  return { rep: f.tokens, occs: f.occs };
 }
 
-function attach(c: Cluster, f: Form) {
-  c.occs.push(...f.occs);
+function* attach(c: Cluster, f: { occs: Occ[] }): Generator<void> {
+  for (const occ of f.occs) {
+    c.occs.push(occ);
+    yield;
+  }
 }
 
-function clusterSurnameGroup(occs: Occ[]): Cluster[] {
+/** Candidate postings by token position, full token, and initial. Queries
+ * choose the smallest posting union, then confirm compatibility. Initials
+ * can stop at two matches because only a unique match can attach. */
+class ClusterIndex {
+  private positions: Array<Map<string, Set<Cluster>>> = [];
+  private lengths = new Map<number, Set<Cluster>>();
+  private exact = new Map<string, Set<Cluster>>();
+
+  add(cluster: Cluster, remove = false) {
+    const edit = (map: Map<any, Set<Cluster>>, key: any) => {
+      if (remove) map.get(key)?.delete(cluster);
+      else {
+        let bucket = map.get(key);
+        if (!bucket) map.set(key, (bucket = new Set()));
+        bucket.add(cluster);
+      }
+    };
+    edit(this.exact, joined(cluster.rep));
+    edit(this.lengths, cluster.rep.length);
+    cluster.rep.forEach((token, at) => {
+      const map = (this.positions[at] ||= new Map());
+      edit(map, `=${token}`);
+      edit(map, `^${token[0]}`);
+    });
+  }
+
+  *hits(tokens: string[]): Generator<void, Cluster[]> {
+    if (!tokens.length) return [];
+    let buckets: Array<Set<Cluster> | undefined> = [];
+    let size = Infinity;
+    for (let at = 0; at < tokens.length; at++) {
+      const token = tokens[at];
+      const map = this.positions[at];
+      const candidate =
+        token.length === 1
+          ? [map?.get(`^${token}`)]
+          : [map?.get(`=${token}`), map?.get(`=${token[0]}`)];
+      // A shorter representative is compatible over the shorter prefix.
+      for (let length = 1; length <= at; length++)
+        candidate.push(this.lengths.get(length));
+      const count = candidate.reduce(
+        (sum, bucket) => sum + (bucket?.size || 0),
+        0,
+      );
+      if (count < size) {
+        size = count;
+        buckets = candidate;
+      }
+      yield;
+    }
+    buckets.push(this.exact.get(joined(tokens))); // Xiao-Ming = Xiaoming
+    const seen = new Set<Cluster>();
+    const hits: Cluster[] = [];
+    for (const bucket of buckets) {
+      if (!bucket) continue;
+      for (const cluster of bucket) {
+        if (seen.has(cluster)) continue;
+        seen.add(cluster);
+        if (givensCompatible(tokens, cluster.rep)) hits.push(cluster);
+        yield;
+        if (hits.length === 2) return hits;
+      }
+    }
+    return hits;
+  }
+}
+
+function* clusterSurnameGroup(occs: Occ[]): Generator<void, Cluster[]> {
   // identified occurrences group by OpenAlex id, whatever the spelling
   const byOa = new Map<string, Cluster>();
   const nameOccs: Occ[] = [];
   for (const o of occs) {
+    yield;
     if (!o.oaId) {
       nameOccs.push(o);
       continue;
@@ -358,18 +459,20 @@ function clusterSurnameGroup(occs: Occ[]): Cluster[] {
   // the rest cluster by name: one Form per distinct normalised given name
   const formMap = new Map<string, Form>();
   for (const o of nameOccs) {
+    yield;
     const k = joined(o.tokens);
     let f = formMap.get(k);
     if (!f) {
-      f = { tokens: o.tokens, occs: [] };
+      f = { tokens: o.tokens, occs: [], key: k };
       formMap.set(k, f);
     }
     f.occs.push(o);
   }
-  const anchors: Form[] = [];
+  let anchors: Form[] = [];
   const abbrevs: Form[] = [];
   const empties: Form[] = [];
   for (const f of formMap.values()) {
+    yield;
     if (!f.tokens.length) empties.push(f);
     else if (isInitials(f.tokens)) abbrevs.push(f);
     else anchors.push(f);
@@ -377,64 +480,85 @@ function clusterSurnameGroup(occs: Occ[]): Cluster[] {
 
   // full forms first, longest first, so the representative stays the
   // richest spelling and shorter forms attach to it
-  anchors.sort(
+  anchors = yield* sortSteps(
+    anchors,
     (a, b) =>
       b.tokens.length - a.tokens.length ||
-      joined(b.tokens).length - joined(a.tokens).length ||
-      (joined(a.tokens) < joined(b.tokens) ? -1 : 1),
+      b.key.length - a.key.length ||
+      (a.key < b.key ? -1 : 1),
   );
   const nameClusters: Cluster[] = [];
+  const nameIndex = new ClusterIndex();
+  const oaIndex = new ClusterIndex();
+  for (const cluster of byOa.values()) {
+    oaIndex.add(cluster);
+    yield;
+  }
   for (const f of anchors) {
-    const hits = nameClusters.filter((c) => givensCompatible(f.tokens, c.rep));
-    if (hits.length === 1) attach(hits[0], f);
-    else nameClusters.push(newCluster(f));
+    const hits = yield* nameIndex.hits(f.tokens);
+    if (hits.length === 1) yield* attach(hits[0], f);
+    else {
+      const cluster = newCluster(f);
+      nameClusters.push(cluster);
+      nameIndex.add(cluster);
+    }
+    yield;
   }
 
   // initials attach only when exactly one cluster fits
   for (const f of abbrevs) {
-    const pool = [...byOa.values(), ...nameClusters];
-    const hits = pool.filter(
-      (c) => c.rep.length > 0 && givensCompatible(f.tokens, c.rep),
-    );
-    if (hits.length === 1) attach(hits[0], f);
-    else nameClusters.push(newCluster(f));
+    const hits = [
+      ...(yield* oaIndex.hits(f.tokens)),
+      ...(yield* nameIndex.hits(f.tokens)),
+    ];
+    if (hits.length === 1) yield* attach(hits[0], f);
+    else {
+      const cluster = newCluster(f);
+      nameClusters.push(cluster);
+      nameIndex.add(cluster);
+    }
+    yield;
   }
-  for (const f of empties) nameClusters.push(newCluster(f));
+  for (const f of empties) {
+    nameClusters.push(newCluster(f));
+    yield;
+  }
 
   // a pure name cluster joins the ONE identified cluster it is compatible
   // with, so items without cached data still land on the right person
   const oaList = [...byOa.values()];
   const kept: Cluster[] = [];
   for (const c of nameClusters) {
-    const hits =
-      c.rep.length && oaList.length
-        ? oaList.filter(
-            (oc) => oc.rep.length && givensCompatible(c.rep, oc.rep),
-          )
-        : [];
+    const hits = yield* oaIndex.hits(c.rep);
     if (hits.length === 1) {
-      hits[0].occs.push(...c.occs);
+      yield* attach(hits[0], c);
       const fuller =
         !isInitials(c.rep) && joined(c.rep).length > joined(hits[0].rep).length;
-      if (fuller) hits[0].rep = c.rep;
+      if (fuller) {
+        oaIndex.add(hits[0], true);
+        hits[0].rep = c.rep;
+        oaIndex.add(hits[0]);
+      }
     } else {
       kept.push(c);
     }
+    yield;
   }
   return [...oaList, ...kept];
 }
 
 const CJK_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 
-function categoryFor(
+function* categoryFor(
   c: Cluster,
   surRaw: string,
   surKey: string,
-): AuthorCategory {
+): Generator<void, AuthorCategory> {
   // display given name: the longest raw full form seen in this cluster
   let bestFirst = "";
   let bestIsFull = false;
   for (const o of c.occs) {
+    yield;
     const raw = o.first.trim();
     if (!raw) continue;
     const rawIsFull = !isInitials(nameTokens(raw));
@@ -496,7 +620,10 @@ export function findCachedAuthor(
 type Groups = Map<string, { surRaw: string; occs: Occ[] }>;
 
 /** phase 1 of the resolver: one item's creators into surname groups */
-function collectOccurrences(item: Zotero.Item, groups: Groups): void {
+function* collectOccurrences(
+  item: Zotero.Item,
+  groups: Groups,
+): Generator<void> {
   {
     let creators: ReturnType<Zotero.Item["getCreators"]>;
     try {
@@ -507,7 +634,7 @@ function collectOccurrences(item: Zotero.Item, groups: Groups): void {
     if (!creators?.length) return;
     const rows = cachedAuthorships(item);
     const matches = rows
-      ? matchAuthorships(
+      ? yield* matchAuthorshipsSteps(
           creators.map((creator) => ({
             family: creator.lastName || "",
             given: creator.firstName || "",
@@ -515,9 +642,11 @@ function collectOccurrences(item: Zotero.Item, groups: Groups): void {
           rows,
         )
       : [];
-    creators.forEach((cr, idx) => {
+    for (let idx = 0; idx < creators.length; idx++) {
+      yield;
+      const cr = creators[idx];
       const last = (cr.lastName || "").trim();
-      if (!last) return;
+      if (!last) continue;
       const first = (cr.firstName || "").trim();
       const surKey = joined(nameTokens(last)) || last;
       const occ: Occ = {
@@ -537,13 +666,14 @@ function collectOccurrences(item: Zotero.Item, groups: Groups): void {
         groups.set(surKey, g);
       }
       g.occs.push(occ);
-    });
+    }
   }
 }
 
 /** phase 2: cluster every group and wire the lookups */
-function finishResolver(groups: Groups): AuthorResolver {
+function* finishResolver(groups: Groups): Generator<void, AuthorResolver> {
   const occCat = new Map<string, AuthorCategory>();
+  const categoriesByID = new Map<string, AuthorCategory>();
   const groupIndex = new Map<
     string,
     Array<{ cat: AuthorCategory; cluster: Cluster }>
@@ -551,8 +681,9 @@ function finishResolver(groups: Groups): AuthorResolver {
   const membersByCat = new Map<string, Set<string>>();
   for (const [surKey, g] of groups) {
     const entries: Array<{ cat: AuthorCategory; cluster: Cluster }> = [];
-    for (const cluster of clusterSurnameGroup(g.occs)) {
-      const cat = categoryFor(cluster, g.surRaw, surKey);
+    for (const cluster of yield* clusterSurnameGroup(g.occs)) {
+      const cat = yield* categoryFor(cluster, g.surRaw, surKey);
+      categoriesByID.set(cat.id, cat);
       entries.push({ cat, cluster });
       let mem = membersByCat.get(cat.id);
       if (!mem) {
@@ -560,6 +691,7 @@ function finishResolver(groups: Groups): AuthorResolver {
         membersByCat.set(cat.id, mem);
       }
       for (const o of cluster.occs) {
+        yield;
         occCat.set(o.key, cat);
         mem.add(o.key.split("#")[0]);
       }
@@ -568,13 +700,10 @@ function finishResolver(groups: Groups): AuthorResolver {
   }
 
   const findCategory = (ref: AuthorLookupRef): AuthorCategory | null => {
+    if (ref.oaId) return categoriesByID.get(`a:oa:${ref.oaId}`) || null;
     const surKey = joined(nameTokens(ref.family)) || ref.family;
     const group = groupIndex.get(surKey);
     if (!group) return null;
-    if (ref.oaId) {
-      const hit = group.find((e) => e.cat.id === `a:oa:${ref.oaId}`);
-      if (hit) return hit.cat;
-    }
     const tokens = nameTokens(ref.given);
     if (!tokens.length) {
       // bare surname (single-field CJK names): the no-given cluster
@@ -605,6 +734,9 @@ function finishResolver(groups: Groups): AuthorResolver {
   };
 
   const memberItemIDs = (ref: AuthorLookupRef): Set<number> => {
+    // IDs are global across surname aliases. A known ID never falls back
+    // to a compatible-name union, even when absent from this scope.
+    if (ref.oaId) return itemIDsOf(membersByCat.get(`a:oa:${ref.oaId}`) || []);
     const tokens = nameTokens(ref.given);
     // a full name (or an id) names ONE person — their cluster and no more.
     // An initials-only name ("Wang L.") is inherently ambiguous, so the
@@ -653,28 +785,32 @@ function finishResolver(groups: Groups): AuthorResolver {
   };
 }
 
-export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
+export function* authorResolverSteps(
+  items: Zotero.Item[],
+): Generator<void, AuthorResolver> {
   const groups: Groups = new Map();
-  for (const item of items) collectOccurrences(item, groups);
-  return finishResolver(groups);
+  for (const item of items) {
+    yield* collectOccurrences(item, groups);
+    // Empty or unreadable creators return before the inner generator yields.
+    // Every visited item must still give the scheduler a cancellation point.
+    yield;
+  }
+  return yield* finishResolver(groups);
 }
 
-/**
- * Chunked variant for library-wide scans (the author filter): identical
- * result, but the creator sweep yields to the event loop between chunks so
- * a 50k-item library does not freeze the UI for the whole pass.
- */
+export function buildAuthorResolver(items: Zotero.Item[]): AuthorResolver {
+  return runSync(authorResolverSteps(items));
+}
+
+/** Collection, name clustering, and lookup wiring all yield and cancel. */
 export async function buildAuthorResolverAsync(
   items: Zotero.Item[],
-  chunkSize = 800,
+  options: WorkOptions | number = {},
 ): Promise<AuthorResolver> {
-  const groups: Groups = new Map();
-  let n = 0;
-  for (const item of items) {
-    collectOccurrences(item, groups);
-    if (++n % chunkSize === 0) await Zotero.Promise.delay(0);
-  }
-  return finishResolver(groups);
+  return runSliced(
+    authorResolverSteps(items),
+    typeof options === "number" ? { maxSteps: options } : options,
+  );
 }
 
 /**

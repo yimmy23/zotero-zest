@@ -52,12 +52,16 @@ function setup({
   authorParts = [],
   rating = 0,
   readingRecord,
+  editable = true,
+  betterBibTeX,
 } = {}) {
   const prefs = new Map([
     ["info.enable", true],
     ["info.abstract", abstract],
   ]);
   const jobs = new Map();
+  const itemObservers = new Map();
+  let observerID = 0;
   let jobID = 0;
   let section;
   const requests = [];
@@ -69,6 +73,17 @@ function setup({
   const logs = [];
   const authorMenus = [];
   const copyBindings = [];
+  const copies = [];
+  const clipboard = {
+    copyTextToClipboard: (text) => copies.push(text),
+  };
+  const { copyInfoText } = createHarness({
+    globals: {
+      Zotero: { Utilities: { Internal: clipboard } },
+      ztoolkit: { log: (...args) => logs.push(args) },
+    },
+    mocks: { "src/utils/locale.ts": { getString: (key) => key } },
+  }).load("src/panes/infoCopy.ts");
   const textSelections = new Map();
   const ratingWrites = [];
   const ratings = new Map();
@@ -230,6 +245,18 @@ function setup({
     globals: {
       Zotero: {
         Item,
+        Notifier: {
+          registerObserver(observer, types) {
+            assert.deepEqual(Array.from(types), ["item"]);
+            const id = `info-observer-${++observerID}`;
+            itemObservers.set(id, observer);
+            return id;
+          },
+          unregisterObserver(id) {
+            itemObservers.delete(id);
+          },
+        },
+        BetterBibTeX: betterBibTeX,
         ItemPaneManager: {
           registerSection(value) {
             section = value;
@@ -300,7 +327,7 @@ function setup({
       },
       "src/cite/index.ts": { citationOf: () => undefined },
       "src/rank/normalize.ts": { venueOf: () => venue },
-      "src/utils/items.ts": { itemIsEditable: () => true },
+      "src/utils/items.ts": { itemIsEditable: () => editable },
       "src/authors/pipeline.ts": {
         formatAuthors: () => ({
           parts: authorParts,
@@ -318,6 +345,7 @@ function setup({
         openAuthorMenu: (...args) => authorMenus.push(args),
       },
       "src/panes/infoCopy.ts": {
+        copyInfoText,
         selectedInfoText: (root) => textSelections.get(root) || "",
         installInfoCopy(root) {
           const binding = { root, disposed: false };
@@ -351,7 +379,15 @@ function setup({
         },
         stopAbstractTranslations() {},
       },
-      "src/ui/icons.ts": { iconButton: () => doc.createElement("button") },
+      "src/ui/icons.ts": {
+        iconButton(_doc, _icon, label, className) {
+          const button = doc.createElement("button");
+          button.title = label;
+          button.setAttribute("aria-label", label);
+          button.className = className || "";
+          return button;
+        },
+      },
     },
   });
   const panel = harness.load("src/panes/infoSection.ts");
@@ -392,10 +428,13 @@ function setup({
     doc,
     authorMenus,
     copyBindings,
+    copies,
+    clipboard,
     textSelections,
     ratingWrites,
     prefs,
     jobs,
+    itemObservers,
     requests,
     authorshipCache,
     panel,
@@ -2069,6 +2108,301 @@ test("copyable text markers preserve field boundaries and never mark edit contro
   assert.deepEqual(s.writes, []);
 });
 
+function citationCopyButton(root) {
+  return find(
+    findRow(root, "info-citation-key"),
+    (node) => node.tag === "button",
+  );
+}
+
+function assertCitationReadOnly(s) {
+  assert.deepEqual(s.writes, []);
+  assert.deepEqual(s.requests, []);
+  assert.deepEqual(s.abstractRequests, []);
+  assert.deepEqual(s.translationRequests, []);
+  assert.equal(s.jobs.size, 0);
+}
+
+test("the citation key row remains discoverable with an explicit empty state and disabled copy", () => {
+  for (const fields of [{}, { citationKey: " ", extra: "Citation Key: " }]) {
+    const s = setup({ fields });
+    const props = s.show(1);
+    assert.equal(props.item.key, "ITEM1");
+    const value = findClass(props.body, "zest-info-citation-key-value");
+    assert.ok(findRow(props.body, "info-citation-key"));
+    assert.equal(value.textContent, "info-citation-key-empty");
+    assert.equal(value.classList.contains("zest-info-copyable"), false);
+    assert.equal(value.title, "info-citation-key-empty-hint");
+    assert.match(
+      value.getAttribute("aria-label"),
+      /info-citation-key-empty-hint/,
+    );
+    assert.equal(citationCopyButton(props.body).disabled, true);
+    assert.deepEqual(s.copies, []);
+    assertCitationReadOnly(s);
+  }
+});
+
+test("the info card consolidates native or legacy citation keys as selectable text", () => {
+  for (const fields of [
+    { citationKey: "Wang2025NSCLC", extra: "Citation Key: Old2020" },
+    { extra: "Author note\r\ncItAtIoN kEy: Wang2025NSCLC\r\nKeep: yes" },
+  ]) {
+    const s = setup({ title: "Study title", fields });
+    const props = s.show(1);
+    const value = findClass(props.body, "zest-info-citation-key-value");
+    assert.equal(value.textContent, "Wang2025NSCLC");
+    assert.equal(value.classList.contains("zest-info-copyable"), true);
+    assert.equal(
+      findRow(props.body, "info-citation-key").parentNode,
+      findClass(props.body, "zest-info-bibliography"),
+    );
+    const copy = citationCopyButton(props.body);
+    assert.equal(copy.getAttribute("aria-label"), "info-citation-key-copy");
+    assert.equal(copy.type, "button");
+    copy.listeners.click();
+    assert.deepEqual(s.copies, ["Wang2025NSCLC"]);
+    const feedback = findClass(props.body, "zest-info-citation-key-message");
+    assert.equal(feedback.textContent, "info-citation-key-copied");
+    assert.equal(feedback.getAttribute("role"), "status");
+    assert.equal(feedback.getAttribute("aria-live"), "polite");
+    assertCitationReadOnly(s);
+  }
+});
+
+test("citation key copying remains available in a read-only library or pane", () => {
+  for (const libraryEditable of [true, false]) {
+    const s = setup({
+      fields: { citationKey: "ReadOnly2025" },
+      editable: libraryEditable,
+    });
+    const props = s.show(1);
+    if (libraryEditable) {
+      props.editable = false;
+      s.section.onRender(props);
+    }
+    const copy = citationCopyButton(props.body);
+    assert.equal(copy.disabled, false);
+    copy.listeners.click();
+    assert.deepEqual(s.copies, ["ReadOnly2025"]);
+    assertCitationReadOnly(s);
+  }
+});
+
+test("citation key copying uses the current field even before the next repaint", () => {
+  const s = setup({ fields: { citationKey: "Before2024" } });
+  const props = s.show(1);
+  const copy = citationCopyButton(props.body);
+  props.item.fields.citationKey = "After2025";
+  copy.listeners.click();
+  assert.deepEqual(s.copies, ["After2025"]);
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "After2025",
+  );
+  assertCitationReadOnly(s);
+});
+
+test("an edited or removed citation key refreshes without retaining an active old copy button", () => {
+  const s = setup({ fields: { citationKey: "Before2024" } });
+  const props = s.show(1);
+  const oldCopy = citationCopyButton(props.body);
+  props.item.fields.citationKey = "After2025";
+  s.panel.refreshInfoSections(1);
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "After2025",
+  );
+  oldCopy.listeners.click();
+  assert.deepEqual(s.copies, []);
+  const currentCopy = citationCopyButton(props.body);
+  props.item.fields.citationKey = "";
+  currentCopy.listeners.click();
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "info-citation-key-empty",
+  );
+  assert.equal(citationCopyButton(props.body).disabled, true);
+  assert.deepEqual(s.copies, []);
+  assertCitationReadOnly(s);
+});
+
+test("native item modify notifications refresh saved citation keys without a selection switch", async () => {
+  const s = setup({ fields: { citationKey: "Before2024" } });
+  const props = s.show(1);
+  const other = s.show(2);
+  const observer = [...s.itemObservers.values()][0];
+  s.panel.registerInfoSection();
+  assert.equal(s.itemObservers.size, 1);
+  const oldCopy = citationCopyButton(props.body);
+  props.item.setField("citationKey", "After2025");
+  await props.item.saveTx();
+  observer.notify("modify", "item", [1, "1"]);
+  assert.equal(props.refreshes, 1);
+  assert.equal(other.refreshes, 0);
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "After2025",
+  );
+  oldCopy.listeners.click();
+  assert.deepEqual(s.copies, []);
+  props.item.setField("citationKey", "");
+  await props.item.saveTx();
+  observer.notify("modify", "item", [1]);
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "info-citation-key-empty",
+  );
+  assert.equal(citationCopyButton(props.body).disabled, true);
+  assert.equal(s.requests.length, 0);
+  assert.equal(s.abstractRequests.length, 0);
+  const before = props.refreshes;
+  observer.notify("refresh", "item", [1]);
+  observer.notify("modify", "collection", [1]);
+  observer.notify("modify", "item", [999]);
+  assert.equal(props.refreshes, before);
+  s.panel.unregisterInfoSection();
+  assert.equal(s.itemObservers.size, 0);
+  s.panel.registerInfoSection();
+  const next = s.show(1);
+  observer.notify("modify", "item", [1]);
+  assert.equal(
+    next.refreshes,
+    0,
+    "a retired notifier stays inert after re-registration",
+  );
+});
+
+test("BBT's existing key is shown and copied from a read-only library without generation or item writes", () => {
+  const calls = [];
+  const s = setup({
+    editable: false,
+    betterBibTeX: {
+      KeyManager: {
+        get(id) {
+          calls.push(id);
+          return { itemID: id, citationKey: "BBT2026_NSCLC" };
+        },
+        fill() {
+          calls.push("fill");
+        },
+        update() {
+          calls.push("update");
+        },
+      },
+    },
+  });
+  const props = s.show(1);
+  assert.equal(
+    findClass(props.body, "zest-info-citation-key-value").textContent,
+    "BBT2026_NSCLC",
+  );
+  const copy = citationCopyButton(props.body);
+  assert.equal(copy.disabled, false);
+  copy.listeners.click();
+  assert.deepEqual(s.copies, ["BBT2026_NSCLC"]);
+  assert.deepEqual(calls, [1, 1]);
+  assertCitationReadOnly(s);
+});
+
+test("BBT readiness refreshes the empty row and item changes invalidate an outgoing BBT copy action", () => {
+  const records = new Map();
+  const s = setup({
+    betterBibTeX: { KeyManager: { get: (id) => records.get(id) } },
+  });
+  const props = s.show(1);
+  const emptyCopy = citationCopyButton(props.body);
+  assert.equal(emptyCopy.disabled, true);
+  records.set(1, { citationKey: "First2025" });
+  s.panel.refreshInfoSections(1);
+  const firstCopy = citationCopyButton(props.body);
+  assert.equal(firstCopy.disabled, false);
+  emptyCopy.listeners.click();
+  assert.deepEqual(s.copies, []);
+  props.item = new s.Item(2);
+  s.section.onItemChange(props);
+  firstCopy.listeners.click();
+  s.section.onRender(props);
+  assert.equal(citationCopyButton(props.body).disabled, true);
+  records.set(2, { citationKey: "Second2026" });
+  s.panel.refreshInfoSections(2);
+  citationCopyButton(props.body).listeners.click();
+  assert.deepEqual(s.copies, ["Second2026"]);
+  assertCitationReadOnly(s);
+});
+
+test("an item switch invalidates its previous citation copy action before the next render", () => {
+  const s = setup({ fields: { citationKey: "First2024" } });
+  const props = s.show(1);
+  const oldCopy = citationCopyButton(props.body);
+  props.item = new s.Item(2, { citationKey: "Second2025" });
+  s.section.onItemChange(props);
+  oldCopy.listeners.click();
+  assert.deepEqual(s.copies, []);
+  s.section.onRender(props);
+  citationCopyButton(props.body).listeners.click();
+  assert.deepEqual(s.copies, ["Second2025"]);
+  assertCitationReadOnly(s);
+});
+
+test("destroyed, unregistered, disconnected and hidden panes cannot copy an old citation key", () => {
+  for (const close of [
+    (s, props) => s.section.onDestroy(props),
+    (s) => s.panel.unregisterInfoSection(),
+    (_s, props) => props.body.remove(),
+    (_s, props) => props.setEnabled(false),
+    (s) => s.prefs.set("info.enable", false),
+  ]) {
+    const s = setup({ fields: { citationKey: "Stale2025" } });
+    const props = s.show(1);
+    const copy = citationCopyButton(props.body);
+    close(s, props);
+    copy.listeners.click();
+    assert.deepEqual(s.copies, []);
+    assertCitationReadOnly(s);
+  }
+});
+
+test("a clipboard failure is reported without copying, throwing or modifying the item", () => {
+  for (const unavailable of [true, false]) {
+    const s = setup({ fields: { citationKey: "Wang2025NSCLC" } });
+    const props = s.show(1);
+    if (unavailable) delete s.clipboard.copyTextToClipboard;
+    else {
+      s.clipboard.copyTextToClipboard = () => {
+        throw new Error("Clipboard unavailable");
+      };
+    }
+    const copy = citationCopyButton(props.body);
+    assert.doesNotThrow(() => copy.listeners.click());
+    assert.deepEqual(s.copies, []);
+    assert.equal(
+      findClass(props.body, "zest-info-citation-key-message").textContent,
+      "info-citation-key-copy-failed",
+    );
+    assert.equal(copy.title, "info-citation-key-copy-failed");
+    assert.equal(s.logs.length, unavailable ? 0 : 1);
+    if (!unavailable) assert.equal(s.logs[0][0], "[info] copy failed");
+    assertCitationReadOnly(s);
+  }
+});
+
+test("long citation keys and HTML-looking content remain inert and copy without added citation syntax", () => {
+  const key = `Wang2025_${"NSCLC_".repeat(80)}<img src=x onerror="bad()">`;
+  const s = setup({ fields: { citationKey: key } });
+  const props = s.show(1);
+  const value = findClass(props.body, "zest-info-citation-key-value");
+  assert.equal(value.textContent, key);
+  assert.equal(value.childNodes.length, 0);
+  assert.equal(
+    find(props.body, (node) => node.tag === "img"),
+    undefined,
+  );
+  citationCopyButton(props.body).listeners.click();
+  assert.deepEqual(s.copies, [key]);
+  assertCitationReadOnly(s);
+});
+
 test("only the first and verified corresponding authors and their distinct institutions are initially visible, with expansion remembered per item", () => {
   const s = setup({
     title: "Article title",
@@ -2098,15 +2432,13 @@ test("only the first and verified corresponding authors and their distinct insti
   const props = s.show(1);
   const bibliography = findClass(props.body, "zest-info-bibliography");
   assert.equal(bibliography.children[0], findRow(props.body, "info-title"));
-  assert.equal(
-    bibliography.children[1],
-    findClass(props.body, "zest-info-source"),
-  );
-  assert.equal(
-    findRow(props.body, "info-venue").parentNode,
-    bibliography.children[1],
-  );
+  const source = findClass(props.body, "zest-info-source");
+  assert.equal(findRow(props.body, "info-venue").parentNode, source);
   const authorRow = findRow(props.body, "info-authors");
+  assert.ok(
+    bibliography.children.indexOf(source) <
+      bibliography.children.indexOf(authorRow),
+  );
   const authors = authorRow.children[1].children;
   assert.equal(authors.length, 6);
   assert.deepEqual(

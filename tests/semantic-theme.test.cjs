@@ -118,10 +118,13 @@ function semanticFixture() {
       "src/utils/guard.ts": { guard: (_name, fn) => fn },
       "src/utils/items.ts": {},
       "src/tags/nestedTree.ts": {
-        selectedTagNames: () => [],
+        selectedTagBranches: () => ({
+          branches: [],
+          linkSymbol: "/",
+          matchRule: "#",
+        }),
         onTagSelectionChange: () => () => {},
       },
-      "src/ui/icons.ts": { iconButton: (doc) => doc.createElement("button") },
       "src/ui/styles.ts": { accentColor: () => "#40c463" },
       "src/columns/registry.ts": {
         rowItem: () => item,
@@ -208,10 +211,21 @@ for (const [name, module, factory, pref] of [
   test(`${name} auto text retains both theme contrasts and the original semantic wash`, () => {
     const f = semanticFixture();
     const badge = f.badge(module, factory);
-    assertVariants(badge, f);
+    assert.equal(
+      badge.style.getPropertyValue("--zest-badge-rgb"),
+      "255,102,102",
+    );
+    assert.equal(
+      Number(badge.style.getPropertyValue("--zest-badge-opacity")),
+      name === "journal" ? 0.15 : 0.16,
+    );
     assert.equal(badge.classList.contains("zest-readable-text"), true);
     assert.equal(badge.style.color, undefined, "no fixed inline text colour");
-    assert.match(badge.style.backgroundColor, /^rgba\(255,102,102,/);
+    assert.equal(
+      badge.style.backgroundColor,
+      undefined,
+      "native background pairs with native text",
+    );
   });
   test(`${name} explicit user text colour remains untouched`, () => {
     const f = semanticFixture();
@@ -252,12 +266,13 @@ test("badge and annotation CSS select contrast with media rules, not a render-ti
   );
   assert.match(
     source,
-    /\.zest-badge\.zest-readable-text\s*\{\s*color:\s*var\(--zest-readable-light,/,
+    /\.zest-badge\.zest-readable-text\s*\{\s*color:\s*var\(--fill-primary\);\s*background-color:\s*var\(--material-background\)/,
   );
   assert.match(
     source,
-    /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*\.zest-badge\.zest-readable-text\s*\{\s*color:\s*var\(--zest-readable-dark,/,
+    /background-color:color-mix\(in srgb,rgb\(var\(--zest-badge-rgb\)\)/,
   );
+  assert.doesNotMatch(source, /\.zest-badge\.zest-readable-text::before/);
   assert.match(
     source,
     /border-inline-start:\s*3px solid var\(--zest-readable-light,/,

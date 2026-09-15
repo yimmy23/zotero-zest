@@ -13,6 +13,10 @@ export interface RankValue {
 }
 
 export interface JournalRecord {
+  /** Lookup-rule revision; absent on older caches, never a ranking year. */
+  lookupVersion?: number;
+  /** Input IDs identify a repeated request; they do not prove source aliases. */
+  requestedISSNs?: string[];
   /** ISSN first; otherwise a namespaced normalised title. */
   key: string;
   /** the journal name as it was on the item */
@@ -39,6 +43,28 @@ export function valueOf(
   return rec.values.find((v) => v.field.toLowerCase() === lower);
 }
 
+/**
+ * Nonnegative metric, with unknown distinct from zero. Human-authored dataset
+ * and easyScholar strings may use full-width digits, a dot decimal separator
+ * and correctly grouped thousands commas. Never strip arbitrary text/signs
+ * or guess that a decimal comma is a thousands separator. Typed API adapters
+ * must check their JSON number type before calling this parser.
+ */
+export function parseRankNumber(value: unknown): number | undefined {
+  if (typeof value === "number")
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const text = value
+    .trim()
+    .replace(/[０-９．，]/g, (c) =>
+      String.fromCharCode(c.charCodeAt(0) - 0xfee0),
+    );
+  if (!/^(?:(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d*)?|\.\d+)$/.test(text))
+    return undefined;
+  const number = Number(text.replace(/,/g, ""));
+  return Number.isFinite(number) ? number : undefined;
+}
+
 /** first numeric value among the given fields (impact-factor column) */
 export function numberOf(
   rec: JournalRecord | undefined,
@@ -47,8 +73,8 @@ export function numberOf(
   for (const f of fields) {
     const v = valueOf(rec, f);
     if (!v) continue;
-    const n = Number(String(v.value).replace(/[^\d.]/g, ""));
-    if (Number.isFinite(n)) return n;
+    const n = parseRankNumber(v.value);
+    if (n !== undefined) return n;
   }
   return undefined;
 }

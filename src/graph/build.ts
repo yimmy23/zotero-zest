@@ -10,7 +10,8 @@
  * reads the locally cached OpenAlex authorships — still no network.)
  */
 
-import { buildAuthorResolver, firstLastIndices } from "./authorIdentity";
+import { authorResolverSteps, firstLastIndices } from "./authorIdentity";
+import { runSliced, sortSteps, WorkCancelled, type WorkOptions } from "./work";
 export { buildAuthorResolver } from "./authorIdentity";
 
 export type ZNodeKind = "center" | "item" | "author" | "tag" | "collection";
@@ -72,7 +73,7 @@ interface Category {
 export async function buildGraph(
   items: Zotero.Item[],
   mode: GraphMode,
-  opts: {
+  opts: WorkOptions & {
     maxNodes: number;
     centerItemID?: number;
     /** author mode: every author, or first + last by position, not correspondence */
@@ -83,18 +84,26 @@ export async function buildGraph(
 ): Promise<ZGraphData> {
   const empty: ZGraphData = { nodes: [], edges: [], mode, truncated: false };
   try {
-    const regular = items.filter(isRegularItemSafe);
-    switch (mode) {
-      case "related":
-        return buildRelatedGraph(regular, opts);
-      case "author":
-      case "tag":
-      case "collection":
-        return buildBipartiteGraph(regular, mode, opts);
-      default:
-        return empty;
+    return await runSliced(build(), opts);
+    function* build(): Generator<void, ZGraphData> {
+      const regular: Zotero.Item[] = [];
+      for (const item of items) {
+        if (isRegularItemSafe(item)) regular.push(item);
+        yield;
+      }
+      switch (mode) {
+        case "related":
+          return yield* buildRelatedGraph(regular, opts);
+        case "author":
+        case "tag":
+        case "collection":
+          return yield* buildBipartiteGraph(regular, mode, opts);
+        default:
+          return empty;
+      }
     }
   } catch (e) {
+    if (e instanceof WorkCancelled) return empty;
     try {
       ztoolkit.log("[graph] buildGraph failed", e);
     } catch {
@@ -230,13 +239,14 @@ function makeItemNode(item: Zotero.Item, id: string): ZNode {
 
 // ------------------------------------------------------------ mode: related
 
-function buildRelatedGraph(
+function* buildRelatedGraph(
   items: Zotero.Item[],
   opts: { maxNodes: number; centerItemID?: number },
-): ZGraphData {
+): Generator<void, ZGraphData> {
   const nodes: ZNode[] = [];
   const nodeIds = new Set<string>();
   for (const item of items) {
+    yield;
     const id = itemNodeId(item);
     if (!id || nodeIds.has(id)) continue;
     nodeIds.add(id);
@@ -248,6 +258,7 @@ function buildRelatedGraph(
   const edgeKeys = new Set<string>();
   const edges: ZEdge[] = [];
   for (const item of items) {
+    yield;
     const srcId = itemNodeId(item);
     if (!srcId || !nodeIds.has(srcId)) continue;
     let libraryID: number;
@@ -257,6 +268,7 @@ function buildRelatedGraph(
       continue;
     }
     for (const key of itemRelatedKeys(item)) {
+      yield;
       const related = resolveRelatedItem(libraryID, key);
       if (!related) continue;
       const tgtId = itemNodeId(related);
@@ -271,13 +283,13 @@ function buildRelatedGraph(
 
   // isolated items (degree 0) end up with weight 0, which naturally sorts
   // to the back of truncateToBudget — i.e. dropped first, kept otherwise.
-  applyDegreeWeights(nodes, edges);
-  return finalizeGraph(nodes, edges, "related", opts);
+  yield* applyDegreeWeights(nodes, edges);
+  return yield* finalizeGraph(nodes, edges, "related", opts);
 }
 
 // ----------------------------------------------------------- mode: bipartite
 
-function buildBipartiteGraph(
+function* buildBipartiteGraph(
   items: Zotero.Item[],
   mode: CategoryMode,
   opts: {
@@ -286,7 +298,7 @@ function buildBipartiteGraph(
     authorRoles?: "all" | "firstlast";
     minShared?: number;
   },
-): ZGraphData {
+): Generator<void, ZGraphData> {
   const itemNodes: ZNode[] = [];
   const itemIds = new Set<string>();
   const catNodes = new Map<string, ZNode>();
@@ -294,9 +306,10 @@ function buildBipartiteGraph(
   const rawEdges: Array<{ itemId: string; catId: string }> = [];
   // author mode resolves identities over the whole scope first (clustering
   // needs to see every name variant, not one item at a time)
-  const resolver = mode === "author" ? buildAuthorResolver(items) : null;
+  const resolver = mode === "author" ? yield* authorResolverSteps(items) : null;
 
   for (const item of items) {
+    yield;
     const id = itemNodeId(item);
     if (!id || itemIds.has(id)) continue;
     itemIds.add(id);
@@ -309,6 +322,7 @@ function buildBipartiteGraph(
         )
       : categoriesFor(item, mode as Exclude<CategoryMode, "author">);
     for (const cat of cats) {
+      yield;
       if (!catNodes.has(cat.id)) {
         catNodes.set(cat.id, {
           id: cat.id,
@@ -331,6 +345,7 @@ function buildBipartiteGraph(
   }
 
   for (const [catId, members] of catMembers) {
+    yield;
     const node = catNodes.get(catId);
     if (node) node.weight = members.size;
   }
@@ -339,26 +354,24 @@ function buildBipartiteGraph(
   // the user's (default 2), unless it would drop every category and leave
   // a graph with no bipartite structure at all
   const minShared = Math.max(2, opts.minShared || 2);
-  let keptCatIds = new Set(
-    [...catNodes.values()]
-      .filter((n) => n.weight >= minShared)
-      .map((n) => n.id),
-  );
-  if (keptCatIds.size === 0) {
-    keptCatIds = new Set(catNodes.keys());
+  let keptCatIds = new Set<string>();
+  for (const node of catNodes.values()) {
+    if (node.weight >= minShared) keptCatIds.add(node.id);
+    yield;
   }
-
-  const edges: ZEdge[] = rawEdges
-    .filter((e) => keptCatIds.has(e.catId))
-    .map((e) => ({ source: e.itemId, target: e.catId, weight: 1 }));
-
-  // item weight = number of links, same convention as "related" mode
-  applyDegreeWeights(itemNodes, edges);
-
-  const catNodeList = [...catNodes.values()].filter((n) =>
-    keptCatIds.has(n.id),
-  );
-  return finalizeGraph([...itemNodes, ...catNodeList], edges, mode, opts);
+  if (keptCatIds.size === 0) keptCatIds = new Set(catNodes.keys());
+  const edges: ZEdge[] = [];
+  for (const edge of rawEdges) {
+    if (keptCatIds.has(edge.catId))
+      edges.push({ source: edge.itemId, target: edge.catId, weight: 1 });
+    yield;
+  }
+  yield* applyDegreeWeights(itemNodes, edges);
+  for (const node of catNodes.values()) {
+    if (keptCatIds.has(node.id)) itemNodes.push(node);
+    yield;
+  }
+  return yield* finalizeGraph(itemNodes, edges, mode, opts);
 }
 
 function categoriesFor(
@@ -400,27 +413,30 @@ function edgeEndpointId(end: string | ZNode): string {
   return typeof end === "string" ? end : end.id;
 }
 
-function applyDegreeWeights(nodes: ZNode[], edges: ZEdge[]): void {
+function* applyDegreeWeights(nodes: ZNode[], edges: ZEdge[]): Generator<void> {
   const degree = new Map<string, number>();
   for (const e of edges) {
+    yield;
     const s = edgeEndpointId(e.source);
     const t = edgeEndpointId(e.target);
     degree.set(s, (degree.get(s) || 0) + 1);
     degree.set(t, (degree.get(t) || 0) + 1);
   }
   for (const n of nodes) {
+    yield;
     n.weight = degree.get(n.id) || 0;
   }
 }
 
-function finalizeGraph(
+function* finalizeGraph(
   nodes: ZNode[],
   edges: ZEdge[],
   mode: GraphMode,
   opts: { maxNodes: number; centerItemID?: number },
-): ZGraphData {
+): Generator<void, ZGraphData> {
   if (opts.centerItemID !== undefined) {
     for (const n of nodes) {
+      yield;
       if (n.kind === "item" && n.itemID === opts.centerItemID) {
         n.kind = "center";
       }
@@ -431,68 +447,89 @@ function finalizeGraph(
   // of noise (issue #2) — leave them out and say how many, keeping the centre
   const degree = new Map<string, number>();
   for (const e of edges) {
+    yield;
     const a = edgeEndpointId(e.source);
     const b = edgeEndpointId(e.target);
     degree.set(a, (degree.get(a) || 0) + 1);
     degree.set(b, (degree.get(b) || 0) + 1);
   }
-  const connected = nodes.filter(
-    (n) => n.kind === "center" || (degree.get(n.id) || 0) > 0,
-  );
-  const isolated = nodes.length - connected.length;
-  const {
-    nodes: kept,
-    edges: keptEdges,
-    truncated,
-  } = truncateToBudget(connected, edges, Math.max(0, opts.maxNodes));
-  // A budget can remove a node's last neighbour. Recompute visible degree
-  // after choosing the budget (the original degree still drives priority),
-  // then discard those new isolates while retaining an isolated centre.
-  if (truncated) applyDegreeWeights(kept, keptEdges);
-  const visible = truncated
-    ? kept.filter((n) => n.kind === "center" || n.weight > 0)
-    : kept;
-  // The footer counts omitted library items, not category nodes.
-  const totalIsolated =
-    isolated +
-    (truncated
-      ? kept.filter((n) => n.kind === "item" && n.weight === 0).length
-      : 0);
-  return {
-    nodes: visible,
-    edges: keptEdges,
-    mode,
-    truncated,
-    isolated: totalIsolated || undefined,
-  };
+  const connected: ZNode[] = [];
+  let isolated = 0;
+  for (const node of nodes) {
+    if (node.kind === "center" || (degree.get(node.id) || 0) > 0)
+      connected.push(node);
+    else if (node.kind === "item") isolated++;
+    yield;
+  }
+  const limit = Number.isFinite(opts.maxNodes)
+    ? Math.max(0, Math.floor(opts.maxNodes))
+    : 0;
+  const result = yield* truncateToBudget(connected, edges, limit);
+  if (result.truncated) yield* applyDegreeWeights(result.nodes, result.edges);
+  return { ...result, mode, isolated: isolated || undefined };
 }
 
-/**
- * Keep the highest-weight nodes within maxNodes (center always kept), drop
- * the rest, and drop any edge that lost an endpoint. Weight-0 nodes (e.g.
- * isolated items with no relations) sort to the back and are dropped
- * first, satisfying the "related" mode's isolated-node rule for free.
- */
-function truncateToBudget(
+/** Spend the node budget on complete edges, prioritising the centre and
+ * high-degree neighbourhoods. Every admitted non-centre node has an edge;
+ * rejected endpoint pairs never consume a slot. */
+function* truncateToBudget(
   nodes: ZNode[],
   edges: ZEdge[],
   maxNodes: number,
-): { nodes: ZNode[]; edges: ZEdge[]; truncated: boolean } {
-  if (nodes.length <= maxNodes) {
-    return { nodes, edges, truncated: false };
+): Generator<void, { nodes: ZNode[]; edges: ZEdge[]; truncated: boolean }> {
+  if (nodes.length <= maxNodes) return { nodes, edges, truncated: false };
+  const byID = new Map<string, ZNode>();
+  const adjacent = new Map<string, ZEdge[]>();
+  let center: ZNode | undefined;
+  for (const node of nodes) {
+    byID.set(node.id, node);
+    if (node.kind === "center") center = node;
+    yield;
   }
-  const center = nodes.filter((n) => n.kind === "center");
-  const rest = nodes
-    .filter((n) => n.kind !== "center")
-    .slice()
-    .sort((a, b) => b.weight - a.weight);
-  const budget = Math.max(0, maxNodes - center.length);
-  const kept = [...center, ...rest.slice(0, budget)];
-  const keptIds = new Set(kept.map((n) => n.id));
-  const keptEdges = edges.filter(
-    (e) =>
-      keptIds.has(edgeEndpointId(e.source)) &&
-      keptIds.has(edgeEndpointId(e.target)),
-  );
+  for (const edge of edges) {
+    for (const id of [
+      edgeEndpointId(edge.source),
+      edgeEndpointId(edge.target),
+    ]) {
+      let links = adjacent.get(id);
+      if (!links) adjacent.set(id, (links = []));
+      links.push(edge);
+    }
+    yield;
+  }
+  const keptIDs = new Set<string>();
+  if (center && maxNodes > 0) keptIDs.add(center.id);
+  const ranked = yield* sortSteps(nodes, (a, b) => b.weight - a.weight);
+  // The centre's neighbourhood is admitted before any other component.
+  if (center) ranked.unshift(center);
+  for (const node of ranked) {
+    for (const edge of adjacent.get(node.id) || []) {
+      const source = edgeEndpointId(edge.source);
+      const target = edgeEndpointId(edge.target);
+      const cost = Number(!keptIDs.has(source)) + Number(!keptIDs.has(target));
+      if (keptIDs.size + cost <= maxNodes) {
+        keptIDs.add(source);
+        keptIDs.add(target);
+      }
+      yield;
+    }
+    if (keptIDs.size >= maxNodes) break;
+    yield;
+  }
+  const kept: ZNode[] = [];
+  for (const id of keptIDs) {
+    const node = byID.get(id);
+    if (node) kept.push(node);
+    yield;
+  }
+  const keptEdges: ZEdge[] = [];
+  for (const edge of edges) {
+    if (
+      keptIDs.has(edgeEndpointId(edge.source)) &&
+      keptIDs.has(edgeEndpointId(edge.target))
+    )
+      keptEdges.push(edge);
+    yield;
+  }
   return { nodes: kept, edges: keptEdges, truncated: true };
 }

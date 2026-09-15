@@ -13,6 +13,10 @@
 import { readingStore } from "../reading/store";
 import { readingTracker } from "../reading/tracker";
 import { zestDB } from "../core/db";
+import * as dbModule from "../core/db";
+import * as tagRename from "../tags/rename";
+import * as toolbarMenu from "../ui/toolbarMenu";
+import * as exportPatch from "./exportPatch";
 import { cache } from "../core/storage";
 import { zestConfig } from "../core/config";
 import * as configModule from "../core/config";
@@ -72,6 +76,14 @@ import * as status from "../reading/status";
 import * as statusMenu from "../reading/statusMenu";
 import * as pubTags from "../columns/pubTags";
 import * as authorMenu from "../authors/authorMenu";
+import * as menus from "./menus";
+import * as tagMatch from "../tags/match";
+import * as tagBranches from "../tags/branchFilter";
+import * as rankTypes from "../rank/types";
+import * as annotationActions from "../annots/actions";
+import * as uiColor from "../ui/color";
+import * as dialogTheme from "../ui/dialogTheme";
+import * as citationKey from "../utils/citationKey";
 
 const TOKEN = "zest-dev-5c1e9a27";
 
@@ -174,6 +186,10 @@ export function registerDevEval() {
             readingStore,
             readingTracker,
             zestDB,
+            dbModule,
+            tagRename,
+            toolbarMenu,
+            exportPatch,
             columns,
             registry,
             migrate,
@@ -183,6 +199,14 @@ export function registerDevEval() {
             statusMenu,
             pubTags,
             authorMenu,
+            menus,
+            tagMatch,
+            tagBranches,
+            rankTypes,
+            citationKey,
+            annotationActions,
+            uiColor,
+            dialogTheme,
             startupConsole,
             cache,
             zestConfig,

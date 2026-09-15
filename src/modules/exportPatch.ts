@@ -2,6 +2,7 @@ import { getPref } from "../utils/prefs";
 import { upsertExtraText } from "../utils/extra";
 import { STATUS_KEYS, STATUS_DATE_KEYS } from "../reading/status";
 import { RATING_KEYS } from "../columns/rating";
+import { createWrapGuard } from "../utils/wrap";
 
 /**
  * Keep plugin bookkeeping out of bibliographies: Extra is exported by most
@@ -22,10 +23,16 @@ import { RATING_KEYS } from "../columns/rating";
  * the lines.
  */
 
-const MARK = "__zestOrigItemToExportFormat";
-/** the exact function we put on the object (per copy of the plugin) */
-let wrapped: ((...args: any[]) => any) | undefined;
-let disabled = false;
+const ownership = createWrapGuard("__zestExportWrapAlive");
+type ExportFunction = (...args: any[]) => any;
+let installed:
+  | {
+      target: { itemToExportFormat: ExportFunction };
+      original: ExportFunction;
+      wrapper: ExportFunction;
+      enabled: boolean;
+    }
+  | undefined;
 const STRIP: string[][] = [STATUS_KEYS, STATUS_DATE_KEYS, RATING_KEYS];
 
 export function stripZestExtra(extra: string): string {
@@ -40,20 +47,22 @@ export function stripZestExtra(extra: string): string {
 export function installExportPatch() {
   const ZUI = (Zotero.Utilities as any).Internal;
   if (!ZUI || typeof ZUI.itemToExportFormat !== "function") return;
-  // a previous copy of ours still on top (hot reload): unwind it, but only
-  // when it really is the function on the object — otherwise leave the chain
-  if (ZUI[MARK] && (ZUI.itemToExportFormat as any)?.__zestExport) {
-    ZUI.itemToExportFormat = ZUI[MARK];
-    delete ZUI[MARK];
-  }
-  if (ZUI[MARK]) return; // someone else sits on a stale wrapper; do nothing
-  const orig = ZUI.itemToExportFormat;
-  disabled = false;
-  wrapped = function (this: any, ...args: any[]) {
+  if (installed?.wrapper === ZUI.itemToExportFormat) return;
+  // A foreign wrapper can keep an older installation in its closure. Leave
+  // that chain intact and retire only our behavior before wrapping its head.
+  uninstallExportPatch();
+  const orig = ownership.stripStale(ZUI.itemToExportFormat) as ExportFunction;
+  const state = {
+    target: ZUI,
+    original: orig,
+    wrapper: undefined as unknown as ExportFunction,
+    enabled: true,
+  };
+  state.wrapper = function (this: any, ...args: any[]) {
     const out = orig.apply(this, args);
     try {
       if (
-        !disabled &&
+        state.enabled &&
         out &&
         typeof out.extra === "string" &&
         out.extra &&
@@ -66,32 +75,22 @@ export function installExportPatch() {
     }
     return out;
   };
-  (wrapped as any).__zestExport = true;
-  Object.defineProperty(ZUI, MARK, {
-    value: orig,
-    configurable: true,
-    writable: true,
-  });
-  ZUI.itemToExportFormat = wrapped;
+  ownership.mark(state.wrapper, orig);
+  ZUI.itemToExportFormat = state.wrapper;
+  installed = state;
 }
 
 export function uninstallExportPatch() {
-  const ZUI = (Zotero.Utilities as any).Internal;
-  if (!ZUI || !ZUI[MARK] || !wrapped) return;
+  const state = installed;
+  if (!state) return;
+  state.enabled = false;
+  installed = undefined;
+  ownership.retire();
   try {
-    if (ZUI.itemToExportFormat === wrapped) {
-      ZUI.itemToExportFormat = ZUI[MARK];
-      delete ZUI[MARK];
-    } else {
-      // another plugin (or a newer copy of this one) wrapped on top of us:
-      // leave the chain intact and make our link a pass-through
-      disabled = true;
-      ztoolkit.log(
-        "[exportPatch] another wrapper sits on ours — left in place, disabled",
-      );
+    if (state.target.itemToExportFormat === state.wrapper) {
+      state.target.itemToExportFormat = ownership.stripStale(state.original);
     }
   } catch (e) {
     ztoolkit.log("[exportPatch] restore failed", e);
   }
-  wrapped = undefined;
 }

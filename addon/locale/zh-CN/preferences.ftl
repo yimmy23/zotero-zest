@@ -1,6 +1,13 @@
 pref-intro = 按你的使用习惯调整阅读、文献信息和工作区。
 pref-navigation =
     .aria-label = 跳转到设置分组
+pref-navigation-reading = 阅读
+pref-navigation-bibliography = 文献信息
+pref-navigation-workspace = 工作区
+pref-navigation-appearance = 外观
+pref-navigation-advanced = 数据与高级
+pref-texttags-syntax = 匹配规则语法与示例
+pref-rank-map-syntax = 字段映射语法与示例
 
 pref-group-columns = 条目列表列
 pref-column-reading =
@@ -18,7 +25,7 @@ pref-column-texttags =
 pref-texttags-match = 匹配规则
 pref-texttags-match-hint = “#” = 以 # 开头的标签，显示时去掉 # · “~~/” = 不以 / 开头的全部标签（多个字符 = 都不以其开头）· “/^#(.+)/” = 正则；有捕获组显示捕获组，没有则显示整个标签
 pref-texttags-color = 默认徽章颜色（标签已设 Zotero 颜色时优先用它）
-pref-texttags-textcolor = 文字颜色（auto = 由徽章色自动取可读深浅，或填 CSS 颜色）
+pref-texttags-textcolor = 文字色（auto 使用原生文字与彩色背景；或填 CSS 颜色）
 pref-rating-mark = 评级符号
 pref-rating-option = 空位符号
 pref-rating-color = 颜色（留空 = 主题强调色）
@@ -98,7 +105,7 @@ pref-column-if =
 pref-column-venue =
     .label = 期刊 / 来源——一列显示期刊名 / 会议名 / 书名 / 出版者，按条目类型取（Zotero 自带的「出版物」列只有期刊名）
 pref-rank-fields = 字段
-pref-rank-fields-hint = 逗号分隔，如 sciUp, sci, sciif；未配置 easyScholar 密钥时回退为 OpenAlex 的两年平均被引率
+pref-rank-fields-hint = 默认 xr, sci, sciif：优先新锐，无数据时显示中科院历史分区。可自定义字段及顺序（如 sciUp, xr, sciif）。无分区数据时回退为 OpenAlex 两年平均被引率
 pref-rank-sortby = 排序依据
 pref-rank-sortby-hint = 如 sci, -sciif；前缀「-」表示降序；缺失该字段的条目始终排在最后
 pref-rank-map = 字段映射
@@ -106,8 +113,8 @@ pref-rank-map-hint = 每行一条规则，或用逗号分隔，如 sciif=IF、/^
 pref-rank-colors = 分级颜色
 pref-rank-colors-hint = 5 个逗号分隔的十六进制颜色，从最高分级到最低，默认 #EE0000, #2F998C, #D2A500, #DA6D00, #007BF6
 pref-rank-defaultcolor = 默认颜色（未匹配到分级时使用；自动 = 内置青色）
-pref-rank-textcolor = 文字颜色（auto 或 CSS 颜色）
-pref-rank-opacity = 不透明度
+pref-rank-textcolor = 文字色（auto 使用原生文字与彩色背景；或填 CSS 颜色）
+pref-rank-opacity = 背景透明度（auto 最高 0.25，以保持文字清晰；自定义文字色时最高 1）
 pref-rank-ttl = 缓存天数
 pref-rank-easyscholar =
     .label = 从 easyScholar 获取分级数据

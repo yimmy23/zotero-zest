@@ -1,4 +1,5 @@
 import { getPref } from "../utils/prefs";
+import { parseRankNumber } from "./types";
 
 /**
  * Turning a rank VALUE ("1区", "Q2", "58.7") into a 1–5 grade and a colour.
@@ -40,6 +41,8 @@ const THRESHOLDS: Record<string, number[]> = {
   jci: [3, 1, 0.5, 0],
 };
 
+const IMPACT_FIELD = /(^|[^a-z])(if|impact|factor|因子)/i;
+
 export function rankColors(): string[] {
   const raw = String(getPref("rank.colors") || "").trim();
   const list = raw
@@ -61,27 +64,20 @@ export function defaultRankColor(): string {
   return String(getPref("rank.defaultColor") || "") || DEFAULT_RANK_COLOR;
 }
 
-const FULLWIDTH_DIGITS = /[０-９．]/g;
-
-function toNumber(value: string): number {
-  const half = value.replace(FULLWIDTH_DIGITS, (c) =>
-    String.fromCharCode(c.charCodeAt(0) - 0xfee0),
-  );
-  return Number(half.replace(/[^\d.]/g, ""));
-}
-
 /**
  * Grade of a value. `field` picks a numeric threshold table when one exists;
  * otherwise the value's own shape decides (Q1, 1区, T1, A+, 一类…).
  */
 export function inferRank(field: string, value: string): number | undefined {
-  const v = String(value ?? "").trim();
+  const v = String(value ?? "")
+    .trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
   if (!v) return undefined;
 
   const thresholds = THRESHOLDS[field.toLowerCase()];
   if (thresholds) {
-    const n = toNumber(v);
-    if (!Number.isFinite(n)) return undefined;
+    const n = parseRankNumber(v);
+    if (n === undefined) return undefined;
     for (let i = 0; i < thresholds.length; i++) {
       if (n >= thresholds[i]) return i + 1;
     }
@@ -118,14 +114,30 @@ export function inferRank(field: string, value: string): number | undefined {
   // A bare number only gets a grade when the FIELD is impact-factor-like.
   // Ranking every number by IF thresholds would paint an h-index of 1851 as
   // "top tier", which is meaningless.
-  if (/(^|[^a-z])(if|impact|factor|因子)/i.test(field)) {
-    const n = toNumber(v);
-    if (Number.isFinite(n) && /^[\d.]/.test(v)) {
+  if (IMPACT_FIELD.test(field)) {
+    const n = parseRankNumber(v);
+    if (n !== undefined) {
       const t = THRESHOLDS.sciif;
       for (let i = 0; i < t.length; i++) if (n >= t[i]) return i + 1;
     }
   }
   return undefined;
+}
+
+/** Numeric grades must be recomputed even for caches written by older copies. */
+export function validatedRank(
+  field: string,
+  value: string,
+  explicit?: number,
+): number | undefined {
+  if (THRESHOLDS[field.toLowerCase()] || IMPACT_FIELD.test(field))
+    return inferRank(field, value);
+  return explicit !== undefined &&
+    Number.isInteger(explicit) &&
+    explicit >= 1 &&
+    explicit <= 5
+    ? explicit
+    : inferRank(field, value);
 }
 
 /**
@@ -134,18 +146,19 @@ export function inferRank(field: string, value: string): number | undefined {
  */
 export function sortKeyFor(field: string, value: string): string {
   const rank = inferRank(field, value);
-  const n = toNumber(value);
+  const n = parseRankNumber(value);
   const rankPart = String(rank ?? 9);
-  const numPart = Number.isFinite(n)
-    ? String(Math.max(0, 999999 - Math.round(n * 100))).padStart(7, "0")
-    : "9999999";
+  const numPart =
+    n !== undefined
+      ? String(Math.max(0, 999999 - Math.round(n * 100))).padStart(7, "0")
+      : "9999999";
   return `${rankPart}${numPart}`;
 }
 
 /** the fields the user wants to see, in their order */
 export function displayFields(): string[] {
   const raw = String(getPref("rank.fields") || "").trim();
-  const list = (raw || "sciUp, sci, sciif")
+  const list = (raw || "xr, sci, sciif")
     .split(/[,，;；]\s*/)
     .map((s) => s.trim())
     .filter(Boolean);

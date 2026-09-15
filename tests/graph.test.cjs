@@ -230,8 +230,8 @@ test("rapid graph mode switches discard an old build and display only the latest
       "src/graph/authorFetch.ts": { ensureAuthorships: async () => false },
       "src/authors/authorMenu.ts": { appendAuthorMenuItems() {} },
       "src/graph/build.ts": {
-        buildGraph: (_items, mode) =>
-          new Promise((resolve) => builds.push({ mode, resolve })),
+        buildGraph: (_items, mode, options) =>
+          new Promise((resolve) => builds.push({ mode, resolve, options })),
       },
       "src/graph/view.ts": {
         GraphView: class {
@@ -263,13 +263,16 @@ test("rapid graph mode switches discard an old build and display only the latest
   );
   modes.children[1].dispatch("click");
   modes.children[2].dispatch("click");
-  assert.equal(builds.length, 1, "a running build is not duplicated");
+  assert.equal(builds.length, 3);
+  assert.equal(builds[0].options.shouldContinue(), false);
+  assert.equal(builds[1].options.shouldContinue(), false);
+  assert.equal(builds[2].options.shouldContinue(), true);
   builds[0].resolve({ mode: "related", nodes: [], edges: [] });
+  builds[1].resolve({ mode: "author", nodes: [], edges: [] });
   await new Promise(setImmediate);
   assert.deepEqual(displayed, []);
-  assert.equal(builds.length, 2);
-  assert.equal(builds[1].mode, "tag");
-  builds[1].resolve({ mode: "tag", nodes: [], edges: [] });
+  assert.equal(builds[2].mode, "tag");
+  builds[2].resolve({ mode: "tag", nodes: [], edges: [] });
   await new Promise(setImmediate);
   assert.deepEqual(displayed, ["tag"]);
   const canvas = box.children[1];
@@ -665,4 +668,247 @@ test("destroy cancels a pending real-force animation and prevents later DOM writ
   surface.settle();
   assert.equal(surface.doc.writes, writes);
   assert.equal(surface.container.children.length, 0);
+});
+
+function authorsPaneFixture(automatic = true, transport) {
+  const { doc, win } = dom();
+  const host = doc.createXULElement("vbox");
+  host.id = "zotero-items-pane-container";
+  const itemsPane = doc.createXULElement("vbox");
+  itemsPane.id = "zotero-items-pane";
+  host.appendChild(itemsPane);
+  doc.documentElement.appendChild(host);
+  class Item {
+    constructor(index) {
+      this.id = index + 1;
+      this.libraryID = 1;
+      this.key = `P${index}`;
+      this.doi = `10.1234/p${index}`;
+    }
+    isRegularItem() {
+      return true;
+    }
+    getField() {
+      return this.doi;
+    }
+  }
+  const items = Array.from({ length: 65 }, (_, index) => new Item(index));
+  const listeners = new Set(),
+    timers = new Map(),
+    requests = [],
+    displayed = [],
+    entries = new Map();
+  let timerID = 0;
+  win.ZoteroPane = {
+    itemsView: {
+      getSortedItems: () => items,
+      onRefresh: {
+        addListener: (fn) => listeners.add(fn),
+        removeListener: (fn) => listeners.delete(fn),
+      },
+    },
+    getSelectedItems: () => [],
+  };
+  const prefs = new Map([
+    ["graph.mode", "author"],
+    ["graph.visible", true],
+    ["info.affiliations.autoFetch", automatic],
+  ]);
+  const response = () => ({
+    kind: "ok",
+    value: {
+      authorships: [
+        {
+          author: { id: "https://openalex.org/A1", display_name: "John Smith" },
+        },
+      ],
+    },
+  });
+  const h = createHarness({
+    mocks: {
+      "src/core/storage.ts": {
+        cache: {
+          get: (ns, key, sanitize) => {
+            const data = sanitize(entries.get(`${ns}/${key}`));
+            return data ? { data } : null;
+          },
+          set: (ns, key, value) => entries.set(`${ns}/${key}`, value),
+          remove: (ns, key) => entries.delete(`${ns}/${key}`),
+          ageOf: () => undefined,
+        },
+      },
+      "src/core/http.ts": {
+        politeParam: () => "",
+        http: {
+          requestResult: (...args) => {
+            requests.push(args);
+            return transport ? transport(...args) : Promise.resolve(response());
+          },
+        },
+      },
+      "src/cite/sources.ts": { cleanDOI: (item) => item.doi },
+      "src/utils/locale.ts": {
+        getString: (key, options) =>
+          key + (options?.args ? JSON.stringify(options.args) : ""),
+      },
+      "src/utils/prefs.ts": {
+        getPref: (key) => prefs.get(key),
+        getNumPref: (_key, fallback) => fallback,
+        setPref: (key, value) => prefs.set(key, value),
+      },
+      "src/utils/timers.ts": {
+        setTimeout: (fn) => {
+          timers.set(++timerID, fn);
+          return timerID;
+        },
+        clearTimeout: (id) => timers.delete(id),
+      },
+      "src/utils/guard.ts": { guard: (_area, fn) => fn },
+      "src/authors/authorMenu.ts": { appendAuthorMenuItems() {} },
+      "src/graph/build.ts": {
+        buildGraph: async (_items, mode) => ({ mode, nodes: [], edges: [] }),
+      },
+      "src/graph/view.ts": {
+        GraphView: class {
+          setData(data) {
+            displayed.push(data);
+          }
+          fitView() {}
+          destroy() {}
+        },
+      },
+      "src/ui/icons.ts": {
+        icon: (document) => document.createElement("svg"),
+        iconButton: (document, _icon, _title, className) => {
+          const button = document.createElement("button");
+          button.className = className;
+          return button;
+        },
+      },
+    },
+    globals: { Zotero: { Item } },
+  });
+  const pane = h.load("src/graph/pane.ts");
+  const box = () => doc.getElementById("zest-graph-pane");
+  const findClass = (node, name) =>
+    node.className.split(" ").includes(name)
+      ? node
+      : node.children.map((child) => findClass(child, name)).find(Boolean);
+  return {
+    h,
+    pane,
+    prefs,
+    win,
+    doc,
+    items,
+    entries,
+    requests,
+    response,
+    displayed,
+    authorButton: () => findClass(box(), "zest-graph-authors"),
+    status: () => findClass(box(), "zest-graph-status"),
+    modes: () => findClass(box(), "zest-graph-modes"),
+    refresh: () => findClass(box(), "zest-graph-actions").children[0],
+    scope: () => {
+      for (const fn of listeners) fn();
+    },
+    timers: () => {
+      for (const [id, fn] of [...timers]) {
+        timers.delete(id);
+        fn();
+      }
+    },
+  };
+}
+
+test("restoring, opening, scope refresh and mode switches never fetch graph authors with either auto-fetch preference", async () => {
+  for (const automatic of [true, false]) {
+    const f = authorsPaneFixture(automatic);
+    f.pane.restoreGraphPane(f.win);
+    await new Promise(setImmediate);
+    assert.equal(f.authorButton().hidden, false);
+    f.scope();
+    f.timers();
+    await new Promise(setImmediate);
+    f.refresh().dispatch("click");
+    await new Promise(setImmediate);
+    f.modes().children[2].dispatch("click");
+    await new Promise(setImmediate);
+    assert.equal(f.authorButton().hidden, true);
+    f.modes().children[1].dispatch("click");
+    await new Promise(setImmediate);
+    f.pane.hideGraphPane(f.win);
+    f.pane.showGraphPane(f.win);
+    await new Promise(setImmediate);
+    assert.equal(f.requests.length, 0);
+    f.pane.hideGraphPane(f.win);
+  }
+});
+
+test("the manual graph identity action fetches at most 30 papers and its local rebuild cannot start another batch", async () => {
+  const f = authorsPaneFixture(false);
+  f.pane.restoreGraphPane(f.win);
+  await new Promise(setImmediate);
+  f.authorButton().dispatch("click");
+  assert.equal(f.authorButton().disabled, true);
+  assert.equal(f.authorButton().getAttribute("aria-busy"), "true");
+  await new Promise(setImmediate);
+  assert.equal(f.requests.length, 30);
+  assert.equal(f.entries.size, 30);
+  assert.equal(f.authorButton().disabled, false);
+  assert.match(f.status().textContent, /^graph-authors-done/);
+  assert.match(f.status().textContent, /"updated":30/);
+  assert.match(f.status().textContent, /"attempted":30/);
+  f.scope();
+  f.timers();
+  await new Promise(setImmediate);
+  assert.equal(f.requests.length, 30);
+  f.pane.hideGraphPane(f.win);
+});
+
+test("hide, scope change, mode change and shutdown cancel graph identity requests and discard their late responses", async () => {
+  for (const action of ["hide", "scope", "mode", "shutdown"]) {
+    let resolve;
+    const f = authorsPaneFixture(
+      true,
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    f.pane.restoreGraphPane(f.win);
+    await new Promise(setImmediate);
+    const job = f.pane.completeAuthorIdentities(f.win);
+    assert.equal(f.requests.length, 1);
+    if (action === "hide") f.pane.hideGraphPane(f.win);
+    if (action === "scope") f.scope();
+    if (action === "mode") f.modes().children[2].dispatch("click");
+    if (action === "shutdown") f.h.context.addon.data.alive = false;
+    assert.equal(f.requests[0][2].shouldContinue(), false, action);
+    resolve(f.response());
+    await job;
+    assert.equal(f.requests.length, 1, action);
+    assert.equal(f.entries.size, 0, action);
+    if (action === "hide") {
+      f.pane.showGraphPane(f.win);
+      await new Promise(setImmediate);
+      assert.equal(f.requests.length, 1);
+    }
+    f.pane.hideGraphPane(f.win);
+  }
+});
+
+test("a throttled graph identity batch stops after one request and displays its stopped status", async () => {
+  const f = authorsPaneFixture(true, async () => ({
+    kind: "throttled",
+    status: 429,
+  }));
+  f.pane.restoreGraphPane(f.win);
+  await new Promise(setImmediate);
+  await f.pane.completeAuthorIdentities(f.win);
+  assert.equal(f.requests.length, 1);
+  assert.equal(f.entries.size, 0);
+  assert.match(f.status().textContent, /^graph-authors-stopped/);
+  assert.equal(f.authorButton().disabled, false);
+  f.pane.hideGraphPane(f.win);
 });

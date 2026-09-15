@@ -1,6 +1,13 @@
 pref-intro = Customize reading, item details and your workspace.
 pref-navigation =
     .aria-label = Jump to a settings section
+pref-navigation-reading = Reading
+pref-navigation-bibliography = Bibliographic details
+pref-navigation-workspace = Workspace
+pref-navigation-appearance = Appearance
+pref-navigation-advanced = Data and advanced
+pref-texttags-syntax = Match rule syntax and examples
+pref-rank-map-syntax = Field mapping syntax and examples
 
 pref-group-columns = Item List Columns
 pref-column-reading =
@@ -18,7 +25,7 @@ pref-column-texttags =
 pref-texttags-match = Match rule
 pref-texttags-match-hint = “#” = tags starting with #, shown without it · “~~/” = everything NOT starting with / (several characters = none of them) · “/^#(.+)/” = regex; capture groups are shown, without groups the whole tag
 pref-texttags-color = Default badge colour (Zotero tag colours win when set)
-pref-texttags-textcolor = Text colour (auto = readable shade of the badge colour, or a CSS colour)
+pref-texttags-textcolor = Text colour (auto uses native text on a coloured background; or a CSS colour)
 pref-rating-mark = Rating symbol
 pref-rating-option = Empty symbol
 pref-rating-color = Colour (empty = theme accent)
@@ -98,7 +105,7 @@ pref-column-if =
 pref-column-venue =
     .label = Venue — one column for the publication / proceedings / book title / publisher, whatever the item type has (Zotero's Publication column shows journal titles only)
 pref-rank-fields = Fields
-pref-rank-fields-hint = Comma separated, e.g. sci, sciUp, sciif · falls back to OpenAlex's 2-year mean citedness when no easyScholar key is set
+pref-rank-fields-hint = Default xr, sci, sciif: prefers XinRui, falling back to historical CAS data. Customize fields and order (e.g. sciUp, xr, sciif). With no ranking data, falls back to OpenAlex's 2-year mean citedness
 pref-rank-sortby = Sort by
 pref-rank-sortby-hint = e.g. sci, -sciif · a leading “-” sorts descending · items missing a value always sort last
 pref-rank-map = Field mapping
@@ -106,8 +113,8 @@ pref-rank-map-hint = One rule per line or comma separated, e.g. sciif=IF, /^Q([1
 pref-rank-colors = Tier colours
 pref-rank-colors-hint = 5 comma-separated hex colours, highest tier first, default #EE0000, #2F998C, #D2A500, #DA6D00, #007BF6
 pref-rank-defaultcolor = Default colour (when no tier matches; Auto = the built-in teal)
-pref-rank-textcolor = Text colour (auto or a CSS colour)
-pref-rank-opacity = Opacity
+pref-rank-textcolor = Text colour (auto uses native text on a coloured background; or a CSS colour)
+pref-rank-opacity = Background opacity (auto caps at 0.25 for legibility; up to 1 with a custom text colour)
 pref-rank-ttl = Cache for how many days
 pref-rank-easyscholar =
     .label = Fetch rankings from easyScholar
