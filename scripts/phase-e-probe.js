@@ -1077,6 +1077,28 @@ check(
 /* ---------- journal catalogue identity and multi-ISSN parsing: pure only ---------- */
 {
   const normalize = dev.rankNormalize;
+  const jceh = "Journal of Clinical and Experimental Hematopathology";
+  check(
+    "rank.verifiedJCEHAliasesWorkWithoutISSN",
+    [
+      "Journal of clinical and experimental hematopathology : JCEH",
+      "Journal of clinical and experimental hematopathology：JCEH.",
+      "J Clin Exp Hematop",
+      "J. Clin. Exp. Hematop.",
+    ].every(
+      (title) =>
+        normalize.journalLookupName(title) === jceh &&
+        normalize.normalizeJournal(title) === normalize.normalizeJournal(jceh),
+    ),
+  );
+  check(
+    "rank.JCEHAliasRetainsDistinctJournalsAndSubtitles",
+    [
+      "Journal of Hematopathology",
+      `${jceh}: Experimental Studies`,
+      "JCEH",
+    ].every((title) => !normalize.journalCatalogIdentity(title)),
+  );
   const canonical = "Cancer Immunology, Immunotherapy";
   const canonicalKey = normalize.normalizeJournal(canonical);
   check(

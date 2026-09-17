@@ -6,24 +6,46 @@
  * they need a matching identifier or an authoritative title list.
  */
 
+import {
+  JOURNAL_ALIAS_CATALOG,
+  JOURNAL_ALIAS_AMBIGUITIES,
+} from "./journalAliases.generated";
+
 const FULLWIDTH = /[！-～]/g;
 
 /** Bump when lookup rules change; old misses may be retried without losing hits. */
-export const JOURNAL_LOOKUP_VERSION = 1;
+export const JOURNAL_LOOKUP_VERSION = 2;
 
 /**
  * Verified title aliases, not a rule for removing arbitrary acronym subtitles.
- * NLM: https://www.ncbi.nlm.nih.gov/nlmcatalog/8605732
- * Publisher title and both ISSNs: https://link.springer.com/journal/262
- * The preceding journal "Cancer immunology and immunotherapy" is NOT an alias.
  */
 const JOURNAL_TITLES = [
+  // NLM: https://www.ncbi.nlm.nih.gov/nlmcatalog/8605732
+  // Publisher title and both ISSNs: https://link.springer.com/journal/262
+  // The preceding "Cancer immunology and immunotherapy" is NOT an alias.
   {
     name: "Cancer Immunology, Immunotherapy",
     aliases: ["Cancer Immunology, Immunotherapy : CII"],
     issns: ["0340-7004", "1432-0851"],
   },
+  // NLM title/abbreviation: https://www.ncbi.nlm.nih.gov/nlmcatalog/101141257
+  // Publisher title/ISSNs: https://www.jstage.jst.go.jp/browse/jslrt/_pubinfo/-char/en
+  // Keep the bare acronym JCEH unexpanded to avoid ambiguous short titles.
+  {
+    name: "Journal of Clinical and Experimental Hematopathology",
+    aliases: [
+      "Journal of clinical and experimental hematopathology : JCEH",
+      "J Clin Exp Hematop",
+    ],
+    issns: ["1346-4280", "1880-9952"],
+  },
 ];
+
+interface JournalCatalogEntry {
+  name: string;
+  aliases: string[];
+  issns: string[];
+}
 
 // Ignore presentation punctuation, but retain every word, article and subtitle.
 function titleKey(raw: string): string {
@@ -34,11 +56,76 @@ function titleKey(raw: string): string {
     .trim();
 }
 
-export function journalCatalogIdentity(raw: string) {
+/** Build once: column rendering must never scan the full journal catalogue. */
+function buildJournalCatalog() {
+  const byCanonical = new Map<string, JournalCatalogEntry[]>();
+  for (const row of [
+    ...JOURNAL_TITLES,
+    ...JOURNAL_ALIAS_CATALOG.map(([name, aliases, issns]) => ({
+      name,
+      aliases,
+      issns,
+    })),
+  ]) {
+    const key = titleKey(row.name);
+    const entries = byCanonical.get(key) || [];
+    const same = entries.find((entry) =>
+      entry.issns.some((id) => row.issns.includes(id)),
+    );
+    if (same) {
+      same.aliases = [...new Set([...same.aliases, row.name, ...row.aliases])];
+      same.issns = [...new Set([...same.issns, ...row.issns])];
+    } else {
+      entries.push({
+        name: row.name,
+        aliases: [...row.aliases],
+        issns: [...row.issns],
+      });
+      byCanonical.set(key, entries);
+    }
+  }
+  const byTitle = new Map<string, JournalCatalogEntry | null>();
+  const candidates = new Map<string, Set<JournalCatalogEntry>>();
+  for (const entries of byCanonical.values()) {
+    for (const entry of entries) {
+      for (const title of [entry.name, ...entry.aliases]) {
+        const key = titleKey(title);
+        const entries = candidates.get(key) || new Set<JournalCatalogEntry>();
+        entries.add(entry);
+        candidates.set(key, entries);
+        if (!byTitle.has(key)) byTitle.set(key, entry);
+        else if (byTitle.get(key) !== entry) byTitle.set(key, null);
+      }
+    }
+  }
+  for (const title of JOURNAL_ALIAS_AMBIGUITIES)
+    byTitle.set(titleKey(title), null);
+  return { byTitle, candidates };
+}
+
+const JOURNAL_CATALOG = buildJournalCatalog();
+
+/** undefined is unknown; null explicitly marks an ambiguous catalogue title. */
+export function journalCatalogIdentity(
+  raw: string,
+  abbreviation = "",
+  issns: readonly string[] = [],
+) {
   const key = titleKey(raw);
-  return JOURNAL_TITLES.find((entry) =>
-    [entry.name, ...entry.aliases].some((title) => titleKey(title) === key),
-  );
+  const identity = JOURNAL_CATALOG.byTitle.get(key);
+  if (identity === null && abbreviation) {
+    const specific = JOURNAL_CATALOG.byTitle.get(titleKey(abbreviation));
+    // An abbreviation may disambiguate an already-known bare title only when
+    // its authoritative canonical title agrees exactly apart from typography.
+    if (specific && titleKey(specific.name) === key) return specific;
+  }
+  if (identity === null && issns.length) {
+    const matches = [...(JOURNAL_CATALOG.candidates.get(key) || [])].filter(
+      (entry) => issns.every((id) => entry.issns.includes(id)),
+    );
+    if (matches.length === 1) return matches[0];
+  }
+  return identity;
 }
 
 /** full-width ASCII → half-width, plus the CJK comma/colon we see most */
@@ -68,7 +155,11 @@ export function journalLookupName(raw: string | undefined | null): string {
     "",
   );
   const catalog = journalCatalogIdentity(stripped);
-  if (catalog) return catalog.name;
+  // Keep a precise title when the provider's shorter canonical title is
+  // ambiguous (e.g. Medicine (Baltimore) -> MEDICINE). Its verified ISSNs still
+  // resolve local rows without discarding the words that distinguish it.
+  if (catalog && journalCatalogIdentity(catalog.name) !== null)
+    return catalog.name;
   // Keep every unmatched title byte-for-byte (apart from outer whitespace).
   // This helper must not silently reinterpret a real subtitle.
   if (stripped === searchable) return name;

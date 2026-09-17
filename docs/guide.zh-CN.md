@@ -227,8 +227,15 @@ Example Journal,1234-5678,8.1,2025,Oncology,91.2,20/222
 ### 期刊数据没出现时
 
 依次检查：列是否启用、字段名称、来源开关、easyScholar 密钥，以及条目的刊名、ISSN、DOI。
-例如 `Cancer Immunology, Immunotherapy : CII` 已有明确别名映射，可直接查询；无需改写原始题名。
-真实副标题及有区分意义的括号内容会保留，其他缩写不保证能自动识别。
+期刊匹配使用离线的 NLM 标准刊名与缩写目录，通过 ISSN 对应到 ShowJCR。
+例如 `J Clin Exp Hematop`、`Journal of clinical and experimental hematopathology : JCEH`、
+`Ann Thorac Surg`、`Diagnostics (Basel, Switzerland)` 等写法，ISSN 为空时也可识别。
+Zest 不会改写文献原有元数据。
+
+正确的 ISSN 仍是最可靠的期刊标识。如果已识别的刊名与条目 ISSN 冲突，Zest 会保留空结果，
+避免显示另一种期刊的指标；请核对元数据后刷新期刊数据。
+有歧义的缩写和真实副标题不会通过猜测合并，数据源未收录的期刊仍可能没有结果。
+目录来源与更新方法见[期刊别名目录说明](journal-aliases-sources.md)。
 
 期刊结果默认缓存 **30 天**。更新来源配置或修正文献元数据后，可先手动刷新；
 来源限流时应稍后重试，反复点击刷新不会绕过退避。设置中的 **清空分级缓存**可用于重新查询，
