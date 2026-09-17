@@ -586,11 +586,21 @@ return a field it does not carry. The IF column can fall back to OpenAlex's
 two-year mean citedness; that value is not JCR IF. Select the item to check that
 fallback's field and source in the Zest side pane.
 
-Journal matching tolerates common case, spacing and punctuation differences,
-plus a small set of verified title aliases. It does not remove arbitrary
-subtitles or treat every similar title as the same journal. For an unresolved
-case, report the public title, ISSNs, DOI and source rather than changing the
-item to an unrelated title.
+Journal matching tolerates case, spacing and punctuation differences and uses
+an offline catalogue of verified NLM full titles and abbreviations linked to
+ShowJCR by ISSN. This covers forms such as `J Clin Exp Hematop`,
+`Journal of clinical and experimental hematopathology : JCEH`,
+`Ann Thorac Surg`, and `Diagnostics (Basel, Switzerland)`, including items with
+an empty ISSN field. Your original Zotero metadata is preserved.
+
+A correct ISSN remains the most reliable identifier. If a known journal title
+conflicts with the item's ISSN, Zest leaves the result empty to avoid displaying
+another journal's metrics. Correct the item's metadata and refresh the journal
+data. Ambiguous abbreviations and genuine subtitle differences are not guessed;
+journals absent from the enabled datasets can still have no result.
+
+The catalogue's sources and update procedure are documented in
+[Journal title aliases](journal-aliases-sources.md).
 
 ### Why does Citation key show a placeholder?
 

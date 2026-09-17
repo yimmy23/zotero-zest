@@ -18,9 +18,15 @@ const row = (fields = { sciif: "8.1" }, metadata) => ({
   fields,
   ...(metadata ? { jcr: metadata } : {}),
 });
-const paper = (name = "Example", issn = "1234-5678", id = 1) => ({
+const paper = (
+  name = "Example",
+  issn = "1234-5678",
+  id = 1,
+  journalAbbreviation = "",
+) => ({
   id,
-  getField: (key) => ({ publicationTitle: name, ISSN: issn })[key] || "",
+  getField: (key) =>
+    ({ publicationTitle: name, ISSN: issn, journalAbbreviation })[key] || "",
 });
 const cached = (values, extra = {}) => ({
   key: "issn:1234-5678",
@@ -150,6 +156,301 @@ test("local journal data is visible offline in both render callbacks without tim
   assert.equal(h.timers.size, 0);
 });
 
+const jcehTitle = "Journal of clinical and experimental hematopathology : JCEH";
+const jcehCanonical = "Journal of Clinical and Experimental Hematopathology";
+const jcehIDs = ["1346-4280", "1880-9952"];
+
+function jcehShowJCRRows() {
+  const { parseShowJCRRows } = createHarness().load(
+    "src/rank/sources/showjcr.ts",
+  );
+  return parseShowJCRRows([
+    [
+      "Journal",
+      "ISSN",
+      "eISSN",
+      "IF(2025)",
+      "Category_1",
+      "IF Quartile(2025)_1",
+      "IF Rank(2025)_1",
+    ],
+    [jcehCanonical, ...jcehIDs, "1.4", "HEMATOLOGY", "Q4", "78/103"],
+  ]).rows;
+}
+
+test("JCEH with an empty ISSN immediately reads its ShowJCR 2025 IF and provenance", async () => {
+  const h = await fixture({ rows: jcehShowJCRRows() });
+  const original = paper(jcehTitle, "");
+  for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
+    const result = read(original);
+    assert.ok(result, "the exact imported title must match with no ISSN");
+    assert.equal(result.values.find((v) => v.field === "sciif").value, "1.4");
+    assert.equal(result.values.find((v) => v.field === "sci").value, "Q4");
+    assert.equal(result.jcr.year, 2025);
+    assert.equal(result.jcr.impactFactor, 1.4);
+    assert.equal(result.jcr.provider, "showjcr");
+    assert.equal(result.jcr.percentileMethod, "rank");
+    assert.equal(result.jcr.categories[0].name, "HEMATOLOGY");
+    assert.equal(result.jcr.categories[0].quartile, "Q4");
+    assert.equal(result.jcr.categories[0].rank, "78/103");
+    assert.equal(result.name, jcehTitle);
+  }
+  assert.equal(original.getField("publicationTitle"), jcehTitle);
+  assert.equal(original.getField("ISSN"), "");
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.timers.size, 0);
+  const refreshed = await h.rank.lookupJournal(original);
+  assert.equal(refreshed.values.find((v) => v.field === "sciif").value, "1.4");
+});
+
+test("JCEH local matching accepts verified ISSNs and abbreviations but retains journal conflicts", async () => {
+  const rows = jcehShowJCRRows();
+  rows[0].issn = jcehIDs[0];
+  const h = await fixture({ rows });
+  for (const title of [jcehCanonical, jcehTitle, "J. Clin. Exp. Hematop."]) {
+    for (const ids of ["", ...jcehIDs, jcehIDs.join("; ")]) {
+      const result = h.rank.getJournalRecord(paper(title, ids));
+      assert.equal(
+        result?.values.find((v) => v.field === "sciif").value,
+        "1.4",
+      );
+    }
+    for (const ids of ["1234-5678", `${jcehIDs[0]}, 1234-5678`]) {
+      assert.equal(h.rank.getJournalRecord(paper(title, ids)), undefined);
+    }
+  }
+  for (const title of [
+    "JCEH",
+    "Journal of Hematopathology",
+    "Journal of Clinical and Experimental Hematology",
+    `${jcehCanonical}: Clinical Edition`,
+  ]) {
+    assert.equal(h.rank.getJournalRecord(paper(title, "")), undefined);
+  }
+  await h.replaceRows([
+    ...rows,
+    {
+      name: "Journal of Hematopathology",
+      issn: "1868-9256",
+      fields: { sciif: "0.8" },
+    },
+  ]);
+  assert.equal(
+    h.rank.getJournalRecord(paper(jcehTitle, "")).values[0].value,
+    "1.4",
+  );
+  assert.equal(
+    h.rank.getJournalRecord(paper("Journal of Hematopathology", "")).values[0]
+      .value,
+    "0.8",
+  );
+  assert.equal(h.requests.length, 0);
+});
+
+test("known journal titles with contradictory ISSNs cannot read another journal's local or cached metrics", async () => {
+  const wrongID = "1556-0864";
+  const wrongRecord = cached([metric("sciif", "23.3")], {
+    key: `issn:${wrongID}`,
+    name: "Journal of Thoracic Oncology",
+    issn: wrongID,
+    issns: [wrongID],
+    requestedISSNs: [wrongID],
+  });
+  const h = await fixture({
+    rows: [
+      ...jcehShowJCRRows(),
+      { name: wrongRecord.name, issn: wrongID, fields: { sciif: "23.3" } },
+    ],
+    records: [wrongRecord],
+    prefs: {
+      "rank.autoFetch": true,
+      "rank.useEasyScholar": true,
+      "rank.useOpenAlex": true,
+    },
+  });
+  for (const title of [
+    jcehTitle,
+    "J Clin Exp Hematop",
+    "The New England journal of medicine",
+    "MEDICINE",
+  ]) {
+    const conflict = paper(title, wrongID);
+    assert.equal(h.rank.journalKeyOf(conflict).key, "");
+    assert.equal(h.rank.journalRequestKeyOf(conflict), "");
+    assert.equal(h.rank.getJournalRecord(conflict), undefined);
+    assert.equal(h.rank.requestJournalRecord(conflict), undefined);
+    assert.equal(await h.rank.lookupJournal(conflict), null);
+    assert.equal(await h.rank.lookupJournal(conflict, true), null);
+  }
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.entries.get(wrongRecord.key), wrongRecord);
+});
+
+test("authoritative NLM abbreviations and qualified titles read canonical local rows without an ISSN", async () => {
+  const examples = [
+    ["Front Oncol", "Frontiers in Oncology", "2234-943X"],
+    ["J Thorac Oncol", "Journal of Thoracic Oncology", "1556-0864"],
+    ["JAMA Netw Open", "JAMA Network Open", "2574-3805"],
+    ["Diagnostics (Basel, Switzerland)", "Diagnostics", "2075-4418"],
+    ["Radiation Oncology (London, England)", "Radiation Oncology", "1748-717X"],
+    [
+      "European Journal of Cancer (Oxford, England : 1990)",
+      "EUROPEAN JOURNAL OF CANCER",
+      "0959-8049",
+    ],
+    ["Clinics (Sao Paulo)", "Clinics", "1807-5932"],
+    ["Cancers (Basel)", "Cancers", "2072-6694"],
+    [
+      "Journal of the National Cancer Institute",
+      "JNCI-Journal of the National Cancer Institute",
+      "0027-8874",
+    ],
+    [
+      "Virchows Archiv : an international journal of pathology",
+      "VIRCHOWS ARCHIV",
+      "0945-6317",
+    ],
+  ];
+  const h = await fixture({
+    rows: examples.map(([, name, issn], index) => ({
+      name,
+      issn,
+      fields: { sciif: String(index + 1) },
+    })),
+  });
+  for (const [index, [name]] of examples.entries()) {
+    const original = paper(name, "");
+    for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
+      assert.equal(read(original)?.values[0].value, String(index + 1), name);
+    }
+    assert.equal(original.getField("publicationTitle"), name);
+  }
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.timers.size, 0);
+});
+
+test("a verified compatible abbreviation disambiguates a bare title without trusting old ambiguous cache values", async () => {
+  const legacy = cached(
+    [metric("sciif", "99"), metric("custom", "unverified")],
+    {
+      key: "name:medicine",
+      name: "Medicine",
+      issn: undefined,
+      issns: undefined,
+      requestedISSNs: [],
+    },
+  );
+  const h = await fixture({
+    rows: [{ name: "MEDICINE", issn: "0025-7974", fields: { sciif: "2" } }],
+    records: [legacy],
+  });
+  const compatible = paper("Medicine", "", 1, "Medicine (Baltimore)");
+  for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
+    assert.deepEqual(
+      copy(read(compatible)?.values.map((v) => [v.field, v.value])),
+      [["sciif", "2"]],
+    );
+  }
+  const refreshed = await h.rank.lookupJournal(compatible);
+  assert.equal(refreshed.values[0].value, "2");
+  assert.ok(refreshed.issns.includes("0025-7974"));
+  await h.replaceRows([]);
+  assert.equal(h.rank.getJournalRecord(compatible).values[0].value, "2");
+  for (const abbreviation of [
+    "",
+    "Medicine (Abingdon)",
+    "J Thorac Oncol",
+    "Unknown",
+  ])
+    assert.equal(
+      h.rank.getJournalRecord(paper("Medicine", "", 1, abbreviation)),
+      undefined,
+    );
+  assert.equal(
+    h.rank.getJournalRecord(
+      paper("Medicine", "1556-0864", 1, "Medicine (Baltimore)"),
+    ),
+    undefined,
+  );
+});
+
+test("lossy name keys cannot join a catalogued title to historical local or cache records", async () => {
+  for (const [name, issn] of [
+    ["The Clinical psychologist", "0009-9244"],
+    ["The Clinical psychologist", ""],
+    ["Clinical psychologist (Australian Psychological Society)", "0009-9244"],
+  ]) {
+    const record = cached([metric("sciif", "99")], {
+      key: "name:clinical psychologist",
+      name,
+      issn,
+      issns: issn ? [issn] : undefined,
+      requestedISSNs: [],
+    });
+    const h = await fixture({
+      rows: [{ name: record.name, issn, fields: { sciif: "99" } }],
+      records: [record],
+    });
+    const current = paper(
+      "Clinical psychologist (Australian Psychological Society)",
+      "",
+    );
+    for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord])
+      assert.equal(read(current), undefined);
+    assert.equal((await h.rank.lookupJournal(current)).values.length, 0);
+    await h.replaceRows([
+      {
+        name: "CLINICAL PSYCHOLOGIST",
+        issn: "1328-4207",
+        fields: { sciif: "2" },
+      },
+    ]);
+    assert.equal(h.rank.getJournalRecord(current).values[0].value, "2");
+  }
+});
+
+test("official-journal boilerplate cannot prove that a historical name-only source is a current catalogue identity", async () => {
+  const name =
+    "Journal of immunotherapy : official journal of the Society for Biological Therapy";
+  const record = cached([metric("sciif", "99")], {
+    key: "name:journal of immunotherapy",
+    name,
+    issn: undefined,
+    issns: undefined,
+    requestedISSNs: [],
+  });
+  const h = await fixture({
+    rows: [{ name, fields: { sciif: "99" } }],
+    records: [record],
+  });
+  const current = paper(
+    "Journal of immunotherapy (Hagerstown, Md. : 1997)",
+    "",
+  );
+  assert.equal(h.rank.getJournalRecord(current), undefined);
+  assert.equal(h.rank.requestJournalRecord(current), undefined);
+  assert.equal((await h.rank.lookupJournal(current)).values.length, 0);
+  await h.replaceRows([
+    {
+      name: "JOURNAL OF IMMUNOTHERAPY",
+      issn: "1524-9557",
+      fields: { sciif: "3" },
+    },
+  ]);
+  const historical = paper(name, "");
+  assert.equal(h.rank.getJournalRecord(historical), undefined);
+  assert.equal(h.rank.requestJournalRecord(historical), undefined);
+  assert.equal(await h.rank.lookupJournal(historical), null);
+  assert.equal(
+    h.rank.getJournalRecord(paper(name, "1524-9557")).values[0].value,
+    "3",
+  );
+});
+
 test("local fields override cached fields without borrowing same-value JCR from a previous source or file", async () => {
   for (const source of ["dataset", "easyscholar"]) {
     const record = cached(
@@ -236,7 +537,7 @@ test("local-only reads do not infer aliases from input or legacy cached ISSN lis
   );
 });
 
-test("current source-verified aliases and catalogue aliases can reach print-only local rows", async () => {
+test("version-1 source-verified aliases and catalogue aliases still reach print-only local rows", async () => {
   const h = await fixture({
     rows: [row()],
     records: [
@@ -261,6 +562,14 @@ test("current source-verified aliases and catalogue aliases can reach print-only
   );
   assert.equal(known.values[0].value, "7.2");
   assert.equal(h.requests.length, 0);
+});
+
+test("uncatalogued custom name-only rows remain usable alongside source-verified cache aliases", async () => {
+  const h = await fixture({
+    rows: [{ name: "Example", fields: { sciif: "8.1" } }],
+    records: [cached([metric("oa2yr", "4", "openalex")])],
+  });
+  assert.equal(h.rank.getJournalRecord(paper()).values[0].value, "8.1");
 });
 
 test("manual cache fast paths wait for local loading before applying its new fields", async () => {

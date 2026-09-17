@@ -5,7 +5,11 @@ import {
   ConfigStore,
   type DatasetMeta,
 } from "../../core/config";
-import { normalizeJournal, allISSNs } from "../normalize";
+import {
+  normalizeJournal,
+  allISSNs,
+  journalCatalogIdentity,
+} from "../normalize";
 import { parseRankNumber, type JCRMetadata, type RankValue } from "../types";
 import { matchingJCRMetadata, sanitizeJCRMetadata } from "../impactFactor";
 import { parseShowJCRRows } from "./showjcr";
@@ -280,6 +284,8 @@ export function lookupDatasetRecord(
   normalizedName: string,
   issn?: string,
   verifiedAliases: string[] = [],
+  /** A catalogue identity must not inherit an unrelated lossy name-only row. */
+  requireNameEvidence = false,
 ): { values: RankValue[]; jcr?: JCRMetadata } {
   const out: RankValue[] = [];
   const seen = new Set<string>();
@@ -301,8 +307,16 @@ export function lookupDatasetRecord(
         (verifiedAliases.includes(id) &&
           rowIDs.some((known) => verifiedAliases.includes(known))),
     );
+    const namedIDs = allISSNs(named?.issn);
+    const namedEvidence = namedIDs.length
+      ? namedIDs
+      : journalCatalogIdentity(named?.name || "")?.issns || [];
     const nameMatches =
-      named && (!required.length || !allISSNs(named.issn).length);
+      named &&
+      (!required.length || !namedIDs.length) &&
+      (!verifiedAliases.length ||
+        (!namedIDs.length && !requireNameEvidence) ||
+        namedEvidence.some((id) => verifiedAliases.includes(id)));
     const row =
       (identityMatches ? identified : undefined) ||
       (nameMatches ? named : undefined);

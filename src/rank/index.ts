@@ -42,6 +42,8 @@ import {
  */
 
 const NS = "rank";
+/** v1 separated verified aliases from requested IDs; newer lookup rules retain that evidence. */
+const VERIFIED_ISSN_CACHE_VERSION = 1;
 /** how long a "looked, found nothing" answer suppresses another lookup */
 const MISS_TTL = 12 * 3600 * 1000;
 /** how long a FAILED lookup (offline, rate limited) suppresses a retry */
@@ -159,25 +161,46 @@ export function journalKeyOf(item: Zotero.Item): {
   let name = "";
   let issn = "";
   let issns: string[] = [];
+  let abbreviation = "";
   let doi = "";
   try {
     name = rankableVenueOf(item);
     issns = allISSNs((item.getField("ISSN") as string) || "");
     issn = issns[0] || "";
     doi = String(item.getField("DOI") || "").trim();
+    abbreviation = String(item.getField("journalAbbreviation") || "").trim();
   } catch {
     // unloaded item
   }
   let queryName = journalLookupName(name);
-  const catalog = journalCatalogIdentity(queryName);
+  const rawCatalog = journalCatalogIdentity(name, abbreviation, issns);
+  const catalog = journalCatalogIdentity(queryName, abbreviation, issns);
+  if (catalog && journalCatalogIdentity(queryName) === null)
+    queryName =
+      journalCatalogIdentity(abbreviation) === catalog
+        ? journalLookupName(abbreviation)
+        : "";
   const catalogMatches =
     catalog && issns.every((id) => catalog.issns.includes(id));
-  // A known title with contradictory identifiers must not query a title-only
-  // rank provider and attach that title's rankings to another journal's ISSN.
-  if (catalog && !catalogMatches) queryName = "";
+  // A known title with contradictory identifiers cannot identify a journal:
+  // neither its title's metrics nor the other ISSN's metrics are trustworthy.
+  // An empty key blocks local/cache reads, remote requests and batch queues.
+  const conflictingIdentity =
+    (!!catalog && !catalogMatches) ||
+    catalog === null ||
+    // Removing official-journal boilerplate is not evidence that a historical
+    // raw title belongs to the current catalogue entry with that short name.
+    (!!catalog && rawCatalog === undefined && !issns.length);
+  if (conflictingIdentity) queryName = "";
   const nameKey = normalizeJournal(name);
   return {
-    key: issn ? `issn:${issn}` : nameKey ? `name:${nameKey}` : "",
+    key: conflictingIdentity
+      ? ""
+      : issn
+        ? `issn:${issn}`
+        : nameKey
+          ? `name:${nameKey}`
+          : "",
     nameKey,
     name,
     queryName,
@@ -189,7 +212,8 @@ export function journalKeyOf(item: Zotero.Item): {
 }
 
 function requestCacheKey(identity: ReturnType<typeof journalKeyOf>) {
-  return `query:${identity.nameKey}:${[...identity.issns].sort().join(",")}`;
+  const queryNameKey = normalizeJournal(identity.queryName) || identity.nameKey;
+  return `query:${queryNameKey}:${[...identity.issns].sort().join(",")}`;
 }
 
 /** Identity used by queues and manual batches before source verification. */
@@ -207,7 +231,7 @@ function cachedRecord(identity: ReturnType<typeof journalKeyOf>) {
     // Legacy records and aliases can have come from the old name-first cache.
     // Reuse them only when their stored identity proves they are this journal.
     if (issn) {
-      if ((record.lookupVersion || 0) >= JOURNAL_LOOKUP_VERSION) {
+      if ((record.lookupVersion || 0) >= VERIFIED_ISSN_CACHE_VERSION) {
         if (issns.every((id) => record.issns?.includes(id))) return record;
         // Reuse the same unverified input without treating its p/eISSNs as
         // proven aliases or assigning name-only ranks to a different title.
@@ -224,6 +248,25 @@ function cachedRecord(identity: ReturnType<typeof journalKeyOf>) {
         issns.every((id) => known.includes(id))
         ? record
         : null;
+    }
+    if (identity.catalogISSNs.length) {
+      const explicitRecordIDs = [
+        ...allISSNs(record.issn),
+        ...(record.issns || []),
+      ];
+      const recordIDs = new Set(
+        explicitRecordIDs.length
+          ? explicitRecordIDs
+          : journalCatalogIdentity(record.name)?.issns || [],
+      );
+      if (!identity.catalogISSNs.some((id) => recordIDs.has(id))) return null;
+      // A formerly ambiguous bare-title cache has no title-only identity proof.
+      // Reuse only records written after verified aliases were distinguished.
+      if (journalCatalogIdentity(journalLookupName(identity.name)) === null)
+        return (record.lookupVersion || 0) >= VERIFIED_ISSN_CACHE_VERSION &&
+          identity.catalogISSNs.some((id) => record.issns?.includes(id))
+          ? record
+          : null;
     }
     return normalizeJournal(record.name) === nameKey ? record : null;
   };
@@ -282,7 +325,7 @@ function withLocalDataset(
   const verifiedAliases = [
     ...new Set([
       ...identity.catalogISSNs,
-      ...((cached?.lookupVersion || 0) >= JOURNAL_LOOKUP_VERSION
+      ...((cached?.lookupVersion || 0) >= VERIFIED_ISSN_CACHE_VERSION
         ? cached?.issns || []
         : []),
     ]),
@@ -291,6 +334,7 @@ function withLocalDataset(
     identity.nameKey,
     identity.issns.join(", "),
     verifiedAliases,
+    !!identity.catalogISSNs.length,
   );
   if (!local.values.length) return cached;
   const values: RankValue[] = [];
@@ -489,7 +533,12 @@ export async function lookupJournal(
 
   // 1. the user's own dataset always wins
   const requiredISSNs = issns.join(", ");
-  let local = lookupDatasetRecord(nameKey, requiredISSNs, catalogISSNs);
+  let local = lookupDatasetRecord(
+    nameKey,
+    requiredISSNs,
+    catalogISSNs,
+    !!catalogISSNs.length,
+  );
   let es: Awaited<ReturnType<typeof fetchEasyScholar>> | undefined;
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
@@ -565,6 +614,7 @@ export async function lookupJournal(
         normalizeJournal(canonicalName) || nameKey,
         requiredISSNs,
         oa.issns,
+        !!catalogISSNs.length,
       );
       const differentTitle =
         canonicalName && normalizeJournal(canonicalName) !== nameKey;

@@ -25,6 +25,7 @@ export default zotero({
         "scripts/tab-session-probe.js",
         "scripts/citation-lifecycle-probe.js",
         "scripts/journal-ui-probe.js",
+        "scripts/jceh-probe.js",
         "scripts/if-percentile-probe.js",
         "scripts/showjcr-probe.js",
         "scripts/jcr-sidebar-probe.js",

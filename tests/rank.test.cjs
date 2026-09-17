@@ -3,11 +3,12 @@ const assert = require("node:assert/strict");
 const { setTimeout, clearTimeout, setImmediate } = require("node:timers");
 const { createHarness } = require("./helpers.cjs");
 
-function rankHarness({ records = {}, dataset, prefs = {} } = {}) {
+function rankHarness({ records = {}, dataset, prefs = {}, catalog } = {}) {
   const entries = new Map(Object.entries(records));
   const calls = [];
   const h = createHarness({
     mocks: {
+      ...(catalog ? { "./journalAliases.generated": catalog } : {}),
       "src/utils/prefs.ts": {
         getPref: (key) => prefs[key] ?? false,
         getNumPref: () => 30,
@@ -202,7 +203,11 @@ test("journal identities keep significant parenthetical words and dedupe alterna
   );
   assert.equal(
     n.journalLookupName("CA: A Cancer Journal for Clinicians"),
-    "CA: A Cancer Journal for Clinicians",
+    "CA-A CANCER JOURNAL FOR CLINICIANS",
+  );
+  assert.equal(
+    n.journalLookupName("Unknown Journal: A Real Subtitle"),
+    "Unknown Journal: A Real Subtitle",
   );
 });
 
@@ -358,6 +363,135 @@ test("local datasets reject conflicting title-only matches and index multiple IS
 const ciiTitle = "Cancer Immunology, Immunotherapy : CII";
 const ciiCanonical = "Cancer Immunology, Immunotherapy";
 const ciiIDs = ["0340-7004", "1432-0851"];
+const jcehTitle = "Journal of clinical and experimental hematopathology : JCEH";
+const jcehCanonical = "Journal of Clinical and Experimental Hematopathology";
+const jcehIDs = ["1346-4280", "1880-9952"];
+
+test("catalogue indexes reject ambiguous names and retain corroborated aliases", () => {
+  const h = rankHarness({
+    catalog: {
+      JOURNAL_ALIAS_CATALOG: [
+        ["Journal Alpha", ["Shared Abbr", "Alpha Abbr"], ["1234-5678"]],
+        ["JOURNAL ALPHA", ["Another Alpha Abbr"], ["1234-5678", "8765-4321"]],
+        ["Journal Beta", ["Shared Abbr"], ["1357-3039"]],
+        ["Externally Ambiguous", [], ["2468-1357"]],
+      ],
+      JOURNAL_ALIAS_AMBIGUITIES: ["Externally Ambiguous"],
+    },
+  });
+  const n = h.load("src/rank/normalize.ts");
+  for (const title of ["Shared Abbr", "Externally Ambiguous"]) {
+    assert.equal(n.journalCatalogIdentity(title), null);
+    assert.equal(n.journalLookupName(title), title);
+    assert.equal(h.rank.journalKeyOf(item(title)).key, "");
+    assert.equal(h.rank.journalKeyOf(item(title, "9999-9999")).key, "");
+  }
+  assert.equal(
+    h.rank.journalKeyOf(item("Shared Abbr", "1234-5678")).key,
+    "issn:1234-5678",
+  );
+  assert.equal(
+    h.rank.journalKeyOf(item("Externally Ambiguous", "2468-1357")).key,
+    "issn:2468-1357",
+  );
+  for (const title of ["Alpha Abbr", "Another Alpha Abbr"]) {
+    assert.equal(n.journalLookupName(title), "Journal Alpha");
+    assert.deepEqual(Array.from(n.journalCatalogIdentity(title).issns), [
+      "1234-5678",
+      "8765-4321",
+    ]);
+  }
+  assert.equal(n.journalCatalogIdentity("An Unknown Title"), undefined);
+});
+
+test("verified JCEH titles and NLM abbreviation resolve conservatively", () => {
+  const h = rankHarness();
+  const n = h.load("src/rank/normalize.ts");
+  for (const title of [
+    jcehTitle,
+    `${jcehTitle}.`,
+    " Journal of Clinical and Experimental Hematopathology：  JCEH ",
+    "Ｊｏｕｒｎａｌ of clinical and experimental hematopathology: JCEH",
+    "J Clin Exp Hematop",
+    "J. Clin. Exp. Hematop.",
+  ]) {
+    assert.equal(n.journalLookupName(title), jcehCanonical);
+    assert.equal(n.normalizeJournal(title), n.normalizeJournal(jcehCanonical));
+    assert.deepEqual(
+      Array.from(n.journalCatalogIdentity(title).issns),
+      jcehIDs,
+    );
+  }
+  for (const title of [
+    "JCEH",
+    "Journal of Hematopathology",
+    "Journal of Clinical and Experimental Hematology",
+    "Journal of clinical and experimental hematopathology: Clinical Edition",
+    "Journal of clinical and experimental hematopathology (European Edition)",
+    "J Clin Exp Hematop Reports",
+    "Nihon Rinpa Monaikei Gakkai kaishi",
+  ]) {
+    assert.equal(n.journalLookupName(title), title);
+    assert.notEqual(n.journalCatalogIdentity(title)?.name, jcehCanonical);
+    assert.notEqual(
+      n.normalizeJournal(title),
+      n.normalizeJournal(jcehCanonical),
+    );
+  }
+});
+
+test("JCEH source queries preserve input titles and reject contradictory identifiers", async () => {
+  for (const ids of ["", ...jcehIDs, jcehIDs.join("; ")]) {
+    const h = rankHarness({ prefs: { "rank.useEasyScholar": true } });
+    const result = await h.rank.lookupJournal(item(jcehTitle, ids));
+    assert.equal(h.calls.length, 1);
+    assert.equal(h.calls[0][0], jcehCanonical);
+    assert.equal(result.name, jcehTitle);
+    assert.deepEqual(Array.from(result.issns), jcehIDs);
+  }
+  for (const ids of ["1234-5678", `${jcehIDs[0]}, 1234-5678`]) {
+    const h = rankHarness({ prefs: { "rank.useEasyScholar": true } });
+    await h.rank.lookupJournal(item(jcehTitle, ids));
+    assert.equal(h.calls.length, 0);
+    assert.deepEqual(
+      Array.from(h.rank.journalKeyOf(item(jcehTitle, ids)).catalogISSNs),
+      [],
+    );
+  }
+});
+
+test("version-1 JCEH name-cache misses retry once while successful entries stay readable", async () => {
+  const key = "name:journal of clinical and experimental hematopathology jceh";
+  for (const values of [metric("Q4"), []]) {
+    const original = {
+      key,
+      name: jcehTitle,
+      values,
+      lookupVersion: 1,
+      updated: 123,
+    };
+    const h = rankHarness({
+      records: { [key]: original },
+      prefs: { "rank.useEasyScholar": true },
+    });
+    assert.equal(
+      h.rank.getJournalRecord(item(jcehTitle)).values.length,
+      values.length,
+    );
+    assert.equal(
+      h.rank.getJournalRecord(item(jcehCanonical)).values.length,
+      values.length,
+    );
+    await h.rank.lookupJournal(item(jcehTitle));
+    assert.equal(h.calls.length, values.length ? 0 : 1);
+    if (!values.length) {
+      assert.equal(h.rank.getJournalRecord(item(jcehTitle)).lookupVersion, 2);
+      await h.rank.lookupJournal(item(jcehTitle));
+      assert.equal(h.calls.length, 1);
+    }
+    assert.equal(h.entries.get(key), original);
+  }
+});
 
 test("verified CII aliases handle punctuation without stripping real subtitles or historical titles", () => {
   const n = rankHarness().load("src/rank/normalize.ts");
@@ -371,14 +505,11 @@ test("verified CII aliases handle punctuation without stripping real subtitles o
     assert.equal(n.normalizeJournal(title), n.normalizeJournal(ciiCanonical));
   }
   for (const title of [
-    "CA: A Cancer Journal for Clinicians",
     "Cancer immunology and immunotherapy",
     "Cancer Immunology, Immunotherapy: Clinical Edition",
     "Cancer Immunology, Immunotherapy (European Edition)",
     "Example Journal: EJ",
     "CII",
-    "Medicine (Baltimore)",
-    "Medicine (Abingdon)",
   ]) {
     assert.equal(n.journalLookupName(title), title);
     assert.notEqual(

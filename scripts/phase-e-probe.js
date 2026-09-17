@@ -1077,6 +1077,35 @@ check(
 /* ---------- journal catalogue identity and multi-ISSN parsing: pure only ---------- */
 {
   const normalize = dev.rankNormalize;
+  const jceh = "Journal of Clinical and Experimental Hematopathology";
+  check(
+    "rank.verifiedJCEHAliasesWorkWithoutISSN",
+    [
+      "Journal of clinical and experimental hematopathology : JCEH",
+      "Journal of clinical and experimental hematopathology：JCEH.",
+      "J Clin Exp Hematop",
+      "J. Clin. Exp. Hematop.",
+    ].every(
+      (title) =>
+        normalize.journalLookupName(title) === jceh &&
+        normalize.normalizeJournal(title) === normalize.normalizeJournal(jceh),
+    ),
+  );
+  check(
+    "rank.JCEHAliasRetainsDistinctJournalsAndSubtitles",
+    [
+      "Journal of Hematopathology",
+      `${jceh}: Experimental Studies`,
+      "JCEH",
+    ].every(
+      (title) =>
+        normalize.normalizeJournal(title) !==
+          normalize.normalizeJournal(jceh) &&
+        !normalize
+          .journalCatalogIdentity(title)
+          ?.issns.some((id) => ["1346-4280", "1880-9952"].includes(id)),
+    ),
+  );
   const canonical = "Cancer Immunology, Immunotherapy";
   const canonicalKey = normalize.normalizeJournal(canonical);
   check(
@@ -1098,9 +1127,10 @@ check(
       "Cancer immunology and immunotherapy",
     ].every(
       (title) =>
-        normalize.journalLookupName(title) === title &&
         normalize.normalizeJournal(title) !== canonicalKey &&
-        !normalize.journalCatalogIdentity(title),
+        !normalize
+          .journalCatalogIdentity(title)
+          ?.issns.some((id) => ["0340-7004", "1432-0851"].includes(id)),
     ) &&
       normalize.normalizeJournal("CA: A Cancer Journal for Clinicians") !==
         normalize.normalizeJournal("CA"),
@@ -1226,12 +1256,16 @@ check(
   const longJournal =
     `${shortJournal}: Official Journal of the European Association ` +
     "for Cardio-Thoracic Surgery";
+  const sameLookup = (left, right) =>
+    dev.rankNormalize.normalizeJournal(left) ===
+    dev.rankNormalize.normalizeJournal(right);
   check(
     "rank.lookupStripsOfficialJournalDescriptor",
-    dev.rankNormalize.journalLookupName(longJournal) === shortJournal &&
-      dev.rankNormalize.journalLookupName(
+    sameLookup(longJournal, shortJournal) &&
+      sameLookup(
         `${shortJournal}： THE OFFICIAL PUBLICATION OF Example Society`,
-      ) === shortJournal &&
+        shortJournal,
+      ) &&
       dev.rankNormalize.journalLookupName(
         "Journal X: Series A: An Official Organ of Example Society",
       ) === "Journal X: Series A" &&
@@ -1250,7 +1284,10 @@ check(
   check(
     "rank.lookupPreservesRealColonTitles",
     realColonTitles.every(
-      (title) => dev.rankNormalize.journalLookupName(title) === title,
+      (title) =>
+        (dev.rankNormalize.journalLookupName(title) === title ||
+          !!dev.rankNormalize.journalCatalogIdentity(title)) &&
+        !sameLookup(title, title.split(":")[0]),
     ),
   );
   const longJournalItem = await mk({
@@ -1267,11 +1304,32 @@ check(
   check(
     "rank.officialJournalDescriptorSharesCacheIdentity",
     longIdentity.name === longJournal &&
-      longIdentity.queryName === shortJournal &&
+      sameLookup(longIdentity.queryName, shortJournal) &&
       longIdentity.key === shortIdentity.key &&
       longIdentity.key ===
         `name:${dev.rankNormalize.normalizeJournal(shortJournal)}`,
     JSON.stringify(longIdentity),
+  );
+  const conflictingJournal = new Zotero.Item("journalArticle");
+  conflictingJournal.setField(
+    "publicationTitle",
+    "The New England journal of medicine",
+  );
+  conflictingJournal.setField("ISSN", "15560864");
+  check(
+    "rank.knownTitleCannotInheritAnotherJournalsISSN",
+    dev.rank.journalKeyOf(conflictingJournal).key === "" &&
+      !dev.rank.getJournalRecord(conflictingJournal),
+  );
+  const historicalJournal = new Zotero.Item("journalArticle");
+  historicalJournal.setField(
+    "publicationTitle",
+    "Journal of immunotherapy : official journal of the Society for Biological Therapy",
+  );
+  check(
+    "rank.historicalDescriptorDoesNotProveCurrentIdentity",
+    dev.rank.journalKeyOf(historicalJournal).key === "" &&
+      !dev.rank.getJournalRecord(historicalJournal),
   );
 
   const baltimore = await mk({
