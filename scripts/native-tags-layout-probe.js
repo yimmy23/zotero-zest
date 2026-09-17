@@ -50,6 +50,9 @@ const names = [
 ];
 const setMode = async (mode) => {
   Zotero.Prefs.set(prefix + "nestedTags.tab", mode, true);
+  // The hand-back uses a window timer. Drain that queue before the global
+  // Promise delay so background-window throttling cannot outrun the repair.
+  await new Promise((resolve) => win.setTimeout(resolve, 0));
   await delay();
 };
 const geometry = () => {
