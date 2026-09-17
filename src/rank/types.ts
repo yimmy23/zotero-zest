@@ -12,6 +12,27 @@ export interface RankValue {
   source: RankSource;
 }
 
+export interface JCRCategory {
+  name: string;
+  /** JIF percentile; metadata identifies supplied values versus rank-derived ones. */
+  percentile: number;
+  rank?: string;
+  quartile?: "Q1" | "Q2" | "Q3" | "Q4";
+}
+
+export interface JCRMetadata {
+  /** The JCR metric year, not the lookup or import year. */
+  year: number;
+  /** Standard two-year JIF associated with these category percentiles. */
+  impactFactor: number;
+  source: RankSource;
+  /** Dataset provider, separate from the local import transport. */
+  provider?: "showjcr";
+  /** Absent means a supplied percentile; rank means derived from rank/total. */
+  percentileMethod?: "rank";
+  categories: JCRCategory[];
+}
+
 export interface JournalRecord {
   /** Lookup-rule revision; absent on older caches, never a ranking year. */
   lookupVersion?: number;
@@ -25,6 +46,8 @@ export interface JournalRecord {
   /** Verified print/electronic ISSN aliases for the same source. */
   issns?: string[];
   values: RankValue[];
+  /** Explicit, validated category data tied to the standard sciif value. */
+  jcr?: JCRMetadata;
   /** epoch ms of the lookup */
   updated: number;
   /** sources that were asked and had nothing (so we do not ask again soon) */

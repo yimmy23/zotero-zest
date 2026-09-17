@@ -99,12 +99,8 @@ pref("rank.autoFetch", false);
 pref("secret.easyscholar", "");
 // IF column
 pref("if.field", "sciif");
-// top of the scale: the darkest heat step / a full bar
-pref("if.max", 15);
-// heat (wash behind the number) | bar | none
-pref("if.style", "heat");
-pref("if.info", true);
-pref("if.color", "");
+// percentile (IF above the JCR percentile marker) | none (number only)
+pref("if.style", "percentile");
 
 // Collection counts (off by default — Zotero deliberately hides these)
 pref("collectionCounts.enable", false);

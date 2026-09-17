@@ -46,6 +46,7 @@ function institutionRoles(entry) {
 function setup({
   venue = "",
   ranks = [],
+  journalRecord,
   title = "",
   fields = {},
   abstract = false,
@@ -100,6 +101,7 @@ function setup({
       const values = new Map();
       const node = {
         tag,
+        localName: tag,
         ownerDocument: doc,
         parentNode: null,
         childNodes: [],
@@ -310,7 +312,7 @@ function setup({
       "src/columns/registry.ts": {},
       "src/rank/index.ts": {
         requestJournalRecord() {},
-        getJournalRecord: () => ({ values: ranks }),
+        getJournalRecord: () => journalRecord ?? { values: ranks },
         displayValuesForUI: () => ranks,
       },
       "src/rank/rank.ts": {
@@ -1440,6 +1442,86 @@ test("same-item refresh preserves the only abstract disclosure without adding an
   assert.equal(findClass(props.body, "zest-info-abstract-original"), undefined);
   assert.equal(props.body.textContent.includes("已有译文"), false);
   assert.equal(abstract.isConnected, false);
+  assert.deepEqual(s.logs, []);
+});
+
+function jcrPanelOptions() {
+  return {
+    venue: "A Journal",
+    abstract: true,
+    fields: { abstractNote: "An abstract" },
+    journalRecord: {
+      values: [{ field: "sciif", value: "5.8", source: "dataset" }],
+      jcr: {
+        year: 2025,
+        impactFactor: 5.8,
+        source: "dataset",
+        provider: "showjcr",
+        percentileMethod: "rank",
+        categories: [
+          {
+            name: "IMMUNOLOGY",
+            percentile: 78.4,
+            rank: "40/183",
+            quartile: "Q1",
+          },
+          { name: "ONCOLOGY", percentile: 80, rank: "67/333", quartile: "Q1" },
+        ],
+      },
+    },
+  };
+}
+
+test("JCR starts compact and preserves its disclosure across refresh and item selection", () => {
+  const s = setup(jcrPanelOptions());
+  const props = s.show(1);
+  let jcr = findClass(props.body, "zest-info-jcr");
+  assert.equal(jcr.open, false);
+  assert.equal(jcr.children[0].textContent, "info-jcr-heading 2025 2");
+  jcr.open = true;
+  jcr.listeners.toggle();
+  const abstract = findClass(props.body, "zest-info-abstract");
+  abstract.open = false;
+  abstract.listeners.toggle();
+  s.panel.refreshInfoSections(1);
+  assert.equal(findClass(props.body, "zest-info-jcr").open, true);
+  assert.equal(findClass(props.body, "zest-info-abstract").open, false);
+  props.item = new s.Item(2);
+  s.section.onItemChange(props);
+  s.section.onRender(props);
+  jcr = findClass(props.body, "zest-info-jcr");
+  assert.equal(jcr.open, true);
+  assert.equal(findClass(props.body, "zest-info-abstract").open, true);
+  assert.equal(
+    findAll(jcr, (node) => node.classList.contains("zest-info-jcr-category"))
+      .length,
+    2,
+  );
+  jcr.open = false;
+  jcr.listeners.toggle();
+  props.item = new s.Item(3);
+  s.section.onItemChange(props);
+  s.section.onRender(props);
+  assert.equal(findClass(props.body, "zest-info-jcr").open, false);
+  assert.deepEqual(s.requests, []);
+  assert.deepEqual(s.writes, []);
+  assert.deepEqual(s.logs, []);
+});
+
+test("stale JCR toggle events and another pane cannot change the current disclosure", () => {
+  const s = setup(jcrPanelOptions());
+  const props = s.show(1);
+  const outgoing = findClass(props.body, "zest-info-jcr");
+  outgoing.open = true;
+  outgoing.listeners.toggle();
+  s.panel.refreshInfoSections(1);
+  assert.equal(outgoing.isConnected, false);
+  outgoing.open = false;
+  outgoing.listeners.toggle();
+  const other = s.show(2);
+  assert.equal(findClass(other.body, "zest-info-jcr").open, false);
+  s.panel.refreshInfoSections(1);
+  assert.equal(findClass(props.body, "zest-info-jcr").open, true);
   assert.deepEqual(s.logs, []);
 });
 

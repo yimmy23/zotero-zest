@@ -72,10 +72,7 @@ declare namespace _ZoteroTypes {
       "rank.autoFetch": boolean;
       "secret.easyscholar": string;
       "if.field": string;
-      "if.max": number;
       "if.style": string;
-      "if.info": boolean;
-      "if.color": string;
       "collectionCounts.enable": boolean;
       "collectionCounts.mode": number;
       "column.authors.enable": boolean;

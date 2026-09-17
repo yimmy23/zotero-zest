@@ -371,6 +371,7 @@ test("rating display mode registers only the column surface and never writes sav
       },
       "src/rank/index.ts": { startRankService() {}, stopRankService() {} },
       "src/rank/sources/localDataset.ts": { loadDatasets: async () => {} },
+      "src/panes/infoSection.ts": { refreshInfoSections() {} },
       "src/annots/density.ts": {
         startAnnotationWatch() {},
         stopAnnotationWatch() {},

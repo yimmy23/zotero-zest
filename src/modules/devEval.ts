@@ -36,6 +36,7 @@ import * as annotSection from "../panes/annotSection";
 import * as rank from "../rank";
 import * as rankRank from "../rank/rank";
 import * as rankDisplay from "../rank/display";
+import * as showjcrDownload from "../rank/sources/showjcrDownload";
 import * as dataset from "../rank/sources/localDataset";
 import * as secrets from "../core/secrets";
 import * as easyscholarSrc from "../rank/sources/easyscholar";
@@ -75,6 +76,8 @@ import * as extra from "../utils/extra";
 import * as status from "../reading/status";
 import * as statusMenu from "../reading/statusMenu";
 import * as pubTags from "../columns/pubTags";
+import * as impactFactor from "../rank/impactFactor";
+import * as journalMetrics from "../panes/journalMetrics";
 import * as authorMenu from "../authors/authorMenu";
 import * as menus from "./menus";
 import * as tagMatch from "../tags/match";
@@ -198,6 +201,8 @@ export function registerDevEval() {
             status,
             statusMenu,
             pubTags,
+            impactFactor,
+            journalMetrics,
             authorMenu,
             menus,
             tagMatch,
@@ -228,6 +233,7 @@ export function registerDevEval() {
             rankRank,
             rankDisplay,
             dataset,
+            showjcrDownload,
             secrets,
             easyscholarSrc,
             httpMod,

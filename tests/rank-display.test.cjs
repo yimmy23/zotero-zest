@@ -80,7 +80,9 @@ function displayHarness({
       "src/core/http.ts": { http: {} },
       "src/rank/sources/easyscholar.ts": {},
       "src/rank/sources/openalex.ts": {},
-      "src/rank/sources/localDataset.ts": {},
+      "src/rank/sources/localDataset.ts": {
+        lookupDatasetRecord: () => ({ values: [] }),
+      },
       "src/reading/store.ts": {},
       "src/reading/status.ts": {},
       "src/columns/rating.ts": {},
@@ -308,7 +310,7 @@ test("Map renames, replacements and hiding remain exact after default selection"
   }
 });
 
-test("partition badges and descriptions identify XinRui and historical CAS in both locales", () => {
+test("partition labels stay compact in Chinese and identify historical CAS", () => {
   for (const locale of ["zh-CN", "en-US"]) {
     const h = displayHarness({ locale });
     for (const field of [
@@ -331,21 +333,20 @@ test("partition badges and descriptions identify XinRui and historical CAS in bo
         const before = copy(value);
         const display = h.display.rankValueDisplay(value);
         const xr = field.startsWith("xr");
-        assert.match(
-          display.text,
-          locale === "zh-CN"
-            ? xr
-              ? /^新锐 /
-              : /^中科院 /
-            : xr
-              ? /^XR /
-              : /^CAS /,
-        );
+        if (locale === "zh-CN" && xr) {
+          assert.equal(display.text, raw);
+          assert.equal(display.description, `期刊分区——${raw}`);
+        } else {
+          assert.match(
+            display.text,
+            locale === "zh-CN" ? /^中科院 / : xr ? /^XR / : /^CAS /,
+          );
+        }
         assert.match(
           display.description,
           locale === "zh-CN"
             ? xr
-              ? /新锐/
+              ? /^期刊分区——/
               : /中科院历史/
             : xr
               ? /XinRui/

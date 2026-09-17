@@ -200,19 +200,56 @@ export function registerStyles(win: Window) {
       background-color:color-mix(in srgb,rgb(var(--zest-badge-rgb)) calc(var(--zest-badge-opacity,.16)*100%),var(--material-background));
     }
 
-    /* Journal rank badges + impact factor (heat wash behind the number, or a bar) */
+    /* Journal ranks and IF with a verified JCR percentile below the number.
+       The 8px painted ring includes outline + offset. Its 9px slot leaves
+       half a pixel clear at each edge of Zotero's clipped cell. */
     .virtualized-table .cell.zest-pubtags .zest-rank-badge { font-variant-numeric: tabular-nums; }
-    .virtualized-table .cell.zest-if .zest-if-heat {
-      position: absolute; inset: 3px 6px; border-radius: 3px; pointer-events: none;
+    .virtualized-table .cell.zest-if { flex-direction: column; justify-content: center; }
+    .virtualized-table .cell.zest-if > .cell-text {
+      flex: 0 1 auto; max-width: 100%; font-variant-numeric: tabular-nums; text-align: center;
     }
-    .virtualized-table .cell.zest-if .zest-if-track {
-      flex: 0 0 auto; width: 34px; height: 6px; margin-inline-end: 6px; border-radius: 1em;
-      background-color: var(--fill-quinary); overflow: hidden;
+    .virtualized-table .cell.zest-if.zest-if-with-percentile > .cell-text { line-height: 1; }
+    .virtualized-table .cell.zest-if .zest-if-percentile {
+      position: relative; flex: 0 0 9px; width: calc(100% - 12px); max-width: 56px; min-width: 0;
+      pointer-events: none;
     }
-    .virtualized-table .cell.zest-if .zest-if-bar {
-      display: block; height: 100%; border-radius: 1em; background-color: var(--zest-accent);
+    .virtualized-table .cell.zest-if .zest-if-percentile::before {
+      content: ""; position: absolute; inset: 4px 0 auto; height: 1px;
+      background-color: currentColor; opacity: .24;
     }
-    .virtualized-table .cell.zest-if > .cell-text { font-variant-numeric: tabular-nums; }
+    .virtualized-table .cell.zest-if .zest-if-point {
+      position: absolute; top: 2.5px; width: 4px; height: 4px; border-radius: 50%;
+      transform: translateX(-50%); background-color: var(--zest-accent-strong);
+    }
+    .virtualized-table .cell.zest-if .zest-if-point.zest-if-top {
+      outline: 1px solid var(--zest-accent-strong); outline-offset: 1px;
+    }
+    .virtualized-table .cell.zest-if .zest-if-range {
+      position: absolute; top: 3px; height: 3px; border-radius: 2px;
+      background-color: currentColor; opacity: .65;
+    }
+    .virtualized-table .cell.zest-if .zest-if-multiple .zest-if-point {
+      background-color: currentColor; opacity: .85;
+    }
+
+    /* Journal detail stays inside the selected item's Zest side pane. */
+    .zest-info-jcr { margin-top: 10px; padding-top: 4px; min-width: 0; border-top: 1px solid var(--fill-quinary);
+      font-size: .85em; line-height: 1.5; overflow-wrap: anywhere; }
+    .zest-info-jcr > .zest-info-jcr-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      min-height: 2.35em; list-style: none; cursor: pointer; color: var(--fill-secondary); border-radius: var(--zest-control-radius); }
+    .zest-info-jcr > .zest-info-jcr-summary::marker { content: ""; }
+    .zest-info-jcr > .zest-info-jcr-summary::after { content: ""; flex: 0 0 auto; width: .45em; height: .45em;
+      margin-inline-end: 4px; border-inline-end: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); }
+    .zest-info-jcr[open] > .zest-info-jcr-summary::after { transform: rotate(45deg); margin-top: -3px; }
+    .zest-info-jcr-categories { list-style: none; padding: 5px 0 1px; margin: 0; }
+    .zest-info-jcr-category + .zest-info-jcr-category { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--fill-quinary); }
+    .zest-info-jcr-name { font-size: .92em; font-weight: 600; line-height: 1.4; color: var(--fill-primary); }
+    .zest-info-jcr-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(6em, 100%), 1fr));
+      gap: 6px 8px; padding: 0; margin: 5px 0 0; min-width: 0; }
+    .zest-info-jcr-values > div { min-width: 0; }
+    .zest-info-jcr-label { margin: 0 0 2px; color: var(--fill-secondary); font-size: .91em; }
+    .zest-info-jcr-number { margin: 0; color: var(--fill-primary); font-size: 1.45em; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .zest-info-jcr-total { color: var(--fill-secondary); font-size: .69em; font-weight: 400; }
 
     /* Collection count badge */
     #collection-tree .cell.primary .zest-count {

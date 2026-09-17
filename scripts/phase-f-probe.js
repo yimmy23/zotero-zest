@@ -3,7 +3,7 @@
  *   scripts/dev-eval.sh -f scripts/phase-f-probe.js
  *
  * Covers the 2026-08-23 round: the derived read status and its picker, the
- * IF heat ladder, and the removals (no Venue column, nothing registered in
+ * IF metric resolution, and the removals (no Venue column, nothing registered in
  * the reader, no type-filter menu). Creates and deletes its own probe items,
  * restores every preference it touches, never talks to the network.
  */
@@ -166,21 +166,24 @@ if (rowIdx < 0) {
   await dev.statusMenu.setStatusForAll([read], null);
 }
 
-/* ---------- 5. IF heat ladder ---------- */
-const L = dev.pubTags.ifLevel;
+/* ---------- 5. IF metric resolution ---------- */
+const metricRecord = {
+  key: "probe:if",
+  name: "IF probe",
+  updated: Date.now(),
+  values: [{ field: "sciif", value: "6.8", source: "dataset" }],
+};
+const metric = dev.impactFactor.resolveImpactFactor(metricRecord, "missing");
 check(
-  "if.levels",
-  L(0.5, 15) === 0 &&
-    L(1, 15) === 1 &&
-    L(3, 15) === 2 &&
-    L(7.5, 15) === 3 &&
-    L(15, 15) === 4 &&
-    L(200, 15) === 4,
+  "if.valueAndSource",
+  metric?.value === 6.8 &&
+    metric.field === "sciif" &&
+    metric.source === "dataset",
 );
-check("if.levels.scale", L(10, 100) === 1 && L(50, 100) === 3);
+check("if.noInventedPercentile", metric?.jcr === undefined);
 check(
   "if.prefs",
-  ["heat", "bar", "none"].includes(
+  ["percentile", "none"].includes(
     String(Zotero.Prefs.get(prefKey("if.style"), true)),
   ),
   String(Zotero.Prefs.get(prefKey("if.style"), true)),

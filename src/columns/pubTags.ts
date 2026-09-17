@@ -1,9 +1,7 @@
-import { getPref, getNumPref } from "../utils/prefs";
+import { getPref } from "../utils/prefs";
 import { getString } from "../utils/locale";
 import { hexToRgb } from "../reading/heat";
 import { setSemanticBadge } from "../ui/color";
-import { HEAT_LEVELS } from "../ui/palette";
-import { accentColor } from "../ui/styles";
 import {
   requestJournalRecord,
   getJournalRecord,
@@ -17,7 +15,8 @@ import {
   sortKeyFor,
   defaultRankColor,
 } from "../rank/rank";
-import { valueOf, numberOf } from "../rank/types";
+import { valueOf } from "../rank/types";
+import { resolveImpactFactor } from "../rank/impactFactor";
 import { rankFieldsForDisplay, rankValueDisplay } from "../rank/display";
 import { venueOf } from "../rank/normalize";
 import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
@@ -25,7 +24,7 @@ import { makeCell, numKey, rowItem, type ColumnSpec } from "./registry";
 /**
  * Three journal columns, two of them backed by the same cached record:
  *   pubtags  rank badges ("1区", "Q1", "A") coloured by grade
- *   if       impact factor, as a number over a heat wash (or a bar)
+ *   if       impact factor, above a verified JCR percentile marker
  *   venue    ONE venue column across item types — publication title for
  *            articles, proceedings / conference for papers, book title for
  *            chapters, publisher / university for books and theses. Zotero's
@@ -90,9 +89,11 @@ function emptyJournalCell(
   // reader after a switch that cannot fill this cell
   const id = journalKeyOf(item);
   if (!id.key && !id.issn) return cell;
-  cell.title = getPref("rank.autoFetch")
+  const description = getPref("rank.autoFetch")
     ? getString("rank-empty-tip")
     : getString("rank-offline-tip");
+  cell.setAttribute("aria-label", description);
+  if (!cell.classList.contains("zest-if")) cell.title = description;
   return cell;
 }
 
@@ -166,18 +167,6 @@ export function publicationTagsColumn(): ColumnSpec {
   };
 }
 
-/** the wash never goes fully opaque: the row (selection, hover) shows through */
-const IF_HEAT_OPACITY = 0.7;
-
-/** 0 = below the ladder, 1..4 = max/15, max/5, max/2, max */
-export function ifLevel(n: number, max: number): number {
-  if (n >= max) return 4;
-  if (n >= max / 2) return 3;
-  if (n >= max / 5) return 2;
-  if (n >= max / 15) return 1;
-  return 0;
-}
-
 /** flip a numeric sort key so "descending" works inside one string key */
 function invert(key: string): string {
   let out = "";
@@ -198,9 +187,9 @@ export function impactFactorColumn(): ColumnSpec {
       if (!item.isRegularItem()) return "";
       const rec = requestJournalRecord(item);
       const field = String(getPref("if.field") || "sciif");
-      const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
+      const metric = resolveImpactFactor(rec, field);
       // keepZero: OpenAlex legitimately reports 0.00 for tiny venues
-      return n === undefined ? "" : numKey(Math.round(n * 1000), 8, true);
+      return metric ? numKey(Math.round(metric.value * 1000), 8, true) : "";
     },
     renderCell: (index, data, column, _first, doc) => {
       const { cell, textSpan } = makeCell(doc, column, "if");
@@ -208,47 +197,83 @@ export function impactFactorColumn(): ColumnSpec {
       if (!data) return emptyJournalCell(cell, item);
       const rec = item ? getJournalRecord(item) : undefined;
       const field = String(getPref("if.field") || "sciif");
-      const n = numberOf(rec, [field, "sciif", "sciif5", "oa2yr"]);
-      if (n === undefined) return emptyJournalCell(cell, item);
-      const max = Math.max(1, getNumPref("if.max", 15));
-      const style = String(getPref("if.style") || "heat");
-      const color = String(getPref("if.color") || "");
-      if (style === "heat") {
-        // one hue, light → dark: the same four GitHub-style steps as the
-        // reading heat, on a log-ish ladder (max/15, max/5, max/2, max) so the
-        // heavy tail of impact factors does not saturate at the top like a
-        // linear bar does. The number stays in the text colour; only the wash
-        // behind it carries the magnitude.
-        const level = ifLevel(n, max);
-        if (level) {
-          const wash = doc.createElement("span");
-          wash.className = "zest-if-heat";
-          const rgb = hexToRgb(color || accentColor());
-          if (rgb) {
-            const alpha = HEAT_LEVELS[level - 1] * IF_HEAT_OPACITY;
-            wash.style.backgroundColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha.toFixed(3)})`;
-          }
-          cell.insertBefore(wash, textSpan);
+      const metric = resolveImpactFactor(rec, field);
+      if (!metric) return emptyJournalCell(cell, item);
+      const n = metric.value;
+      // The number remains legible even with legacy if.info=false. Graphs
+      // convey the verified within-category percentile, never IF magnitude.
+      textSpan.textContent = n >= 100 ? n.toFixed(0) : n.toFixed(1);
+      const tooltip = [
+        getString("if-cell-tip", {
+          args: {
+            field: metric.field,
+            value: metric.raw,
+            source: metric.source,
+          },
+        }),
+      ];
+      const jcr = metric.jcr;
+      if (jcr) {
+        if (jcr.provider === "showjcr" && jcr.percentileMethod === "rank")
+          tooltip.push(getString("if-jcr-showjcr-derived"));
+        for (const category of jcr.categories) {
+          tooltip.push(
+            getString("if-jcr-detail", {
+              args: {
+                year: String(jcr.year),
+                category: category.quartile
+                  ? `${category.name} · ${category.quartile}`
+                  : category.name,
+                percentile: Number(category.percentile.toFixed(1)),
+                rank: category.rank || "—",
+              },
+            }),
+          );
         }
-      } else if (style === "bar") {
-        const track = doc.createElement("span");
-        track.className = "zest-if-track";
-        const bar = doc.createElement("span");
-        bar.className = "zest-if-bar";
-        bar.style.width = `${Math.min(100, (n / max) * 100).toFixed(1)}%`;
-        if (color) bar.style.backgroundColor = color;
-        track.appendChild(bar);
-        cell.insertBefore(track, textSpan);
+        // Historic heat/bar preferences migrate at read time. The number-only
+        // option stays explicit; no preference or journal data is rewritten.
+        if (getPref("if.style") !== "none") {
+          cell.classList.add("zest-if-with-percentile");
+          const graph = doc.createElement("span");
+          graph.className = "zest-if-percentile";
+          graph.setAttribute("aria-hidden", "true");
+          const percentiles = jcr.categories.map((entry) => entry.percentile);
+          const lower = Math.min(...percentiles);
+          const upper = Math.max(...percentiles);
+          const multiple = jcr.categories.length > 1;
+          if (multiple) {
+            graph.classList.add("zest-if-multiple");
+            const range = doc.createElement("span");
+            range.className = "zest-if-range";
+            range.style.left = `${lower}%`;
+            range.style.width = `${upper - lower}%`;
+            graph.appendChild(range);
+          }
+          for (const percentile of lower === upper ? [lower] : [lower, upper]) {
+            const point = doc.createElement("span");
+            point.className = "zest-if-point";
+            point.style.left = `${percentile}%`;
+            // Multiple categories have no single rank; keep their whole range
+            // neutral instead of promoting the most flattering percentile.
+            if (!multiple && percentile >= 90) {
+              point.classList.add("zest-if-top");
+            }
+            graph.appendChild(point);
+          }
+          cell.appendChild(graph);
+        }
+      } else {
+        tooltip.push(
+          getString(
+            metric.field.toLowerCase() === "sciif"
+              ? "if-percentile-missing"
+              : "if-percentile-not-applicable",
+          ),
+        );
       }
-      if (getPref("if.info") || style === "none") {
-        textSpan.textContent = n >= 100 ? n.toFixed(0) : n.toFixed(1);
-      }
-      const src = valueOf(rec, field) || valueOf(rec, "oa2yr");
-      cell.title = src
-        ? getString("if-cell-tip", {
-            args: { field: src.field, value: src.value, source: src.source },
-          })
-        : "";
+      // Details are visible in the Zest side pane; keep the full description
+      // for assistive technology without creating a hover popup.
+      cell.setAttribute("aria-label", tooltip.join("\n"));
       return cell;
     },
   };

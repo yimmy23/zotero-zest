@@ -96,7 +96,7 @@ test("all authored inputs and menus have unique IDs and associated bilingual lab
       ...doc.querySelectorAll("select"),
       ...doc.querySelectorAll("textarea"),
     ];
-    assert.equal(doc.querySelectorAll("input").length, 35);
+    assert.equal(doc.querySelectorAll("input").length, 33);
     assert.equal(doc.querySelectorAll("menulist").length, 11);
     for (const control of controls) {
       const id = control.getAttribute("id");
@@ -132,6 +132,34 @@ test("all authored inputs and menus have unique IDs and associated bilingual lab
       doc.getElementById("zest-pref-rating-display").getAttribute("preference"),
       "rating.display",
     );
+  }
+});
+
+test("IF preferences offer percentile or number-only without obsolete heat controls", () => {
+  for (const locale of ["en-US", "zh-CN"]) {
+    const { doc, strings } = preferencesDocument(locale);
+    const menu = doc.getElementById("zest-pref-if-style");
+    const options = menu.querySelectorAll("menuitem");
+    assert.equal(menu.getAttribute("preference"), "if.style");
+    assert.deepEqual(
+      options.map((option) => option.getAttribute("value")),
+      ["percentile", "none"],
+    );
+    const fluent = fs.readFileSync(
+      path.join(root, "addon/locale", locale, "preferences.ftl"),
+      "utf8",
+    );
+    for (const option of options) {
+      const id = option.getAttribute("data-l10n-id");
+      assert.match(
+        fluent,
+        new RegExp(`^${id} =\\n[ \t]+\\.label = .+`, "m"),
+        `${locale} XUL option needs a Fluent label attribute`,
+      );
+    }
+    assert.ok(strings["pref-if-percentile-hint"]);
+    for (const key of ["if.max", "if.color", "if.info", "if.progress"])
+      assert.equal(doc.querySelector(`[preference="${key}"]`), null);
   }
 });
 

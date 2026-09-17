@@ -216,6 +216,9 @@ column-pubtags = 期刊标签
 column-if = 影响因子
 column-venue = 期刊 / 来源
 if-cell-tip = { $field } = { $value }（来源：{ $source }）
+if-jcr-detail = JCR { $year } · { $category }：P{ $percentile } · 排名：{ $rank }
+if-percentile-missing = 暂无 JCR 百分位，分区无法确定精确百分位。
+if-percentile-not-applicable = 当前指标不是标准 JIF，不适用 JCR JIF 百分位。
 rank-badge-tip = { $value }（字段：{ $field }；来源：{ $source }）
 rank-category-medicine = 医学
 rank-category-medicine-short = 医学
@@ -249,8 +252,8 @@ rank-category-social-sciences = 社会科学
 rank-category-social-sciences-short = 社会科学
 rank-category-management = 管理学
 rank-category-management-short = 管理学
-rank-value-xr-short = 新锐 { $value }
-rank-value-xr-long = 新锐期刊分区——{ $value }
+rank-value-xr-short = { $value }
+rank-value-xr-long = 期刊分区——{ $value }
 rank-value-cas-short = 中科院 { $value }
 rank-value-cas-long = 中科院历史分区——{ $value }
 rank-value-cas-zone-short = { $category }{ $zone }区
@@ -387,7 +390,7 @@ info-affiliations-fetch = 获取机构信息
 info-affiliations-fetch-tip = 将此条目的 DOI 发送到 OpenAlex，查询作者机构
 info-affiliations-loading = 正在获取…
 info-affiliations-unavailable = 暂未获取到机构信息，可稍后重试。
-info-venue = 期刊 / 来源
+info-venue = 来源
 info-citation-key = 引用键
 info-citation-key-copy = 复制引用键
 info-citation-key-copied = 已复制引用键
@@ -626,7 +629,7 @@ menu-layout =
     .label = 套用 Zest 推荐列布局
 menu-rank-fetch =
     .label = 联网获取期刊数据（分区 / 影响因子）
-rank-offline-tip = 「期刊标签」和「影响因子」需要联网查询期刊数据。点工具栏的 Zest 按钮 ▸「联网获取期刊数据」开启；查询按期刊进行，只发送期刊名、ISSN 或 DOI，结果缓存在本地。中科院分区、北大核心等中文体系还需要在设置里填 easyScholar 密钥。
+rank-offline-tip = 当前没有可用的本地期刊数据。可在 Zest 设置 → 本地期刊数据集中下载 ShowJCR 或导入数据；也可在工具栏菜单中开启自动联网查询。
 rank-empty-tip = 尚未查到这本期刊的分级数据。右键该单元格可单独重新查询；中科院分区、北大核心等中文体系需要 easyScholar 密钥。
 
 # ---- author menu ----
@@ -666,3 +669,14 @@ graph-authors-stopped = 作者身份补全已停止：已补全 { $updated } 篇
 
 info-citation-key-empty = 尚无引用键
 info-citation-key-empty-hint = 可在 Zotero 的条目信息中填写引用键，或使用 Better BibTeX 管理。
+
+if-jcr-showjcr-derived = ShowJCR · 百分位由学科排名计算
+pref-showjcr-title = ShowJCR 数据
+pref-showjcr-loading = 正在下载并校验 ShowJCR 数据…
+pref-showjcr-failed = 更新失败，已保留原有数据。
+pref-showjcr-summary = { $name } · { $rows } 种期刊
+
+info-jcr-heading = JCR { $year } · { $count } 个学科
+info-jcr-dataset = 本地数据集
+info-jcr-rank = 排名
+info-jcr-percentile = 百分位

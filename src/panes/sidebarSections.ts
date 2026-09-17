@@ -50,6 +50,7 @@ interface State {
   error?: () => void;
   frameError?: boolean;
   timeout?: number;
+  readyCheck?: number;
   frameWindow?: Window;
   frameUnload?: () => void;
   visibility: () => void;
@@ -57,6 +58,7 @@ interface State {
 }
 const HOST_URL = `chrome://${config.addonRef}/content/panel.xhtml`;
 const FRAME_LOAD_TIMEOUT = 10_000;
+const FRAME_READY_INTERVAL = 50;
 const ids = new Map<Kind, string>();
 const states = new Map<HTMLElement, State>();
 const icons: Record<Kind, string> = {
@@ -169,7 +171,7 @@ function sync(state: State) {
     state.requested = true;
     state.body.dataset.zestSidebarRequested = "true";
   }
-  if (!active) stopDeadline(state);
+  if (!active) stopLoadTimers(state);
   if (active && !state.controller) ensureContent(state);
 }
 function renderShell(state: State) {
@@ -238,14 +240,18 @@ function graphSource(state: State) {
     items.push(current);
   return { items, itemID: current?.id, host: state.win };
 }
-function stopDeadline(state: State) {
-  if (state.timeout === undefined) return;
-  state.win.clearTimeout(state.timeout);
+function stopLoadTimers(state: State) {
+  if (state.timeout !== undefined) state.win.clearTimeout(state.timeout);
+  if (state.readyCheck !== undefined) state.win.clearTimeout(state.readyCheck);
   state.timeout = undefined;
+  state.readyCheck = undefined;
 }
 function stopLoading(state: State) {
-  stopDeadline(state);
-  if (state.load) state.frame?.removeEventListener("load", state.load, true);
+  stopLoadTimers(state);
+  if (state.load) {
+    state.frame?.removeEventListener("load", state.load, true);
+    state.frame?.removeEventListener("DOMContentLoaded", state.load, true);
+  }
   if (state.error) state.frame?.removeEventListener("error", state.error, true);
   state.load = undefined;
   state.error = undefined;
@@ -328,6 +334,8 @@ function ensureContent(state: State) {
         state.disposed ||
         state.frame !== frame ||
         !state.active ||
+        !isOpen(state) ||
+        state.win.document.hidden ||
         state.controller ||
         state.failed
       )
@@ -384,6 +392,7 @@ function ensureContent(state: State) {
     };
     // Privileged chrome documents deliver their load through capture here.
     frame.addEventListener("load", ready, true);
+    frame.addEventListener("DOMContentLoaded", ready, true);
     frame.addEventListener("error", state.error, true);
     frame.src = HOST_URL;
     state.content!.append(frame);
@@ -408,13 +417,44 @@ function startDeadline(state: State) {
     if (state.timeout !== timer || state.frame !== frame || state.disposed)
       return;
     state.timeout = undefined;
-    if (!state.active || !isOpen(state) || state.win.document.hidden) return;
+    if (!state.active || !isOpen(state) || state.win.document.hidden) {
+      stopLoadTimers(state);
+      return;
+    }
     // The host document may already be complete even if its load event was lost.
     state.load?.();
     if (state.frame === frame && !state.controller && !state.failed)
       failed(state, new Error("Sidebar iframe load timed out"));
   }, FRAME_LOAD_TIMEOUT);
   state.timeout = timer;
+  scheduleReadyCheck(state);
+}
+function scheduleReadyCheck(state: State) {
+  if (
+    state.disposed ||
+    !state.active ||
+    state.controller ||
+    state.failed ||
+    !state.frame ||
+    state.readyCheck !== undefined
+  )
+    return;
+  const frame = state.frame;
+  const timer = state.win.setTimeout(() => {
+    if (state.readyCheck !== timer || state.frame !== frame || state.disposed)
+      return;
+    state.readyCheck = undefined;
+    if (!state.active || !isOpen(state) || state.win.document.hidden) {
+      stopLoadTimers(state);
+      return;
+    }
+    // Chrome iframe load delivery can be lost, or arrive before readyState
+    // becomes complete. Detect the ready document promptly; the separate
+    // deadline still bounds a genuinely failed load and is never extended.
+    state.load?.();
+    scheduleReadyCheck(state);
+  }, FRAME_READY_INTERVAL);
+  state.readyCheck = timer;
 }
 
 export function registerSidebarSections() {

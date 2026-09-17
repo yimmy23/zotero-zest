@@ -108,6 +108,11 @@ import { getPref } from "./utils/prefs";
 import { zestDB } from "./core/db";
 import { cache } from "./core/storage";
 import { zestConfig } from "./core/config";
+import {
+  startDatasetSession,
+  stopDatasetOperations,
+  finishDatasetSession,
+} from "./rank/sources/localDataset";
 import { readingStore } from "./reading/store";
 import { readingTracker } from "./reading/tracker";
 import {
@@ -135,8 +140,8 @@ function stopPluginSweep() {
 
 /**
  * Preference keys that changed meaning between releases, migrated once.
- *  - `if.progress` (bool) became `if.style` (heat | bar | none): a user who had
- *    switched the bar OFF keeps a bare number; everyone else gets the new heat.
+ * Legacy IF heat/bar displays become percentile markers; number-only stays.
+ * The older `if.progress=false` setting also keeps a bare number.
  */
 function migratePrefs() {
   const P = config.prefsPrefix;
@@ -148,6 +153,10 @@ function migratePrefs() {
         Zotero.Prefs.set(`${P}.if.style`, "none", true);
       }
       Zotero.Prefs.clear(old, true);
+    }
+    const style = Zotero.Prefs.get(`${P}.if.style`, true);
+    if (style === "heat" || style === "bar") {
+      Zotero.Prefs.set(`${P}.if.style`, "percentile", true);
     }
   } catch (e) {
     ztoolkit.log("[startup] pref migration failed", e);
@@ -230,6 +239,10 @@ async function onStartup() {
     Zotero.uiReadyPromise,
   ]);
   if (!addon.data.alive) return;
+  // An outgoing copy may still be committing a local dataset. Do not load a
+  // stale config snapshot or start another writer until its shutdown settles.
+  await startDatasetSession();
+  if (!addon.data.alive) return;
 
   registerDevEval();
   startCitations();
@@ -267,11 +280,13 @@ async function onStartup() {
   // zotero.sqlite. Steps run concurrently, so anything that READS them (the
   // columns, the tag rules) must await this promise rather than assume it
   // finished first.
-  const configReady = Promise.all([zestConfig.init(), cache.init()]).catch(
-    (e) => {
-      ztoolkit.log("[startup] config failed", e);
-    },
-  );
+  const configInit = zestConfig.init();
+  // Retain this exact promise: an early cache failure must not make a
+  // still-running config read/recovery look settled during shutdown.
+  configSettled = configInit;
+  const configReady = Promise.all([configInit, cache.init()]).catch((e) => {
+    ztoolkit.log("[startup] config failed", e);
+  });
   step("config", async () => {
     await configReady;
   });
@@ -444,13 +459,17 @@ async function onStartup() {
         true,
       ),
       // the panel reads these while rendering; a change repaints the open panes
-      ...["info.enable", "info.abstract", "info.affiliations.autoFetch"].map(
-        (p) =>
-          Zotero.Prefs.registerObserver(
-            `${P}.${p}`,
-            () => refreshInfoSections(),
-            true,
-          ),
+      ...[
+        "info.enable",
+        "info.abstract",
+        "info.affiliations.autoFetch",
+        "if.field",
+      ].map((p) =>
+        Zotero.Prefs.registerObserver(
+          `${P}.${p}`,
+          () => refreshInfoSections(),
+          true,
+        ),
       ),
       Zotero.Prefs.registerObserver(
         `${P}.graph.visible`,
@@ -565,79 +584,85 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 /** lets shutdown wait for the async startup inits instead of racing them */
 let startupSettled: Promise<unknown> | undefined;
+/** Disk-read recovery must settle before another copy may load the config. */
+let configSettled: Promise<unknown> | undefined;
 
 async function onShutdown() {
   // first thing: nothing that is still awaiting a startup wait may install
   // anything from here on
   addon.data.alive = false;
-  stopCitations();
-  stopAuthorshipFetches();
-  stopAbstractFetches();
-  stopAbstractTranslations();
-  // …and teardown must not overlap a still-running startup init (a fast
-  // disable right after enable): wait for the loads to settle, bounded so a
-  // hung init can never wedge shutdown
+  void stopDatasetOperations();
   try {
-    await Promise.race([
-      startupSettled ?? Promise.resolve(),
-      Zotero.Promise.delay(3000),
-    ]);
-  } catch {
-    // allSettled never rejects; belt and braces
-  }
-  stopPluginSweep();
-  readingTracker.stop();
-  unregisterAnnotSection();
-  unregisterInfoSection();
-  unregisterSidebarSections();
-  closeStatsDialog();
-  closeMatrix();
-  closeAllRatingImports();
-  uninstallAllTagTrees();
-  uninstallAllTagOptionsMenus();
-  uninstallAllViewMenus();
-  uninstallAllViewShortcuts();
-  uninstallAllCollectionCounts();
-  uninstallAllRevealGuards();
-  clearItemFilters();
-  clearAllAuthorFilters();
-  uninstallGraphPanes();
-  uninstallAllToolbarMenus();
-  uninstallSidebars();
-  uninstallExportPatch();
-  unregisterMenus();
-  unregisterColumns();
-  uninstallDevEval();
-  for (const s of prefObservers) {
+    stopCitations();
+    stopAuthorshipFetches();
+    stopAbstractFetches();
+    stopAbstractTranslations();
+    // …and teardown must not overlap a still-running startup init (a fast
+    // disable right after enable): wait for the loads to settle, bounded so a
+    // hung init can never wedge shutdown
     try {
-      Zotero.Prefs.unregisterObserver(s);
+      await Promise.race([
+        startupSettled ?? Promise.resolve(),
+        Zotero.Promise.delay(3000),
+      ]);
     } catch {
-      // ignore
+      // allSettled never rejects; belt and braces
     }
-  }
-  prefObservers = [];
-  for (const win of Zotero.getMainWindows()) {
-    unregisterStyles(win as unknown as Window);
-  }
-  refreshAllRows();
-  try {
-    await readingStore.shutdown();
-  } catch (e) {
-    ztoolkit.log("[shutdown] store flush failed", e);
-  }
-  await zestDB.close();
-  await cache.shutdown();
-  await zestConfig.shutdown();
-  ztoolkit.unregisterAll();
-  // Hand the name back only if we still hold it. On an upgrade the new copy
-  // has already claimed `Zotero.Zest`, and deleting it here would leave the
-  // RUNNING plugin without its handle: columns and the tag pane keep working
-  // (the new copy installed those), but `Zotero.Zest.api` is gone and every
-  // note template or script that calls it breaks until the next restart.
-  // @ts-expect-error - Plugin instance is not typed
-  if (Zotero[config.addonInstance] === addon) {
+    stopPluginSweep();
+    readingTracker.stop();
+    unregisterAnnotSection();
+    unregisterInfoSection();
+    unregisterSidebarSections();
+    closeStatsDialog();
+    closeMatrix();
+    closeAllRatingImports();
+    uninstallAllTagTrees();
+    uninstallAllTagOptionsMenus();
+    uninstallAllViewMenus();
+    uninstallAllViewShortcuts();
+    uninstallAllCollectionCounts();
+    uninstallAllRevealGuards();
+    clearItemFilters();
+    clearAllAuthorFilters();
+    uninstallGraphPanes();
+    uninstallAllToolbarMenus();
+    uninstallSidebars();
+    uninstallExportPatch();
+    unregisterMenus();
+    unregisterColumns();
+    uninstallDevEval();
+    for (const s of prefObservers) {
+      try {
+        Zotero.Prefs.unregisterObserver(s);
+      } catch {
+        // ignore
+      }
+    }
+    prefObservers = [];
+    for (const win of Zotero.getMainWindows()) {
+      unregisterStyles(win as unknown as Window);
+    }
+    refreshAllRows();
+    try {
+      await readingStore.shutdown();
+    } catch (e) {
+      ztoolkit.log("[shutdown] store flush failed", e);
+    }
+    await zestDB.close();
+    await cache.shutdown();
+    ztoolkit.unregisterAll();
+    // Hand the name back only if we still hold it. On an upgrade the new copy
+    // has already claimed `Zotero.Zest`, and deleting it here would leave the
+    // RUNNING plugin without its handle: columns and the tag pane keep working
+    // (the new copy installed those), but `Zotero.Zest.api` is gone and every
+    // note template or script that calls it breaks until the next restart.
     // @ts-expect-error - Plugin instance is not typed
-    delete Zotero[config.addonInstance];
+    if (Zotero[config.addonInstance] === addon) {
+      // @ts-expect-error - Plugin instance is not typed
+      delete Zotero[config.addonInstance];
+    }
+  } finally {
+    await finishDatasetSession(configSettled);
   }
 }
 
@@ -649,28 +674,32 @@ async function onAppShutdown() {
   // Zotero.Plugins shutdown sweep schedules registrations against a closed DB
   // while Zotero is already waiting for its shutdown barrier.
   addon.data.alive = false;
-  stopCitations();
-  stopAuthorshipFetches();
-  stopAbstractFetches();
-  stopAbstractTranslations();
-  stopPluginSweep();
+  void stopDatasetOperations();
   try {
-    await Promise.race([
-      startupSettled ?? Promise.resolve(),
-      Zotero.Promise.delay(3000),
-    ]);
-  } catch {
-    // never wedge app shutdown
+    stopCitations();
+    stopAuthorshipFetches();
+    stopAbstractFetches();
+    stopAbstractTranslations();
+    stopPluginSweep();
+    try {
+      await Promise.race([
+        startupSettled ?? Promise.resolve(),
+        Zotero.Promise.delay(3000),
+      ]);
+    } catch {
+      // never wedge app shutdown
+    }
+    try {
+      readingTracker.stop();
+      await readingStore.shutdown();
+    } catch (e) {
+      ztoolkit.log("[appShutdown] flush failed", e);
+    }
+    await zestDB.close();
+    await cache.shutdown();
+  } finally {
+    await finishDatasetSession(configSettled);
   }
-  try {
-    readingTracker.stop();
-    await readingStore.shutdown();
-  } catch (e) {
-    ztoolkit.log("[appShutdown] flush failed", e);
-  }
-  await zestDB.close();
-  await cache.shutdown();
-  await zestConfig.shutdown();
 }
 
 async function onNotify(

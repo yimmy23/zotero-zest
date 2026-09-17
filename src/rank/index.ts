@@ -15,7 +15,8 @@ import {
 import { validatedRank } from "./rank";
 import { parseRewriteRules, applyRewrite } from "./map";
 import type { JournalRecord, RankValue } from "./types";
-import { datasetsLoaded, lookupDataset } from "./sources/localDataset";
+import { matchingJCRMetadata, sanitizeJCRMetadata } from "./impactFactor";
+import { datasetsLoaded, lookupDatasetRecord } from "./sources/localDataset";
 import { fetchEasyScholar, easyScholarBlocked } from "./sources/easyscholar";
 import {
   fetchOpenAlexByISSN,
@@ -36,9 +37,8 @@ import {
  * Everything is cached in zest-cache.json under the ISSN (or exact normalised
  * name when an ISSN is absent), so a
  * library with 400 papers in 60 journals does 60 lookups, not 400 — and none
- * at all on the next launch. Column dataProviders only ever read the memory
- * cache; a miss queues a background fetch and repaints those rows when it
- * lands.
+ * at all on the next launch. Column dataProviders read the local dataset
+ * index and memory cache; only remote cache misses depend on auto-fetch.
  */
 
 const NS = "rank";
@@ -83,11 +83,17 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
   const r = raw as any;
   if (typeof r.key !== "string" || !r.key) return null;
   const values: RankValue[] = [];
+  let jifSource: unknown;
   if (Array.isArray(r.values)) {
     for (const v of r.values.slice(0, 80)) {
       if (!v || typeof v.field !== "string" || typeof v.value !== "string")
         continue;
       if (v.field.length > 60 || v.value.length > 120) continue;
+      if (
+        v.field.toLowerCase() === "sciif" &&
+        !values.some((entry) => entry.field.toLowerCase() === "sciif")
+      )
+        jifSource = v.source;
       values.push({
         field: v.field,
         value: v.value,
@@ -98,6 +104,7 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
       });
     }
   }
+  const jcr = sanitizeJCRMetadata(r.jcr);
   return {
     key: r.key,
     name: typeof r.name === "string" ? r.name : r.key,
@@ -115,6 +122,10 @@ function sanitizeRecord(raw: unknown): JournalRecord | null {
         ] as string[])
       : undefined,
     values,
+    // Legacy metrics may default an unknown source to dataset, but that does
+    // not establish the provenance needed to attach JCR category percentiles.
+    jcr:
+      jcr?.source === jifSource ? matchingJCRMetadata(jcr, values) : undefined,
     updated: Number(r.updated) || 0,
     misses: Array.isArray(r.misses) ? r.misses.slice(0, 4) : undefined,
     partial: r.partial === true ? true : undefined,
@@ -256,16 +267,72 @@ function needsLookupUpgrade(record: JournalRecord): boolean {
   );
 }
 
-/** synchronous cache read — safe in dataProvider/renderCell */
+/**
+ * Local data is immediately available even when automatic network requests are
+ * off. Both column callbacks use this view, so sorting, text and percentile
+ * provenance agree without writing a cache entry during rendering.
+ */
+function withLocalDataset(
+  identity: ReturnType<typeof journalKeyOf>,
+  cached?: JournalRecord,
+): JournalRecord | undefined {
+  if (!identity.key) return cached;
+  // Only catalogue/source evidence joins identifiers. An item's two ISSNs,
+  // or the requestedISSNs echoed by an old lookup, do not establish aliases.
+  const verifiedAliases = [
+    ...new Set([
+      ...identity.catalogISSNs,
+      ...((cached?.lookupVersion || 0) >= JOURNAL_LOOKUP_VERSION
+        ? cached?.issns || []
+        : []),
+    ]),
+  ];
+  const local = lookupDatasetRecord(
+    identity.nameKey,
+    identity.issns.join(", "),
+    verifiedAliases,
+  );
+  if (!local.values.length) return cached;
+  const values: RankValue[] = [];
+  const seen = new Set<string>();
+  for (const value of [...local.values, ...(cached?.values || [])]) {
+    const key = value.field.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    values.push({
+      ...value,
+      rank: validatedRank(value.field, value.value, value.rank),
+    });
+  }
+  // Replacing a JIF also replaces its metadata, even when the new number is
+  // identical. A different local file cannot borrow old/remote percentiles.
+  const localJIF = local.values.some(
+    (value) => value.field.toLowerCase() === "sciif",
+  );
+  return {
+    ...(cached || {
+      key: identity.key,
+      name: identity.name,
+      issn: identity.issn || undefined,
+      issns: verifiedAliases.length ? verifiedAliases : undefined,
+      requestedISSNs: identity.issns,
+      lookupVersion: JOURNAL_LOOKUP_VERSION,
+      updated: 0,
+    }),
+    values,
+    jcr: matchingJCRMetadata(localJIF ? local.jcr : cached?.jcr, values),
+  };
+}
+
+/** Synchronous local index/cache read — safe in dataProvider/renderCell. */
 export function getJournalRecord(item: Zotero.Item): JournalRecord | undefined {
-  const hit = cachedRecord(journalKeyOf(item));
-  return hit ? hit.data : undefined;
+  const identity = journalKeyOf(item);
+  return withLocalDataset(identity, cachedRecord(identity)?.data);
 }
 
 /**
- * Ask for a record. Returns the cached one when present; otherwise queues a
- * background lookup (unless auto-fetch is off or we looked recently and found
- * nothing).
+ * Return current local values over the cache. A remote miss queues a
+ * background lookup only when auto-fetch is enabled and back-off permits it.
  */
 export function requestJournalRecord(
   item: Zotero.Item,
@@ -273,8 +340,9 @@ export function requestJournalRecord(
   const identity = journalKeyOf(item);
   const cached = cachedRecord(identity);
   const hit = cached?.data;
-  if (!getPref("rank.autoFetch")) return hit;
-  if (!identity.key) return hit;
+  const visible = withLocalDataset(identity, hit);
+  if (!getPref("rank.autoFetch")) return visible;
+  if (!identity.key) return visible;
   const cacheKey = requestCacheKey(identity);
   const age = cached?.age;
   if (hit) {
@@ -292,15 +360,15 @@ export function requestJournalRecord(
         enqueue(cacheKey, item.id);
       }
     }
-    return hit;
+    return visible;
   }
   const failedAt = failures.get(cacheKey);
   if (failedAt !== undefined && Date.now() - failedAt < FAILURE_TTL) {
-    return undefined; // the last attempt could not reach anything
+    return visible; // local values survive a previous network failure
   }
-  if (stopped) return undefined;
+  if (stopped) return visible;
   enqueue(cacheKey, item.id);
-  return undefined;
+  return visible;
 }
 
 /** journals whose cached record is partial and due for another try */
@@ -390,12 +458,16 @@ export async function lookupJournal(
   } = identity;
   if (!cacheKey) return null;
   const requestKey = requestCacheKey(identity);
+  // Local imports may still be loading. Even the non-force cache fast path
+  // must wait before overlaying their current values.
+  await datasetsLoaded();
+  if (!valid()) return null;
   let upgrade = false;
   if (!force) {
     const hit = cachedRecord(identity);
     if (hit) {
       upgrade = needsLookupUpgrade(hit.data);
-      if (!upgrade) return hit.data;
+      if (!upgrade) return withLocalDataset(identity, hit.data) || hit.data;
     }
   }
 
@@ -416,10 +488,8 @@ export async function lookupJournal(
   };
 
   // 1. the user's own dataset always wins
-  await datasetsLoaded();
-  if (!valid()) return null;
   const requiredISSNs = issns.join(", ");
-  let localValues = lookupDataset(nameKey, requiredISSNs, catalogISSNs);
+  let local = lookupDatasetRecord(nameKey, requiredISSNs, catalogISSNs);
   let es: Awaited<ReturnType<typeof fetchEasyScholar>> | undefined;
 
   // 2. easyScholar (needs a key; the only source for the Chinese systems)
@@ -491,7 +561,7 @@ export async function lookupJournal(
         ? queryName
         : journalLookupName(oa.name);
       // Resolve print/electronic dataset rows with IDs verified on the source.
-      localValues = lookupDataset(
+      local = lookupDatasetRecord(
         normalizeJournal(canonicalName) || nameKey,
         requiredISSNs,
         oa.issns,
@@ -521,7 +591,7 @@ export async function lookupJournal(
       misses.push("openalex");
       // a keyless OpenAlex miss can equally mean "offline"; only treat it as a
       // real miss when something else already answered
-      if ((!localValues.length && !es?.values.length) || rankSourceThrottled())
+      if ((!local.values.length && !es?.values.length) || rankSourceThrottled())
         unreachable = true;
     }
   }
@@ -530,7 +600,7 @@ export async function lookupJournal(
     if (!misses.includes("easyscholar")) misses.push("easyscholar");
     if (es.error === "network" || es.error === "rate") unreachable = true;
   }
-  push(localValues);
+  push(local.values);
   if (es) push(es.values);
   if (oa) push(oa.values);
 
@@ -542,6 +612,7 @@ export async function lookupJournal(
     issn: resolvedISSN || undefined,
     issns: verifiedISSNs.size ? [...verifiedISSNs] : undefined,
     values,
+    jcr: matchingJCRMetadata(local.jcr, values),
     updated: Date.now(),
     misses: misses.length ? misses : undefined,
     // something answered while another source (easyScholar throttled, offline)
@@ -593,8 +664,18 @@ export function rankSourceThrottled(): boolean {
 }
 
 export function clearRankCache() {
+  // A request that started before an import/clear must not refill the cache
+  // with old local values when its remote response arrives later.
+  serviceEpoch++;
+  if (queueTimer) {
+    clearTimeout(queueTimer);
+    queueTimer = undefined;
+  }
+  queue.clear();
+  refreshPartial.clear();
   cache.clear(NS);
   failures.clear();
+  // Source/HTTP throttle state is deliberately untouched.
 }
 
 /**
