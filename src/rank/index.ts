@@ -161,25 +161,18 @@ export function journalKeyOf(item: Zotero.Item): {
   let name = "";
   let issn = "";
   let issns: string[] = [];
-  let abbreviation = "";
   let doi = "";
   try {
     name = rankableVenueOf(item);
     issns = allISSNs((item.getField("ISSN") as string) || "");
     issn = issns[0] || "";
     doi = String(item.getField("DOI") || "").trim();
-    abbreviation = String(item.getField("journalAbbreviation") || "").trim();
   } catch {
     // unloaded item
   }
   let queryName = journalLookupName(name);
-  const rawCatalog = journalCatalogIdentity(name, abbreviation, issns);
-  const catalog = journalCatalogIdentity(queryName, abbreviation, issns);
-  if (catalog && journalCatalogIdentity(queryName) === null)
-    queryName =
-      journalCatalogIdentity(abbreviation) === catalog
-        ? journalLookupName(abbreviation)
-        : "";
+  const rawCatalog = journalCatalogIdentity(name);
+  const catalog = journalCatalogIdentity(queryName);
   const catalogMatches =
     catalog && issns.every((id) => catalog.issns.includes(id));
   // A known title with contradictory identifiers cannot identify a journal:
@@ -187,7 +180,6 @@ export function journalKeyOf(item: Zotero.Item): {
   // An empty key blocks local/cache reads, remote requests and batch queues.
   const conflictingIdentity =
     (!!catalog && !catalogMatches) ||
-    catalog === null ||
     // Removing official-journal boilerplate is not evidence that a historical
     // raw title belongs to the current catalogue entry with that short name.
     (!!catalog && rawCatalog === undefined && !issns.length);
@@ -260,13 +252,6 @@ function cachedRecord(identity: ReturnType<typeof journalKeyOf>) {
           : journalCatalogIdentity(record.name)?.issns || [],
       );
       if (!identity.catalogISSNs.some((id) => recordIDs.has(id))) return null;
-      // A formerly ambiguous bare-title cache has no title-only identity proof.
-      // Reuse only records written after verified aliases were distinguished.
-      if (journalCatalogIdentity(journalLookupName(identity.name)) === null)
-        return (record.lookupVersion || 0) >= VERIFIED_ISSN_CACHE_VERSION &&
-          identity.catalogISSNs.some((id) => record.issns?.includes(id))
-          ? record
-          : null;
     }
     return normalizeJournal(record.name) === nameKey ? record : null;
   };
