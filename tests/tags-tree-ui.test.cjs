@@ -176,6 +176,9 @@ function fixture() {
       native = doc.createElement("div");
     container.id = "zotero-tag-selector-container";
     native.id = "zotero-tag-selector";
+    native.hidden = false;
+    native.clientWidth = 320;
+    native.clientHeight = 180;
     container.append(native);
     doc.body.append(container);
     win.libraryID = 1;
@@ -216,6 +219,143 @@ function fixture() {
 const settle = async () => {
   for (let i = 0; i < 15; i++) await Promise.resolve();
 };
+
+// Model the native PureComponent: its width cache is outside React state,
+// and setting unchanged dimensions/UI properties skips rendering.
+function nativeSelector(win) {
+  const native = win.document.getElementById("zotero-tag-selector");
+  const cache = new Map();
+  const selector = {
+    state: { width: native.clientWidth, height: native.clientHeight },
+    calls: [],
+    renderCount: 0,
+    renderedWidths: [],
+    render() {
+      this.renderCount++;
+      this.renderedWidths = ["⭐must-read", "🧠免疫治疗", "Methods"].map(
+        (tag) => {
+          if (!cache.has(tag))
+            cache.set(tag, native.hidden ? 0 : tag.length * 7 + 16);
+          return cache.get(tag);
+        },
+      );
+    },
+    setState(update) {
+      const changed = Object.keys(update).some(
+        (key) => this.state[key] !== update[key],
+      );
+      Object.assign(this.state, update);
+      if (changed) this.render();
+    },
+    handleUIPropertiesChange(update) {
+      this.calls.push("invalidate");
+      cache.clear();
+      this.setState(update);
+    },
+    handleResize() {
+      this.calls.push("resize");
+      this.setState({ width: native.clientWidth, height: native.clientHeight });
+    },
+    forceUpdate() {
+      this.calls.push("render");
+      this.render();
+    },
+  };
+  selector.render();
+  win.ZoteroPane.tagSelector = selector;
+  return selector;
+}
+
+test("All tags render fresh widths when native PureComponent state is unchanged", () => {
+  const f = fixture(),
+    w = f.window(),
+    selector = nativeSelector(w);
+  assert.deepEqual(selector.renderedWidths, [0, 0, 0]);
+  const state = { ...selector.state };
+  f.api.setTagPaneMode(w, "native");
+  assert.equal(selector.renderCount, 1, "measurement waits for visible layout");
+  w.flushTimers();
+  assert.deepEqual(selector.state, state, "native dimensions did not change");
+  assert.deepEqual(selector.calls, ["invalidate", "resize", "render"]);
+  assert.ok(selector.renderedWidths.every((width) => width > 0));
+  assert.equal(selector.renderCount, 2);
+  f.api.syncTagPanes();
+  w.flushTimers();
+  assert.equal(
+    selector.renderCount,
+    2,
+    "already visible tags need no extra work",
+  );
+});
+
+test("deferred native remeasurement uses the current selector after a remount", () => {
+  const f = fixture(),
+    w = f.window(),
+    oldSelector = nativeSelector(w);
+  f.api.setTagPaneMode(w, "native");
+  const replacement = nativeSelector(w);
+  w.flushTimers();
+  assert.deepEqual(oldSelector.calls, []);
+  assert.equal(oldSelector.renderCount, 1);
+  assert.deepEqual(replacement.calls, ["invalidate", "resize", "render"]);
+});
+
+test("deferred native remeasurement skips hidden, removed, zero-sized and closed surfaces", () => {
+  for (const unavailable of [
+    "hidden",
+    "removed",
+    "width",
+    "height",
+    "closed",
+  ]) {
+    const f = fixture(),
+      w = f.window(),
+      selector = nativeSelector(w),
+      native = w.document.getElementById("zotero-tag-selector");
+    f.api.setTagPaneMode(w, "native");
+    if (unavailable === "hidden") f.api.setTagPaneMode(w, "tree");
+    if (unavailable === "removed") native.remove();
+    if (unavailable === "width") native.clientWidth = 0;
+    if (unavailable === "height") native.clientHeight = 0;
+    if (unavailable === "closed") w.closed = true;
+    w.flushTimers();
+    assert.deepEqual(selector.calls, [], unavailable);
+    assert.deepEqual(selector.renderedWidths, [0, 0, 0], unavailable);
+    assert.equal(w.timers.size, 0, "no polling for unavailable surfaces");
+  }
+});
+
+test("native selector hand-back remeasures on master disable and teardown", () => {
+  for (const handBack of ["disable", "uninstall"]) {
+    const f = fixture(),
+      w = f.window(),
+      selector = nativeSelector(w);
+    if (handBack === "disable") f.api.setTreeShown(w, false);
+    else f.api.uninstallTagTree(w);
+    w.flushTimers();
+    assert.equal(
+      w.document.getElementById("zotero-tag-selector").hidden,
+      false,
+    );
+    assert.deepEqual(
+      selector.calls,
+      ["invalidate", "resize", "render"],
+      handBack,
+    );
+    assert.ok(
+      selector.renderedWidths.every((width) => width > 0),
+      handBack,
+    );
+  }
+});
+
+test("native remeasurement tolerates missing selector methods", () => {
+  const f = fixture(),
+    w = f.window();
+  w.ZoteroPane.tagSelector = {};
+  f.api.setTagPaneMode(w, "native");
+  assert.doesNotThrow(() => w.flushTimers());
+});
 
 test("all separator choices are supported, including plus, tilde and angle brackets", () => {
   const f = fixture();

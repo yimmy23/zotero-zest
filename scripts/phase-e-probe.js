@@ -644,6 +644,7 @@ check(
 
 /* ---------- 6. tag tree keyboard contract ---------- */
 setPref("nestedTags.show", true);
+setPref("nestedTags.tab", "tree");
 await delay(2500);
 const body = doc.querySelector(".zest-tagtree-body");
 const rows = [...(body ? body.querySelectorAll(".zest-tagtree-row") : [])];
@@ -765,6 +766,22 @@ check(
     [...doc.querySelectorAll(".zest-tagtree-bar > *")].filter(
       (e) => win.getComputedStyle(e).display !== "none",
     ).length === 1,
+);
+
+// Native hidden DOM measurements can be zero. With unchanged dimensions,
+// clearing that cache alone does not repaint Zotero's PureComponent.
+setPref("nestedTags.tab", "tree");
+await delay(150);
+const nativeTagSelector = win.ZoteroPane.tagSelector;
+nativeTagSelector.handleUIPropertiesChange({});
+nativeTagSelector.forceUpdate();
+await delay(150);
+setPref("nestedTags.tab", "native");
+await delay(250);
+check(
+  "tagpane.nativeWidthsRecoverAfterHiddenRender",
+  nativeTagSelector.tagListRef.current.props.tags.length > 0 &&
+    nativeTagSelector.tagListRef.current.props.tags.every((t) => t.width > 0),
 );
 
 // a roving tabindex parks the inactive tab at -1, so Tab alone can never
