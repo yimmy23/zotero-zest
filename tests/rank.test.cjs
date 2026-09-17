@@ -3,12 +3,11 @@ const assert = require("node:assert/strict");
 const { setTimeout, clearTimeout, setImmediate } = require("node:timers");
 const { createHarness } = require("./helpers.cjs");
 
-function rankHarness({ records = {}, dataset, prefs = {}, catalog } = {}) {
+function rankHarness({ records = {}, dataset, prefs = {} } = {}) {
   const entries = new Map(Object.entries(records));
   const calls = [];
   const h = createHarness({
     mocks: {
-      ...(catalog ? { "./journalAliases.generated": catalog } : {}),
       "src/utils/prefs.ts": {
         getPref: (key) => prefs[key] ?? false,
         getNumPref: () => 30,
@@ -203,7 +202,7 @@ test("journal identities keep significant parenthetical words and dedupe alterna
   );
   assert.equal(
     n.journalLookupName("CA: A Cancer Journal for Clinicians"),
-    "CA-A CANCER JOURNAL FOR CLINICIANS",
+    "CA: A Cancer Journal for Clinicians",
   );
   assert.equal(
     n.journalLookupName("Unknown Journal: A Real Subtitle"),
@@ -367,41 +366,20 @@ const jcehTitle = "Journal of clinical and experimental hematopathology : JCEH";
 const jcehCanonical = "Journal of Clinical and Experimental Hematopathology";
 const jcehIDs = ["1346-4280", "1880-9952"];
 
-test("catalogue indexes reject ambiguous names and retain corroborated aliases", () => {
-  const h = rankHarness({
-    catalog: {
-      JOURNAL_ALIAS_CATALOG: [
-        ["Journal Alpha", ["Shared Abbr", "Alpha Abbr"], ["1234-5678"]],
-        ["JOURNAL ALPHA", ["Another Alpha Abbr"], ["1234-5678", "8765-4321"]],
-        ["Journal Beta", ["Shared Abbr"], ["1357-3039"]],
-        ["Externally Ambiguous", [], ["2468-1357"]],
-      ],
-      JOURNAL_ALIAS_AMBIGUITIES: ["Externally Ambiguous"],
-    },
-  });
+test("unverified abbreviations and acronym subtitles stay unmatched instead of inventing aliases", () => {
+  const h = rankHarness();
   const n = h.load("src/rank/normalize.ts");
-  for (const title of ["Shared Abbr", "Externally Ambiguous"]) {
-    assert.equal(n.journalCatalogIdentity(title), null);
+  for (const [title, full] of [
+    ["Front Oncol", "Frontiers in Oncology"],
+    ["J Thorac Oncol", "Journal of Thoracic Oncology"],
+    ["Example Journal: EJ", "Example Journal"],
+    ["Journal Alpha: Clinical Edition", "Journal Alpha"],
+  ]) {
+    assert.equal(n.journalCatalogIdentity(title), undefined);
     assert.equal(n.journalLookupName(title), title);
-    assert.equal(h.rank.journalKeyOf(item(title)).key, "");
-    assert.equal(h.rank.journalKeyOf(item(title, "9999-9999")).key, "");
+    assert.notEqual(n.normalizeJournal(title), n.normalizeJournal(full));
+    assert.equal(h.rank.getJournalRecord(item(title)), undefined);
   }
-  assert.equal(
-    h.rank.journalKeyOf(item("Shared Abbr", "1234-5678")).key,
-    "issn:1234-5678",
-  );
-  assert.equal(
-    h.rank.journalKeyOf(item("Externally Ambiguous", "2468-1357")).key,
-    "issn:2468-1357",
-  );
-  for (const title of ["Alpha Abbr", "Another Alpha Abbr"]) {
-    assert.equal(n.journalLookupName(title), "Journal Alpha");
-    assert.deepEqual(Array.from(n.journalCatalogIdentity(title).issns), [
-      "1234-5678",
-      "8765-4321",
-    ]);
-  }
-  assert.equal(n.journalCatalogIdentity("An Unknown Title"), undefined);
 });
 
 test("verified JCEH titles and NLM abbreviation resolve conservatively", () => {

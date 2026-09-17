@@ -248,6 +248,32 @@ test("JCEH local matching accepts verified ISSNs and abbreviations but retains j
   assert.equal(h.requests.length, 0);
 });
 
+test("verified NEJM aliases retain correct print and electronic identifiers", async () => {
+  const h = await fixture({
+    rows: [
+      {
+        name: "NEW ENGLAND JOURNAL OF MEDICINE",
+        issn: "0028-4793",
+        fields: { sciif: "84.5" },
+      },
+    ],
+  });
+  for (const title of [
+    "New England Journal of Medicine",
+    "The New England journal of medicine",
+    "N. Engl. J. Med.",
+  ]) {
+    for (const issn of ["", "0028-4793", "1533-4406"]) {
+      assert.equal(
+        h.rank.getJournalRecord(paper(title, issn))?.values[0].value,
+        "84.5",
+      );
+    }
+  }
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.writes.length, 0);
+});
+
 test("known journal titles with contradictory ISSNs cannot read another journal's local or cached metrics", async () => {
   const wrongID = "1556-0864";
   const wrongRecord = cached([metric("sciif", "23.3")], {
@@ -273,7 +299,6 @@ test("known journal titles with contradictory ISSNs cannot read another journal'
     jcehTitle,
     "J Clin Exp Hematop",
     "The New England journal of medicine",
-    "MEDICINE",
   ]) {
     const conflict = paper(title, wrongID);
     assert.equal(h.rank.journalKeyOf(conflict).key, "");
@@ -289,7 +314,7 @@ test("known journal titles with contradictory ISSNs cannot read another journal'
   assert.equal(h.entries.get(wrongRecord.key), wrongRecord);
 });
 
-test("authoritative NLM abbreviations and qualified titles read canonical local rows without an ISSN", async () => {
+test("unverified abbreviations and qualified titles stay unmatched until a matching ISSN is supplied", async () => {
   const examples = [
     ["Front Oncol", "Frontiers in Oncology", "2234-943X"],
     ["J Thorac Oncol", "Journal of Thoracic Oncology", "1556-0864"],
@@ -321,10 +346,21 @@ test("authoritative NLM abbreviations and qualified titles read canonical local 
       fields: { sciif: String(index + 1) },
     })),
   });
-  for (const [index, [name]] of examples.entries()) {
+  for (const [index, [name, canonical, issn]] of examples.entries()) {
     const original = paper(name, "");
     for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
-      assert.equal(read(original)?.values[0].value, String(index + 1), name);
+      assert.equal(read(original), undefined, name);
+      assert.equal(
+        read(paper(name, issn))?.values[0].value,
+        String(index + 1),
+        name,
+      );
+      assert.equal(
+        read(paper(canonical, ""))?.values[0].value,
+        String(index + 1),
+        canonical,
+      );
+      assert.equal(read(paper(name, "9999-9999")), undefined, name);
     }
     assert.equal(original.getField("publicationTitle"), name);
   }
@@ -333,59 +369,45 @@ test("authoritative NLM abbreviations and qualified titles read canonical local 
   assert.equal(h.timers.size, 0);
 });
 
-test("a verified compatible abbreviation disambiguates a bare title without trusting old ambiguous cache values", async () => {
-  const legacy = cached(
-    [metric("sciif", "99"), metric("custom", "unverified")],
-    {
-      key: "name:medicine",
-      name: "Medicine",
-      issn: undefined,
-      issns: undefined,
-      requestedISSNs: [],
-    },
-  );
+test("duplicate dataset names remain ambiguous despite an unverified item abbreviation", async () => {
   const h = await fixture({
-    rows: [{ name: "MEDICINE", issn: "0025-7974", fields: { sciif: "2" } }],
-    records: [legacy],
+    rows: [
+      { name: "MEDICINE", issn: "0025-7974", fields: { sciif: "2" } },
+      { name: "Medicine", issn: "1357-3039", fields: { sciif: "3" } },
+    ],
   });
-  const compatible = paper("Medicine", "", 1, "Medicine (Baltimore)");
-  for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
-    assert.deepEqual(
-      copy(read(compatible)?.values.map((v) => [v.field, v.value])),
-      [["sciif", "2"]],
-    );
-  }
-  const refreshed = await h.rank.lookupJournal(compatible);
-  assert.equal(refreshed.values[0].value, "2");
-  assert.ok(refreshed.issns.includes("0025-7974"));
-  await h.replaceRows([]);
-  assert.equal(h.rank.getJournalRecord(compatible).values[0].value, "2");
   for (const abbreviation of [
     "",
+    "Medicine (Baltimore)",
     "Medicine (Abingdon)",
     "J Thorac Oncol",
     "Unknown",
-  ])
-    assert.equal(
-      h.rank.getJournalRecord(paper("Medicine", "", 1, abbreviation)),
-      undefined,
-    );
-  assert.equal(
-    h.rank.getJournalRecord(
-      paper("Medicine", "1556-0864", 1, "Medicine (Baltimore)"),
-    ),
-    undefined,
-  );
+  ]) {
+    for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord]) {
+      assert.equal(read(paper("Medicine", "", 1, abbreviation)), undefined);
+      assert.equal(
+        read(paper("Medicine", "0025-7974", 1, abbreviation))?.values[0].value,
+        "2",
+      );
+      assert.equal(
+        read(paper("Medicine", "1357-3039", 1, abbreviation))?.values[0].value,
+        "3",
+      );
+    }
+  }
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.timers.size, 0);
 });
 
-test("lossy name keys cannot join a catalogued title to historical local or cache records", async () => {
+test("verified JCEH titles reject conflicting identifiers and unverified local or cache names", async () => {
   for (const [name, issn] of [
-    ["The Clinical psychologist", "0009-9244"],
-    ["The Clinical psychologist", ""],
-    ["Clinical psychologist (Australian Psychological Society)", "0009-9244"],
+    [`The ${jcehCanonical}`, "1556-0864"],
+    [`The ${jcehCanonical}`, ""],
+    [jcehTitle, "1556-0864"],
   ]) {
     const record = cached([metric("sciif", "99")], {
-      key: "name:clinical psychologist",
+      key: "name:journal of clinical and experimental hematopathology",
       name,
       issn,
       issns: issn ? [issn] : undefined,
@@ -395,17 +417,14 @@ test("lossy name keys cannot join a catalogued title to historical local or cach
       rows: [{ name: record.name, issn, fields: { sciif: "99" } }],
       records: [record],
     });
-    const current = paper(
-      "Clinical psychologist (Australian Psychological Society)",
-      "",
-    );
+    const current = paper(jcehTitle, "");
     for (const read of [h.rank.getJournalRecord, h.rank.requestJournalRecord])
       assert.equal(read(current), undefined);
     assert.equal((await h.rank.lookupJournal(current)).values.length, 0);
     await h.replaceRows([
       {
-        name: "CLINICAL PSYCHOLOGIST",
-        issn: "1328-4207",
+        name: jcehCanonical,
+        issn: jcehIDs[0],
         fields: { sciif: "2" },
       },
     ]);
@@ -414,10 +433,9 @@ test("lossy name keys cannot join a catalogued title to historical local or cach
 });
 
 test("official-journal boilerplate cannot prove that a historical name-only source is a current catalogue identity", async () => {
-  const name =
-    "Journal of immunotherapy : official journal of the Society for Biological Therapy";
+  const name = `${jcehCanonical}: Official Journal of an Unverified Historical Society`;
   const record = cached([metric("sciif", "99")], {
-    key: "name:journal of immunotherapy",
+    key: "name:journal of clinical and experimental hematopathology",
     name,
     issn: undefined,
     issns: undefined,
@@ -427,17 +445,14 @@ test("official-journal boilerplate cannot prove that a historical name-only sour
     rows: [{ name, fields: { sciif: "99" } }],
     records: [record],
   });
-  const current = paper(
-    "Journal of immunotherapy (Hagerstown, Md. : 1997)",
-    "",
-  );
+  const current = paper(jcehTitle, "");
   assert.equal(h.rank.getJournalRecord(current), undefined);
   assert.equal(h.rank.requestJournalRecord(current), undefined);
   assert.equal((await h.rank.lookupJournal(current)).values.length, 0);
   await h.replaceRows([
     {
-      name: "JOURNAL OF IMMUNOTHERAPY",
-      issn: "1524-9557",
+      name: jcehCanonical,
+      issn: jcehIDs[0],
       fields: { sciif: "3" },
     },
   ]);
@@ -446,7 +461,7 @@ test("official-journal boilerplate cannot prove that a historical name-only sour
   assert.equal(h.rank.requestJournalRecord(historical), undefined);
   assert.equal(await h.rank.lookupJournal(historical), null);
   assert.equal(
-    h.rank.getJournalRecord(paper(name, "1524-9557")).values[0].value,
+    h.rank.getJournalRecord(paper(name, jcehIDs[0])).values[0].value,
     "3",
   );
 });

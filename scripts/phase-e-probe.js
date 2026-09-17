@@ -1321,15 +1321,15 @@ check(
     dev.rank.journalKeyOf(conflictingJournal).key === "" &&
       !dev.rank.getJournalRecord(conflictingJournal),
   );
-  const historicalJournal = new Zotero.Item("journalArticle");
-  historicalJournal.setField(
+  const unverifiedJournal = new Zotero.Item("journalArticle");
+  unverifiedJournal.setField(
     "publicationTitle",
-    "Journal of immunotherapy : official journal of the Society for Biological Therapy",
+    "Journal of Clinical and Experimental Hematopathology: Official Journal of an Unverified Historical Society",
   );
   check(
-    "rank.historicalDescriptorDoesNotProveCurrentIdentity",
-    dev.rank.journalKeyOf(historicalJournal).key === "" &&
-      !dev.rank.getJournalRecord(historicalJournal),
+    "rank.unverifiedDescriptorDoesNotProveCurrentIdentity",
+    dev.rank.journalKeyOf(unverifiedJournal).key === "" &&
+      !dev.rank.getJournalRecord(unverifiedJournal),
   );
 
   const baltimore = await mk({
