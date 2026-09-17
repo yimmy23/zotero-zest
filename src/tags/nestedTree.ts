@@ -471,24 +471,35 @@ export function toggleTagTree(win: Window) {
  *
  * `handleUIPropertiesChange` is Zotero's own cache-clearing path (it is what
  * runs when the UI font or pixel density changes), so we reuse it instead of
- * reaching into the width maps.
+ * reaching into the width maps. The selector is a React PureComponent: if
+ * its size and UI properties have not changed, clearing those maps does not
+ * trigger a render. Force that render so the visible tags get fresh widths.
  */
 function remeasureNativeTags(win: Window) {
-  const selector = (win as any).ZoteroPane?.tagSelector;
-  if (!selector) return;
   // one tick: the attribute is off, but let the pane get its layout back
   // before Zotero reads clientWidth out of it
   win.setTimeout(() => {
     try {
+      if (win.closed) return;
       // A new copy may have taken over and hidden the native selector again.
       const native = win.document.getElementById(
         "zotero-tag-selector",
       ) as HTMLElement | null;
-      if (native?.hidden) return;
+      if (
+        !native?.isConnected ||
+        native.hidden ||
+        native.clientWidth <= 0 ||
+        native.clientHeight <= 0
+      )
+        return;
+      // Zotero can remount its React selector between scheduling and layout.
+      const selector = (win as any).ZoteroPane?.tagSelector;
+      if (!selector) return;
       if (typeof selector.handleUIPropertiesChange === "function") {
         selector.handleUIPropertiesChange({});
       }
       if (typeof selector.handleResize === "function") selector.handleResize();
+      if (typeof selector.forceUpdate === "function") selector.forceUpdate();
     } catch (e) {
       ztoolkit.log("[tags] native tag re-measure failed", e);
     }

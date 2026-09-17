@@ -36,6 +36,8 @@ try {
 
 // ---------- 1. nested tag tree ----------
 dev.tagTreeUI.setTreeShown(win, true);
+dev.tagTreeUI.setTagPaneMode(win, "tree");
+dev.tagTreeUI.clearSelection(win);
 await dev.tagTreeUI.refreshTagTree(win);
 await delay(600);
 const treeRoot = doc.getElementById("zest-tag-tree");
@@ -51,20 +53,34 @@ check("tagtree.rows", rootRows.length > 0, rootRows.join(", "));
 // filter provably narrows the list whatever collection happens to be selected
 const before = win.ZoteroPane.itemsView.rowCount;
 const rowsNow = win.ZoteroPane.itemsView.getSortedItems();
-// open every branch first so leaf rows exist
-for (const tw of doc.querySelectorAll(".zest-tagtree-twisty")) {
-  tw.dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+// Only branches have disclosure controls. Clicking a leaf's spacer bubbles
+// to the row and selects it, introducing unrelated AND filters in this probe.
+for (const row of doc.querySelectorAll(
+  '.zest-tagtree-row[aria-expanded="false"]',
+)) {
+  const path = row.getAttribute("data-tag");
+  const live = [...doc.querySelectorAll(".zest-tagtree-row")].find(
+    (r) => r.getAttribute("data-tag") === path,
+  );
+  live?.querySelector(".zest-tagtree-twisty")?.click();
   await delay(120);
 }
 const treeRows = [...doc.querySelectorAll(".zest-tagtree-row")];
 const itemTags = rowsNow.map((i) => dev.tagScope.tagsOfItem(i, true));
+const matcher = dev.tagMatch.parseTagRule(
+  Zotero.Prefs.get("extensions.zotero.zest.textTags.match", true),
+);
+const delimiter = dev.tagTreeUI.linkSymbol();
 let picked = null;
 for (const row of treeRows) {
   const path = row.getAttribute("data-tag") || "";
   if (!path) continue;
-  // the tree strips the match prefix ("#"), so compare on the suffix
+  // Compare displayed paths and include descendants at a separator boundary.
   const n = itemTags.filter((tags) =>
-    tags.some((t) => t === path || t.endsWith(path) || t.startsWith(path)),
+    tags.some((t) => {
+      const display = matcher.test(t);
+      return display === path || display?.startsWith(path + delimiter);
+    }),
   ).length;
   if (n > 0 && n < before) {
     picked = { row, path, n };
