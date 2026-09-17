@@ -39,7 +39,9 @@ function rankHarness({ records = {}, dataset, prefs = {} } = {}) {
       "src/rank/sources/openalex.ts": {},
       "src/rank/sources/localDataset.ts": {
         datasetsLoaded: async () => {},
-        lookupDataset: dataset ?? (() => []),
+        lookupDatasetRecord: (...args) => ({
+          values: dataset?.(...args) ?? [],
+        }),
       },
     },
     globals: { Zotero: { Promise: { delay: async () => {} } } },
@@ -50,6 +52,83 @@ const item = (publicationTitle, ISSN = "") => ({
   getField: (field) => ({ publicationTitle, ISSN })[field] || "",
 });
 const metric = (value) => [{ field: "sci", value, source: "dataset" }];
+
+test("rank cache keeps validated JCR provenance but cannot infer it from quartiles or lookup time", () => {
+  const jcr = {
+    year: 2024,
+    impactFactor: 8.1,
+    source: "dataset",
+    categories: [{ name: "Oncology", percentile: 0 }],
+  };
+  for (const metadata of [
+    jcr,
+    { ...jcr, source: "easyscholar" },
+    { ...jcr, impactFactor: 9 },
+    { ...jcr, year: undefined },
+    { ...jcr, categories: [] },
+    undefined,
+  ]) {
+    const rec = {
+      key: "issn:1234-5678",
+      name: "Example",
+      issn: "1234-5678",
+      values: [
+        { field: "sciif", value: "8.1", source: "dataset" },
+        { field: "sci", value: "Q1", source: "easyscholar" },
+      ],
+      updated: Date.now(),
+      jcr: metadata,
+    };
+    const h = rankHarness({ records: { [rec.key]: rec } });
+    const cached = h.rank.getJournalRecord(item("Example", "1234-5678"));
+    assert.equal(Boolean(cached.jcr), metadata === jcr);
+    if (cached.jcr) assert.equal(cached.jcr.categories[0].percentile, 0);
+    assert.equal(cached.values.length, 2);
+  }
+});
+
+test("lookups persist JCR together with the local JIF and preserve it on cache reads", async () => {
+  const h = rankHarness();
+  const jcr = {
+    year: 2024,
+    impactFactor: 0,
+    source: "dataset",
+    categories: [{ name: "Oncology", percentile: 0 }],
+  };
+  h.mocks["src/rank/sources/localDataset.ts"].lookupDatasetRecord = () => ({
+    values: [{ field: "sciif", value: "0", source: "dataset" }],
+    jcr,
+  });
+  const paper = item("Example", "1234-5678");
+  const rec = await h.rank.lookupJournal(paper);
+  assert.equal(rec.jcr.year, 2024);
+  assert.equal(rec.jcr.impactFactor, 0);
+  assert.equal(h.rank.getJournalRecord(paper).jcr.categories[0].percentile, 0);
+});
+
+test("legacy source defaults cannot establish JCR provenance", () => {
+  const key = "issn:1234-5678";
+  const h = rankHarness({
+    records: {
+      [key]: {
+        key,
+        name: "Example",
+        issn: "1234-5678",
+        updated: Date.now(),
+        values: [{ field: "sciif", value: "8.1", source: "invalid" }],
+        jcr: {
+          year: 2024,
+          impactFactor: 8.1,
+          source: "dataset",
+          categories: [{ name: "Oncology", percentile: 90 }],
+        },
+      },
+    },
+  });
+  const rec = h.rank.getJournalRecord(item("Example", "1234-5678"));
+  assert.equal(rec.values[0].source, "dataset");
+  assert.equal(rec.jcr, undefined);
+});
 
 test("rank cache repairs stale numeric grades without losing explicit custom grades", () => {
   const key = "issn:1234-5678";
@@ -91,7 +170,8 @@ test("same base title with different ISSNs never shares ranks, even after a lega
   const a = item("Medicine (Baltimore)", "0025-7974");
   const b = item("Medicine (Abingdon)", "1357-3039");
   assert.equal(h.rank.getJournalRecord(a).values[0].value, "Q1");
-  assert.equal(h.rank.getJournalRecord(b), undefined);
+  // Current local data is visible without a first network/cache population.
+  assert.equal(h.rank.getJournalRecord(b).values[0].value, "Q4");
   await h.rank.lookupJournal(b);
   assert.equal(h.rank.getJournalRecord(b).issn, "1357-3039");
   assert.equal(h.rank.getJournalRecord(b).values[0].value, "Q4");
@@ -694,13 +774,9 @@ test("upgraded misses bypass old HTTP negative caches and full source records al
 
 test("dual-ISSN local hits and misses reuse the exact input cache with OpenAlex disabled", async () => {
   for (const hit of [false, true]) {
-    let lookups = 0;
     const h = rankHarness({
       prefs: { "rank.autoFetch": true },
-      dataset: () => {
-        lookups++;
-        return hit ? metric("Q2") : [];
-      },
+      dataset: () => (hit ? metric("Q2") : []),
     });
     const jobs = [];
     h.mocks["src/utils/timers.ts"].setTimeout = (fn) => {
@@ -721,7 +797,7 @@ test("dual-ISSN local hits and misses reuse the exact input cache with OpenAlex 
       h.rank.journalRequestKeyOf(reordered),
     );
     await h.rank.lookupJournal(reordered);
-    assert.equal(lookups, 1);
+    assert.equal(h.calls.length, 0);
     assert.equal(jobs.length, 0);
     assert.equal(h.entries.has("issn:8765-4321"), false);
     h.rank.stopRankService();

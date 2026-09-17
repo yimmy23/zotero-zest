@@ -24,6 +24,7 @@ import {
   venueColumn,
 } from "./pubTags";
 import { startRankService, stopRankService } from "../rank";
+import { refreshInfoSections } from "../panes/infoSection";
 import { loadDatasets } from "../rank/sources/localDataset";
 import { startAnnotationWatch, stopAnnotationWatch } from "../annots/density";
 import {
@@ -177,7 +178,13 @@ export function registerAllColumns() {
   // journal ranks resolve in the background; repaint the rows that were
   // waiting, and re-sort once if the tree is sorted by one of these columns
   startRankService((ids) => refreshItems(ids, { resort: true }));
-  void loadDatasets();
+  void loadDatasets()
+    .then(() => {
+      if (!addon.data.alive) return;
+      refreshAllRows();
+      refreshInfoSections();
+    })
+    .catch((error) => ztoolkit.log("[rank] dataset load failed", error));
   // annotation summaries are computed lazily; when a batch finishes (or the
   // user annotates something) repaint exactly those rows
   startAnnotationWatch((ids) => refreshItems(ids, { resort: true }));
@@ -246,10 +253,7 @@ export function registerAllColumns() {
     "rank.defaultColor",
     "rank.textColor",
     "rank.opacity",
-    "if.max",
     "if.style",
-    "if.info",
-    "if.color",
     // decides which citation counts are drawn dimmed
     "cite.staleDays",
     "annots.style",

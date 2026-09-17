@@ -216,6 +216,9 @@ column-pubtags = Publication Tags
 column-if = IF
 column-venue = Venue
 if-cell-tip = { $field } = { $value } (source: { $source })
+if-jcr-detail = JCR { $year } · { $category }: P{ $percentile } · Rank: { $rank }
+if-percentile-missing = JCR percentile not provided; quartiles cannot determine the exact percentile.
+if-percentile-not-applicable = This metric is not the standard JIF; JCR JIF percentiles do not apply.
 rank-badge-tip = { $value } (field: { $field }; source: { $source })
 rank-category-medicine = Medicine
 rank-category-medicine-short = Med.
@@ -387,7 +390,7 @@ info-affiliations-fetch = Fetch affiliations
 info-affiliations-fetch-tip = Send this item's DOI to OpenAlex to look up author affiliations
 info-affiliations-loading = Fetching…
 info-affiliations-unavailable = No affiliations available yet. Try again later.
-info-venue = Venue
+info-venue = Source
 info-citation-key = Citation key
 info-citation-key-copy = Copy citation key
 info-citation-key-copied = Citation key copied
@@ -626,7 +629,7 @@ menu-layout =
     .label = Apply the Zest column layout
 menu-rank-fetch =
     .label = Look journal data up online (ranks / impact factor)
-rank-offline-tip = Publication tags and Impact factor need Zest to look journals up online. Turn it on from the Zest toolbar button ▸ "Look journal data up online". Lookups are per journal, send only the journal name, ISSN or DOI, and are cached locally. The Chinese ranking systems additionally need an easyScholar key, set in Settings.
+rank-offline-tip = No local journal data is available for this item. Download ShowJCR or import a table in Zest Settings → Local Journal Datasets, or enable online journal lookups from the toolbar menu.
 rank-empty-tip = No ranking data found for this journal yet. Right-click the cell to look it up again; the Chinese ranking systems need an easyScholar key.
 
 # ---- author menu ----
@@ -666,3 +669,17 @@ graph-authors-stopped = Author identity lookup stopped: { $updated } updated · 
 
 info-citation-key-empty = No citation key
 info-citation-key-empty-hint = Add a citation key in Zotero’s item information, or manage it with Better BibTeX.
+
+if-jcr-showjcr-derived = ShowJCR · Percentiles calculated from category ranks
+pref-showjcr-title = ShowJCR data
+pref-showjcr-loading = Downloading and validating ShowJCR data…
+pref-showjcr-failed = Update failed. Previous data has been retained.
+pref-showjcr-summary = { $name } · { $rows } journals
+
+info-jcr-heading = JCR { $year } · { $count ->
+    [one] 1 category
+   *[other] { $count } categories
+    }
+info-jcr-dataset = Local dataset
+info-jcr-rank = Rank
+info-jcr-percentile = Percentile

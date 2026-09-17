@@ -131,17 +131,12 @@ pref-key-hint = The key is stored in the login manager, not in your synced prefe
 pref-rank-clear =
     .label = Clear ranking cache
 pref-if-field = IF field
-pref-if-max = Top of the scale (darkest heat step / full bar)
 pref-if-style = Show as
-pref-if-style-heat =
-    .label = Heat — a wash behind the number, darker for higher IF (steps at 1/15, 1/5, 1/2 and the top of the scale)
-pref-if-style-bar =
-    .label = Bar — a linear bar up to the top of the scale
+pref-if-style-percentile =
+    .label = IF above JCR percentile
 pref-if-style-none =
     .label = Number only
-pref-if-info =
-    .label = Show the IF value as text
-pref-if-color = Colour (Auto = the accent)
+pref-if-percentile-hint = The marker shows the JCR percentile in the same year and category; the top 10% gets an extra outline. Multiple categories show a range. Without verified percentile data, only the value is shown. Colours follow the Zest accent.
 
 pref-group-datasets = Local Journal Datasets
 pref-dataset-import =
@@ -293,3 +288,7 @@ pref-accent-apply =
 pref-accent-reset =
     .label = Restore default green
 pref-accent-apply-hint = The heat map and the #tag badges keep their own colours below; this button copies the accent onto both.
+
+pref-showjcr-download =
+    .label = Download / update ShowJCR
+pref-showjcr-hint = Source: ShowJCR (JCR 2025). Percentiles are calculated from category ranks. Download for offline use; updates replace the existing ShowJCR table.

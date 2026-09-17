@@ -6,7 +6,9 @@ import {
   type DatasetMeta,
 } from "../../core/config";
 import { normalizeJournal, allISSNs } from "../normalize";
-import type { RankValue } from "../types";
+import { parseRankNumber, type JCRMetadata, type RankValue } from "../types";
+import { matchingJCRMetadata, sanitizeJCRMetadata } from "../impactFactor";
+import { parseShowJCRRows } from "./showjcr";
 
 /**
  * Local rank datasets — a user's own journal list (their institution's
@@ -22,12 +24,23 @@ import type { RankValue } from "../types";
  *   JSON  { "v": 1, "name": "...", "rows": [ {name?, issn?, ...fields} ] }
  *         or a bare array of such rows
  *   CSV   a header row with `name` and/or `issn`, every other column a field
+ *
+ * Zest's optional JCR schema (not an arbitrary raw JCR-export parser):
+ *   JSON row.jcr = {year: 2024, impactFactor: 8.1,
+ *                   categories: [{name: "Oncology", percentile: 91.2, rank?: "20/322"}]}
+ *   CSV  sciif,jcrYear,jcrCategory,jifPercentile[,jcrRank]
+ * Each journal occupies one row; JSON categories preserve multiple subjects.
+ * The metric year and supplied percentile are required, never inferred from Q.
+ * Scalar `jcr` remains an ordinary legacy rank field. Flat JCR columns opt in
+ * only as the complete sciif/jcrYear/jcrCategory/jifPercentile column group;
+ * without that group they remain ordinary custom fields (including jcrRank).
  */
 
 export interface DatasetRow {
   name?: string;
   issn?: string;
   fields: Record<string, string>;
+  jcr?: JCRMetadata;
 }
 
 interface LoadedDataset {
@@ -37,6 +50,100 @@ interface LoadedDataset {
 }
 
 const loaded = new Map<string, LoadedDataset>();
+
+interface DatasetSession {
+  ready: Promise<void>;
+  settled: Promise<void>;
+  release: () => void;
+}
+
+// Plugin copies overlap during upgrades. Keep the handoff on the host, rather
+// than either copy's addon object, so incoming config reads wait for the old
+// copy's last dataset transaction AND final config flush.
+const SESSION_KEY = "__zestDatasetPersistence";
+let session: DatasetSession | undefined;
+let datasetStopped = false;
+let datasetEpoch = 0;
+let datasetOperation: Promise<unknown> | undefined;
+let finishingSession: Promise<void> | undefined;
+
+export async function startDatasetSession(): Promise<void> {
+  if (finishingSession) await finishingSession;
+  if (!addon.data.alive) return;
+  if (session) return session.ready;
+  finishingSession = undefined;
+  const host = Zotero as typeof Zotero & {
+    [SESSION_KEY]?: DatasetSession;
+  };
+  const ready = host[SESSION_KEY]?.settled ?? Promise.resolve();
+  let release!: () => void;
+  const finished = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  session = { ready, settled: ready.then(() => finished), release };
+  host[SESSION_KEY] = session;
+  datasetStopped = !addon.data.alive;
+  await ready;
+}
+
+/** Cancel queued work; a transaction already touching disk must finish safely. */
+export async function stopDatasetOperations(): Promise<void> {
+  datasetStopped = true;
+  datasetEpoch++;
+  await datasetOperation?.catch(() => undefined);
+}
+
+/** The incoming copy may read configuration only after this final flush. */
+export function finishDatasetSession(
+  configReady?: Promise<unknown>,
+): Promise<void> {
+  // Both application and plugin cleanup can reach this entry point. Once the
+  // lease is released, this copy must never flush its old config again.
+  if (finishingSession) return finishingSession;
+  const current = session;
+  finishingSession = (async () => {
+    try {
+      await stopDatasetOperations();
+      await current?.ready;
+      // init() can still be reading or recovering a damaged config after the
+      // hook's bounded startup wait. That recovery may rename a disk file, so
+      // it belongs inside the same handoff as writes and the final flush.
+      await configReady?.catch((error) =>
+        ztoolkit.log("[rank] configuration initialization failed", error),
+      );
+      await zestConfig.shutdown();
+    } finally {
+      current?.release();
+      const host = Zotero as typeof Zotero & {
+        [SESSION_KEY]?: DatasetSession;
+      };
+      if (current && host[SESSION_KEY] === current) delete host[SESSION_KEY];
+      if (session === current) session = undefined;
+    }
+  })();
+  return finishingSession;
+}
+
+function queueDatasetOperation<T>(operation: () => Promise<T>): Promise<T> {
+  if (datasetStopped || !addon.data.alive)
+    return Promise.reject(new Error("Dataset operation cancelled"));
+  const epoch = datasetEpoch;
+  const before = Promise.all([
+    datasetOperation?.catch(() => undefined),
+    session?.ready,
+  ]);
+  const next = before
+    .then(() => {
+      if (datasetStopped || epoch !== datasetEpoch || !addon.data.alive)
+        throw new Error("Dataset operation cancelled");
+      return operation();
+    })
+    .finally(() => {
+      if (datasetOperation === next) datasetOperation = undefined;
+    });
+  datasetOperation = next;
+  return next;
+}
 
 function dirPath(): string {
   return PathUtils.join(
@@ -109,7 +216,8 @@ function readStoredRows(raw: string): DatasetRow[] {
     const name = typeof r.name === "string" ? r.name : undefined;
     const issn = [...identifiers].join(", ") || undefined;
     if (!name && !issn) continue;
-    out.push({ name, issn, fields });
+    const jcr = localJCRMetadata(r.jcr, fields);
+    out.push({ name, issn, fields, ...(jcr ? { jcr } : {}) });
   }
   return out;
 }
@@ -117,7 +225,10 @@ function readStoredRows(raw: string): DatasetRow[] {
 function index(id: string, rows: DatasetRow[]) {
   const byName = new Map<string, DatasetRow | null>();
   const byISSN = new Map<string, DatasetRow>();
-  for (const row of rows) {
+  // Index copies: duplicate records must not silently select category data by
+  // file order, and marking them ambiguous must not mutate the imported file.
+  for (const storedRow of rows) {
+    const row = { ...storedRow };
     if (row.name) {
       const key = normalizeJournal(row.name);
       if (key && !byName.has(key)) byName.set(key, row);
@@ -127,6 +238,10 @@ function index(id: string, rows: DatasetRow[]) {
         // ISSN. Never let file order decide which journal's metric is shown.
         const ids = allISSNs(row.issn);
         const previousIDs = allISSNs(previous?.issn);
+        if (previous && previousIDs.some((id) => ids.includes(id))) {
+          previous.jcr = undefined;
+          row.jcr = undefined;
+        }
         if (
           !previous ||
           !ids.length ||
@@ -138,7 +253,12 @@ function index(id: string, rows: DatasetRow[]) {
     }
     if (row.issn) {
       for (const key of allISSNs(row.issn)) {
-        if (!byISSN.has(key)) byISSN.set(key, row);
+        const previous = byISSN.get(key);
+        if (!previous) byISSN.set(key, row);
+        else {
+          previous.jcr = undefined;
+          row.jcr = undefined;
+        }
       }
     }
   }
@@ -152,8 +272,18 @@ export function lookupDataset(
   /** Aliases already tied together by a journal catalogue or source record. */
   verifiedAliases: string[] = [],
 ): RankValue[] {
+  return lookupDatasetRecord(normalizedName, issn, verifiedAliases).values;
+}
+
+/** Keep provenance coupled to the row that actually supplies standard JIF. */
+export function lookupDatasetRecord(
+  normalizedName: string,
+  issn?: string,
+  verifiedAliases: string[] = [],
+): { values: RankValue[]; jcr?: JCRMetadata } {
   const out: RankValue[] = [];
   const seen = new Set<string>();
+  let jcr: JCRMetadata | undefined;
   for (const ds of loaded.values()) {
     const required = allISSNs(issn);
     const identifiers = [...new Set([...required, ...verifiedAliases])];
@@ -181,9 +311,10 @@ export function lookupDataset(
       if (!value || seen.has(field.toLowerCase())) continue;
       seen.add(field.toLowerCase());
       out.push({ field, value: String(value), source: "dataset" });
+      if (field.toLowerCase() === "sciif") jcr = row.jcr;
     }
   }
-  return out;
+  return { values: out, ...(jcr ? { jcr } : {}) };
 }
 
 export interface ParsedDataset {
@@ -211,6 +342,31 @@ const ISSN_KEYS = [
   "onlineissn",
   "国际标准刊号",
 ];
+const JCR_KEYS = new Set([
+  "jcryear",
+  "jcrcategory",
+  "jifpercentile",
+  "jcrrank",
+]);
+
+/** Local files cannot claim that their independent data came from the API. */
+function localJCRMetadata(
+  raw: unknown,
+  fields: Record<string, string>,
+): JCRMetadata | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const candidate = raw as Record<string, unknown>;
+  if (candidate.source !== undefined && candidate.source !== "dataset")
+    return undefined;
+  return matchingJCRMetadata(
+    sanitizeJCRMetadata({ ...candidate, source: "dataset" }),
+    Object.entries(fields).map(([field, value]) => ({
+      field,
+      value,
+      source: "dataset",
+    })),
+  );
+}
 
 function isISSNKey(key: string) {
   return ISSN_KEYS.includes(
@@ -230,17 +386,35 @@ export function parseDataset(
 
 function rowFrom(obj: Record<string, unknown>): DatasetRow | null {
   const fields: Record<string, string> = {};
+  const metadata: Record<string, unknown> = {};
+  const keys = new Set(Object.keys(obj).map((key) => key.trim().toLowerCase()));
+  const hasFlatJCRSchema = [
+    "sciif",
+    "jcryear",
+    "jcrcategory",
+    "jifpercentile",
+  ].every((key) => keys.has(key));
   let name: string | undefined;
   const identifiers = new Set<string>();
   for (const [rawKey, rawValue] of Object.entries(obj)) {
     const key = String(rawKey).trim();
     if (!key) continue;
+    const lower = key.toLowerCase();
+    if (
+      (lower === "jcr" &&
+        rawValue !== null &&
+        typeof rawValue === "object" &&
+        !Array.isArray(rawValue)) ||
+      (hasFlatJCRSchema && JCR_KEYS.has(lower))
+    ) {
+      metadata[lower] = rawValue;
+      continue;
+    }
     const value =
       rawValue === null || rawValue === undefined
         ? ""
         : String(rawValue).trim();
     if (!value) continue;
-    const lower = key.toLowerCase();
     if (!name && NAME_KEYS.includes(lower)) {
       name = value;
       continue;
@@ -253,7 +427,26 @@ function rowFrom(obj: Record<string, unknown>): DatasetRow | null {
   }
   const issn = [...identifiers].join(", ") || undefined;
   if (!name && !issn) return null;
-  return { name, issn, fields };
+  const sciif = Object.entries(fields).find(
+    ([field]) => field.toLowerCase() === "sciif",
+  );
+  const jcr = localJCRMetadata(
+    metadata.jcr ?? {
+      year: /^\d{4}$/.test(String(metadata.jcryear).trim())
+        ? Number(metadata.jcryear)
+        : undefined,
+      impactFactor: sciif ? parseRankNumber(sciif[1]) : undefined,
+      categories: [
+        {
+          name: metadata.jcrcategory,
+          percentile: metadata.jifpercentile,
+          ...(metadata.jcrrank ? { rank: metadata.jcrrank } : {}),
+        },
+      ],
+    },
+    fields,
+  );
+  return { name, issn, fields, ...(jcr ? { jcr } : {}) };
 }
 
 function parseJsonDataset(text: string): ParsedDataset {
@@ -319,6 +512,14 @@ export function parseCsvRows(text: string): string[][] {
 function parseCsvDataset(text: string): ParsedDataset {
   const rows = parseCsvRows(text);
   if (!rows.length) return { name: "dataset", rows: [], fields: [] };
+  const showjcr = parseShowJCRRows(rows);
+  if (showjcr) return showjcr;
+  // A broken ShowJCR table must not appear as a successful generic import.
+  if (
+    rows[0].some((h) => /^IF\(\d{4}\)$/i.test(h.trim())) &&
+    rows[0].some((h) => /^(Category_|IF (Rank|Quartile)\()/i.test(h.trim()))
+  )
+    throw new Error("Invalid or mixed-year ShowJCR columns");
   const header = rows[0].map((h) => h.trim());
   const out: DatasetRow[] = [];
   for (const line of rows.slice(1)) {
@@ -335,10 +536,19 @@ function parseCsvDataset(text: string): ParsedDataset {
 }
 
 /** persist a parsed dataset and register it in the config */
-export async function saveDataset(
+export function saveDataset(
   name: string,
   parsed: ParsedDataset,
 ): Promise<DatasetMeta> {
+  return queueDatasetOperation(() => saveDatasetInner(name, parsed));
+}
+
+async function saveDatasetInner(
+  name: string,
+  parsed: ParsedDataset,
+): Promise<DatasetMeta> {
+  // Preserve the configured source order while the startup index is loading.
+  await datasetsLoaded();
   // the config caps the number of datasets and sanitising silently keeps the
   // FIRST N — so refuse here instead of writing a file nobody will ever read
   if (zestConfig.get().datasets.length >= ConfigStore.LIMITS.datasets) {
@@ -368,7 +578,96 @@ export async function saveDataset(
   return meta;
 }
 
-export async function removeDataset(id: string) {
+export const SHOWJCR_DATASET_ID = "showjcr-jcr";
+
+/** Replace the managed table only after a complete download and parse. */
+export function saveShowJCRDataset(
+  parsed: ParsedDataset,
+): Promise<DatasetMeta> {
+  // Downloads coalesce at the transport layer. Distinct local imports run in
+  // order so a later file is never reported as saved while silently discarded.
+  return queueDatasetOperation(() => persistShowJCRDataset(parsed));
+}
+
+async function persistShowJCRDataset(
+  parsed: ParsedDataset,
+): Promise<DatasetMeta> {
+  await datasetsLoaded();
+  if (zestConfig.isDamaged)
+    throw new Error("Configuration is damaged; import was not saved");
+  if (!parsed.rows.length || !parsed.name.startsWith("ShowJCR"))
+    throw new Error("No valid ShowJCR records");
+  const id = SHOWJCR_DATASET_ID;
+  const previous = zestConfig.get().datasets.find((entry) => entry.id === id);
+  if (
+    !previous &&
+    zestConfig.get().datasets.length >= ConfigStore.LIMITS.datasets
+  )
+    throw new Error(`dataset limit reached (${ConfigStore.LIMITS.datasets})`);
+  const path = filePath(id);
+  const existed = await IOUtils.exists(path);
+  const bytes = existed ? await IOUtils.read(path) : undefined;
+  const meta: DatasetMeta = {
+    id,
+    name: parsed.name.slice(0, 120),
+    rows: parsed.rows.length,
+    fields: parsed.fields.slice(0, 80),
+    updated: Date.now(),
+  };
+  const tmpPath = `${path}.tmp`;
+  let replaced = false;
+  let registered = false;
+  try {
+    await IOUtils.makeDirectory(dirPath(), { ignoreExisting: true });
+    await IOUtils.writeUTF8(
+      path,
+      JSON.stringify({ v: 1, name: meta.name, rows: parsed.rows }),
+      { tmpPath, flush: true },
+    );
+    replaced = true;
+    zestConfig.update((draft) => {
+      const at = draft.datasets.findIndex((entry) => entry.id === id);
+      if (at >= 0) draft.datasets[at] = meta;
+      else draft.datasets.push(meta);
+    });
+    registered = true;
+    if (!zestConfig.get().datasets.some((entry) => entry.id === id))
+      throw new Error("Dataset rejected by the configuration");
+    await zestConfig.flush();
+    // Publishing the index last keeps the old table visible on every failure.
+    index(id, parsed.rows);
+    return meta;
+  } catch (error) {
+    if (registered) {
+      zestConfig.update((draft) => {
+        const at = draft.datasets.findIndex((entry) => entry.id === id);
+        if (previous && at >= 0) draft.datasets[at] = previous;
+        else if (previous) draft.datasets.push(previous);
+        else draft.datasets = draft.datasets.filter((entry) => entry.id !== id);
+      });
+    }
+    if (replaced) {
+      if (bytes) await IOUtils.write(path, bytes, { tmpPath, flush: true });
+      else await IOUtils.remove(path, { ignoreAbsent: true });
+    }
+    if (registered) await zestConfig.flush();
+    throw error;
+  } finally {
+    await IOUtils.remove(tmpPath, { ignoreAbsent: true }).catch((error) =>
+      ztoolkit.log("[rank] ShowJCR temporary file cleanup failed", error),
+    );
+  }
+}
+
+export function removeDataset(id: string): Promise<void> {
+  // All dataset writes share the shutdown barrier. A pending delete also
+  // cannot overtake an import and remove its replacement file.
+  return queueDatasetOperation(() => removeDatasetInner(id));
+}
+
+async function removeDatasetInner(id: string): Promise<void> {
+  // An in-flight startup read must finish before its index can be removed.
+  await datasetsLoaded();
   zestConfig.update((draft) => {
     draft.datasets = draft.datasets.filter((d) => d.id !== id);
   });

@@ -159,6 +159,24 @@ const trash = [];
   }
 }
 
+/* ShowJCR provenance remains attached to its metric and every subject. */
+{
+  const parsed = dev.dataset.parseDataset(
+    "Journal,ISSN,EISSN,IF(2025),Category_1,IF Quartile(2025)_1,IF Rank(2025)_1,Category_2,IF Quartile(2025)_2,IF Rank(2025)_2\nCANCER IMMUNOLOGY IMMUNOTHERAPY,0340-7004,1432-0851,5.8,IMMUNOLOGY,Q1,40/183,ONCOLOGY,Q1,67/333",
+    "csv",
+  );
+  const jcr = parsed.rows[0]?.jcr;
+  check(
+    "rank.showjcrKeepsYearSourceAndAllCategories",
+    jcr?.year === 2025 &&
+      jcr.provider === "showjcr" &&
+      jcr.percentileMethod === "rank" &&
+      jcr.categories.length === 2 &&
+      Math.abs(jcr.categories[0].percentile - 78.41530054644808) < 0.00001 &&
+      Math.abs(jcr.categories[1].percentile - 80.03003003003003) < 0.00001,
+  );
+}
+
 /* ---------- matrix: native read-only scope and deduplication ---------- */
 const matrixItems = win.ZoteroPane.itemsView.getSortedItems();
 const matrixRows = dev.matrix.collectMatrix(matrixItems);
@@ -319,6 +337,12 @@ try {
         if (!option) continue;
         const body = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
         const props = { body, doc, item: current, tabType: "reader" };
+        const schedule = win.setTimeout;
+        let scheduled = 0;
+        win.setTimeout = function (...args) {
+          scheduled++;
+          return schedule.apply(this, args);
+        };
         try {
           option.onInit(props);
           option.onItemChange(props);
@@ -331,7 +355,12 @@ try {
               !body.querySelector("iframe") &&
               !body.hasAttribute("data-zest-sidebar-requested"),
           );
+          check(
+            `sidebar.${kind}HiddenShellDoesNotScheduleReadinessPolling`,
+            scheduled === 0,
+          );
         } finally {
+          win.setTimeout = schedule;
           option.onDestroy({ body, doc });
         }
         check(
@@ -1095,6 +1124,82 @@ check(
         "csv",
       ),
     ),
+  );
+}
+
+/* ---------- JCR provenance stays coupled to the chosen standard JIF ---------- */
+{
+  const row = dev.dataset.parseDataset(
+    JSON.stringify([
+      {
+        name: "Synthetic JCR provenance probe",
+        sciif: "8.1",
+        jcr: {
+          year: 2024,
+          impactFactor: 8.1,
+          categories: [{ name: "Example category", percentile: 91.2 }],
+        },
+      },
+    ]),
+    "json",
+  ).rows[0];
+  const record = {
+    key: "probe",
+    name: row.name,
+    updated: Date.now(),
+    values: [{ field: "sciif", value: "8.1", source: "dataset" }],
+    jcr: row.jcr,
+  };
+  check(
+    "rank.jcrKeepsExplicitYearAndPercentile",
+    dev.impactFactor.resolveImpactFactor(record, "sciif")?.jcr?.year === 2024,
+  );
+  check(
+    "rank.jcrNeverCrossesSourceBoundary",
+    !dev.impactFactor.resolveImpactFactor(
+      {
+        ...record,
+        values: [{ field: "sciif", value: "8.1", source: "easyscholar" }],
+      },
+      "sciif",
+    )?.jcr,
+  );
+  check(
+    "rank.jcrNeverInventedFromQuartile",
+    !dev.impactFactor.resolveImpactFactor(
+      {
+        ...record,
+        jcr: undefined,
+        values: [
+          ...record.values,
+          { field: "sci", value: "Q1", source: "dataset" },
+        ],
+      },
+      "sciif",
+    )?.jcr,
+  );
+  const panel = dev.journalMetrics.renderJournalMetrics(doc, record, "sciif");
+  check(
+    "info.jcrDefaultsCollapsedWithoutRepeatedMetrics",
+    panel?.localName === "details" &&
+      !panel.open &&
+      !/IF|Q[1-4]|8\.1/.test(panel.textContent),
+  );
+  check(
+    "info.jcrSummaryRetainsYearAndScope",
+    panel?.querySelector("summary")?.textContent.includes("2024") &&
+      panel.querySelectorAll(".zest-info-jcr-category").length === 1,
+  );
+  check(
+    "info.jcrUsesTwoAccessibleMetricColumns",
+    panel?.querySelectorAll("dt").length === 2 &&
+      panel.querySelectorAll("dd").length === 2 &&
+      !panel.querySelector("[title],[tooltip],[tooltiptext]"),
+  );
+  check(
+    "rank.scalarJcrFieldRemainsCompatible",
+    dev.dataset.parseDataset("name,jcr,sciif\nExample,Q1,8.1", "csv").rows[0]
+      ?.fields.jcr === "Q1",
   );
 }
 

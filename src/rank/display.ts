@@ -270,8 +270,8 @@ export function rankValueDisplay(
   if (!raw || customized || !isKnownLocalizedField(sourceField)) {
     return original(raw);
   }
-  // Source wording stays intact in Chinese. Every partition badge also names
-  // its ranking system, even for an unfamiliar category in an English UI.
+  // Source wording stays intact in Chinese; locale templates choose whether
+  // the compact badge includes a ranking-system prefix.
   const display = chineseUI() ? original(raw) : localizedValueDisplay(raw);
   const system = rankingSystem(sourceField);
   if (!system) return display;

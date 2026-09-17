@@ -47,6 +47,7 @@ import {
 import { translateAbstract, translationProvider } from "./abstractTranslation";
 import { selectCoreAuthors } from "./coreAuthors";
 import { copyInfoText, installInfoCopy, selectedInfoText } from "./infoCopy";
+import { renderJournalMetrics } from "./journalMetrics";
 
 /**
  * "Zest" item-pane section — the one place that answers "what is this paper,
@@ -152,7 +153,11 @@ function sectionState(props: any): SectionState | undefined {
     state.remarkMessage = "";
     state.ratingMessage = "";
     state.remarkEditor = undefined;
-    state.openSections = new Map();
+    // JCR is a compact pane preference; other disclosures belong to the item.
+    const jcrExpanded = state.openSections?.get("jcr");
+    state.openSections = new Map(
+      jcrExpanded === undefined ? [] : [["jcr", jcrExpanded]],
+    );
   }
   if (state) {
     state.item = props.item;
@@ -777,6 +782,16 @@ function render(props: any) {
       badges.appendChild(badge);
     }
     if (badges.children.length) value.appendChild(badges);
+    const metrics = renderJournalMetrics(
+      doc,
+      rec,
+      String(getPref("if.field") || "sciif"),
+    );
+    if (metrics) {
+      if (state && metrics.localName === "details")
+        rememberDisclosure(metrics as HTMLDetailsElement, state, "jcr", false);
+      value.appendChild(metrics);
+    }
     sourceSlot.appendChild(r);
   } else sourceSlot.remove();
 

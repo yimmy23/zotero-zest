@@ -23,6 +23,28 @@ function ownerWindow({ reader = false, observer = true } = {}) {
     url: "chrome://zotero/content/zoteroPane.xhtml",
   });
   const doc = win.document;
+  // Advance only timers due within the requested period, including recurring
+  // readiness checks. Tests can distinguish a prompt mount from a 10s fallback.
+  let now = 0;
+  const schedule = win.setTimeout;
+  win.setTimeout = (fn, delay) => {
+    const id = schedule(fn, delay);
+    win.timers.get(id).due = now + delay;
+    return id;
+  };
+  win.advanceTimers = (milliseconds) => {
+    const end = now + milliseconds;
+    while (win.timers.size) {
+      const [id, timer] = [...win.timers].sort(
+        ([, a], [, b]) => a.due - b.due,
+      )[0];
+      if (timer.due > end) break;
+      now = timer.due;
+      win.timers.delete(id);
+      timer.fn();
+    }
+    now = end;
+  };
   events(doc);
   doc.hidden = false;
   const create = doc.createElement;
@@ -421,13 +443,14 @@ test("visible initialization recovery stays lazy while collapsed, hidden, disabl
   }
 });
 
-test("a loading frame has one visible-only deadline and fails with explicit retry instead of auto-remount", () => {
+test("readiness checks preserve one visible-only 10s deadline and explicit retry", () => {
   const app = setup();
   const state = app.begin(app.panel("matrix"));
   const frame = state.win.framesCreated[0];
-  assert.equal(state.win.timers.size, 1);
-  assert.equal([...state.win.timers.values()][0].delay, 10000);
-  const staleTimeout = [...state.win.timers.values()][0].fn;
+  assert.equal(state.win.timers.size, 2);
+  const staleTimeout = [...state.win.timers.values()].find(
+    (timer) => timer.delay === 10000,
+  ).fn;
   state.win.observers[0].intersect(false);
   assert.equal(state.win.timers.size, 0, "hidden frames have no timer");
   staleTimeout();
@@ -437,13 +460,18 @@ test("a loading frame has one visible-only deadline and fails with explicit retr
   state.win.document.dispatch("visibilitychange");
   assert.equal(
     state.win.timers.size,
-    1,
+    2,
     "repeated sync does not extend deadline",
   );
-  state.win.flushTimers();
+  state.win.advanceTimers(9999);
+  assert.equal(state.body.querySelector(".zest-sidebar-retry"), null);
+  // Repeated native callbacks must not turn a failed load into endless polling.
+  state.definition.onAsyncRender(state.props);
+  state.win.advanceTimers(1);
   assert.equal(state.win.timers.size, 0);
   assert.equal(frame.parentElement, null);
   assert.equal(frame.listeners.get("load").size, 0);
+  assert.equal(frame.listeners.get("DOMContentLoaded").size, 0);
   assert.equal(frame.listeners.get("error").size, 0);
   assert.equal(
     state.body
@@ -530,9 +558,135 @@ test("complete unexpected documents fail rather than leaving an endless loading 
   }
 });
 
-test("missed load events recover at the deadline and on resume without reading a hidden item", () => {
+test("stats and matrix mount within 200ms when every readiness event is lost", () => {
+  for (const kind of ["stats", "matrix"]) {
+    const app = setup();
+    const state = app.begin(app.panel(kind));
+    const frame = state.win.framesCreated[0];
+    // Complete the document without delivering either event to the iframe.
+    frame.contentWindow.finishLoad();
+    assert.equal(app.mounted.length, 0);
+    state.win.advanceTimers(200);
+    assert.equal(app.mounted.length, 1, kind);
+    assert.equal(
+      state.body.querySelector(".zest-sidebar-message").hidden,
+      true,
+    );
+    assert.equal(state.win.timers.size, 0, "ready panels stop polling");
+    assert.equal(frame.listeners.get("load").size, 0);
+    assert.equal(frame.listeners.get("DOMContentLoaded").size, 0);
+    state.win.advanceTimers(10000);
+    assert.equal(app.mounted.length, 1, "the deadline cannot remount content");
+  }
+});
+
+test("DOMContentLoaded checks readiness and incomplete hosts wait for the next short check", () => {
+  for (const kind of ["stats", "matrix"]) {
+    for (const readyState of ["interactive", "complete"]) {
+      const app = setup();
+      const state = app.begin(app.panel(kind));
+      const frame = state.win.framesCreated[0];
+      const [ready, options] = [...frame.listeners.get("DOMContentLoaded")][0];
+      assert.equal(options.capture, true);
+      frame.contentWindow.location.href = PANEL_URL;
+      frame.contentWindow.document.readyState = readyState;
+      frame.dispatch("DOMContentLoaded");
+      if (readyState === "interactive") {
+        assert.equal(app.mounted.length, 0, "incomplete hosts do not mount");
+        frame.contentWindow.document.readyState = "complete";
+        state.win.advanceTimers(200);
+      }
+      assert.equal(app.mounted.length, 1, `${kind}/${readyState}`);
+      assert.equal(state.win.timers.size, 0);
+      assert.equal(frame.listeners.get("DOMContentLoaded").has(ready), false);
+      assert.equal(
+        frame.removedListeners.findLast(
+          (entry) => entry.type === "DOMContentLoaded",
+        ).capture,
+        true,
+      );
+    }
+  }
+});
+
+test("hidden or disposed panels cancel readiness checks and ignore late timer callbacks", () => {
+  for (const kind of ["stats", "matrix"]) {
+    for (const gate of ["intersection", "collapsed", "hidden", "destroy"]) {
+      const app = setup();
+      const state = app.begin(app.panel(kind));
+      const frame = state.win.framesCreated[0];
+      const lateCheck = [...state.win.timers.values()].find(
+        (timer) => timer.delay < 200,
+      ).fn;
+      if (gate === "intersection") state.win.observers[0].intersect(false);
+      if (gate === "collapsed") {
+        state.section.open = false;
+        state.definition.onToggle(state.props);
+      }
+      if (gate === "hidden") {
+        state.win.document.hidden = true;
+        state.win.document.dispatch("visibilitychange");
+      }
+      if (gate === "destroy") state.definition.onDestroy(state.props);
+      frame.contentWindow.finishLoad();
+      let reads = 0;
+      Object.defineProperty(frame.contentWindow.document, "readyState", {
+        get() {
+          reads++;
+          return "complete";
+        },
+      });
+      assert.equal(state.win.timers.size, 0, `${kind}/${gate}`);
+      lateCheck();
+      state.win.advanceTimers(20000);
+      assert.equal(reads, 0, "hidden and disposed documents are not polled");
+      assert.equal(app.mounted.length, 0);
+      assert.equal(state.win.timers.size, 0);
+      if (gate !== "destroy") {
+        state.section.open = true;
+        state.win.document.hidden = false;
+        state.win.observers[0].intersect(true);
+        assert.equal(app.mounted.length, 1, "resume reuses the ready frame");
+        assert.equal(state.win.framesCreated.length, 1);
+        assert.equal(state.win.timers.size, 0);
+      }
+    }
+  }
+});
+
+test("readiness polling rejects wrong URLs and stale checks cannot mount a replacement", () => {
+  for (const kind of ["stats", "matrix"]) {
+    const app = setup();
+    const state = app.begin(app.panel(kind));
+    const frame = state.win.framesCreated[0];
+    const lateCheck = [...state.win.timers.values()].find(
+      (timer) => timer.delay < 200,
+    ).fn;
+    frame.contentWindow.location.href = "about:neterror?e=connectionFailure";
+    frame.contentWindow.document.readyState = "complete";
+    state.win.advanceTimers(200);
+    assert.ok(state.body.querySelector(".zest-sidebar-retry"));
+    assert.equal(state.win.timers.size, 0);
+    assert.equal(frame.listeners.get("DOMContentLoaded").size, 0);
+    state.body.querySelector(".zest-sidebar-retry").click();
+    const replacement = state.win.framesCreated[1];
+    replacement.contentWindow.finishLoad();
+    lateCheck();
+    assert.equal(
+      app.mounted.length,
+      0,
+      "old checks cannot mount the new frame",
+    );
+    state.win.advanceTimers(200);
+    assert.equal(app.mounted.length, 1);
+    assert.equal(app.mounted[0].win, replacement.contentWindow);
+    assert.equal(state.win.timers.size, 0);
+  }
+});
+
+test("missed load events recover promptly and on resume without reading a hidden item", () => {
   for (const gate of [
-    "deadline",
+    "visible",
     "intersection",
     "collapsed",
     "hidden",
@@ -554,16 +708,16 @@ test("missed load events recover at the deadline and on resume without reading a
       state.props.item = item(3, { type: "note" });
       state.definition.onItemChange(state.props);
     }
-    if (gate !== "deadline") assert.equal(state.win.timers.size, 0);
+    if (gate !== "visible") assert.equal(state.win.timers.size, 0);
     // Zotero reports item changes through this hook, not by mutating an old
     // callback's props after it has returned. Update before the frame completes
-    // so the deadline branch still exercises a genuinely missed load event.
+    // so the visible branch still exercises a genuinely missed load event.
     state.props.item = item(200);
     state.definition.onItemChange(state.props);
     // The document completed but its iframe load callback was never delivered.
     frame.contentWindow.finishLoad();
     assert.equal(app.mounted.length, 0);
-    if (gate === "deadline") state.win.flushTimers();
+    if (gate === "visible") state.win.advanceTimers(200);
     else {
       state.section.open = true;
       state.win.document.hidden = false;
@@ -581,16 +735,16 @@ test("missed load events recover at the deadline and on resume without reading a
   }
 });
 
-test("pending deadlines are window-scoped and are removed on teardown", () => {
+test("pending readiness checks and deadlines are window-scoped and removed on teardown", () => {
   const app = setup();
   const first = app.begin(app.panel("matrix"));
   const second = app.begin(app.panel("matrix"));
   const lateTimeout = [...first.win.timers.values()][0]?.fn;
-  assert.equal(first.win.timers.size, 1);
-  assert.equal(second.win.timers.size, 1);
+  assert.equal(first.win.timers.size, 2);
+  assert.equal(second.win.timers.size, 2);
   app.closeSidebarSectionsForWindow(first.win);
   assert.equal(first.win.timers.size, 0);
-  assert.equal(second.win.timers.size, 1);
+  assert.equal(second.win.timers.size, 2);
   lateTimeout();
   assert.equal(first.body.children.length, 0);
   second.win.framesCreated[0].finishLoad();

@@ -131,17 +131,12 @@ pref-key-hint = 密钥保存在系统登录管理器中，不随偏好设置同�
 pref-rank-clear =
     .label = 清空分级缓存
 pref-if-field = IF 字段
-pref-if-max = 刻度上限（热力最深一档 / 进度条满格）
 pref-if-style = 显示方式
-pref-if-style-heat =
-    .label = 热力——数字底下一层色块，IF 越高越深（分档：上限的 1/15、1/5、1/2、上限）
-pref-if-style-bar =
-    .label = 进度条——按刻度上限线性显示
+pref-if-style-percentile =
+    .label = IF 数字 + 下方 JCR 百分位
 pref-if-style-none =
     .label = 只显示数字
-pref-if-info =
-    .label = 以文字显示 IF 数值
-pref-if-color = 颜色（自动 = 主色）
+pref-if-percentile-hint = 标记显示同年、同学科的 JCR 百分位，前 10% 加描边突出；多学科显示范围。缺少可验证的百分位时仅显示数值。颜色跟随 Zest 主色。
 
 pref-group-datasets = 本地期刊数据集
 pref-dataset-import =
@@ -293,3 +288,7 @@ pref-accent-apply =
 pref-accent-reset =
     .label = 恢复默认绿色
 pref-accent-apply-hint = 下面的热力图与 #标签 徽章各自保留独立颜色；这个按钮把主色一并套用到两者。
+
+pref-showjcr-download =
+    .label = 下载 / 更新 ShowJCR
+pref-showjcr-hint = 来源：ShowJCR（JCR 2025）。百分位由学科排名计算。点击下载后保存在本机，供离线使用；更新会替换已有 ShowJCR 表。

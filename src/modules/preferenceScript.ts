@@ -10,8 +10,12 @@ import { exportBundle, importBundle, zestConfig } from "../core/config";
 import {
   parseDataset,
   saveDataset,
+  saveShowJCRDataset,
+  SHOWJCR_DATASET_ID,
   removeDataset,
 } from "../rank/sources/localDataset";
+import { downloadShowJCR } from "../rank/sources/showjcrDownload";
+import { refreshInfoSections } from "../panes/infoSection";
 import { clearRankCache } from "../rank";
 import { fetchEasyScholar } from "../rank/sources/easyscholar";
 import { http } from "../core/http";
@@ -161,19 +165,15 @@ function buildAccentPresets() {
 }
 
 /**
- * Three colour preferences mean "automatic" when empty (`rank.defaultColor`,
- * `if.color`, `annots.color` — the badge default, the accent, per-annotation
- * colours). An <input type=color> cannot show "empty": it renders black, and
- * once touched it cannot be emptied again. So the pickers are shown with the
+ * Two colour preferences mean "automatic" when empty (`rank.defaultColor`,
+ * `annots.color` — the badge default and per-annotation colours). An
+ * <input type=color> cannot show "empty": it renders black, and once touched
+ * it cannot be emptied again. So the pickers are shown with the
  * colour that is in effect, and an "Auto" button beside each one clears the
  * preference (the picker writes only on its own input events, so setting its
  * value here does not write anything).
  */
-const AUTO_COLOR_PREFS = [
-  "rank.defaultColor",
-  "if.color",
-  "annots.color",
-] as const;
+const AUTO_COLOR_PREFS = ["rank.defaultColor", "annots.color"] as const;
 type AutoColorPref = (typeof AUTO_COLOR_PREFS)[number];
 
 function effectiveColor(pref: AutoColorPref): string {
@@ -191,7 +191,7 @@ function syncAutoColorPickers(only?: AutoColorPref) {
   if (!d) return;
   for (const pref of AUTO_COLOR_PREFS) {
     if (only && pref !== only) continue;
-    // the build prefixes `preference="if.color"` with the pref branch, so
+    // the build prefixes `preference="annots.color"` with the pref branch, so
     // match on the suffix (works for both spellings)
     const picker = d.querySelector(
       `input[preference$="${pref}"]`,
@@ -368,15 +368,23 @@ function refreshDatasetList() {
     const row = d.createElement("div");
     row.className = "zest-pref-row";
     const label = d.createElement("span");
-    label.textContent = `${ds.name} — ${ds.rows} · ${ds.fields.slice(0, 6).join(", ")}`;
+    label.textContent =
+      ds.id === SHOWJCR_DATASET_ID
+        ? getString("pref-showjcr-summary", {
+            args: { name: ds.name, rows: ds.rows },
+          })
+        : `${ds.name} — ${ds.rows} · ${ds.fields.slice(0, 6).join(", ")}`;
     row.appendChild(label);
     const del = d.createElement("button");
     del.textContent = getString("pref-dataset-remove");
     del.addEventListener("click", () => {
-      void removeDataset(ds.id).then(() => {
-        clearRankCache();
-        refreshDatasetList();
-      });
+      void removeDataset(ds.id)
+        .then(() => {
+          datasetsChanged();
+        })
+        .catch((error) =>
+          alertUser(getString("pref-dataset-import"), String(error)),
+        );
     });
     row.appendChild(del);
     list.appendChild(row);
@@ -506,6 +514,37 @@ async function importConfiguration() {
   );
 }
 
+function datasetsChanged() {
+  clearRankCache();
+  refreshAllRows();
+  refreshInfoSections();
+  refreshDatasetList();
+}
+
+let showjcrBusy = false;
+async function updateShowJCR() {
+  if (showjcrBusy) return;
+  showjcrBusy = true;
+  const button = doc()?.getElementById("zest-pref-showjcr");
+  const status = doc()?.getElementById("zest-pref-showjcr-status");
+  button?.setAttribute("disabled", "true");
+  if (status) status.textContent = getString("pref-showjcr-loading");
+  try {
+    const meta = await downloadShowJCR();
+    datasetsChanged();
+    if (status)
+      status.textContent = getString("pref-dataset-import-done", {
+        args: { name: meta.name, rows: meta.rows, fields: meta.fields.length },
+      });
+  } catch (error) {
+    if (status) status.textContent = getString("pref-showjcr-failed");
+    alertUser(getString("pref-showjcr-title"), String(error));
+  } finally {
+    showjcrBusy = false;
+    button?.removeAttribute("disabled");
+  }
+}
+
 async function importDatasetFile() {
   const path = await pickFile("open", getString("pref-dataset-import"), [
     ["JSON / CSV", "*.json;*.csv;*.tsv;*.txt"],
@@ -523,9 +562,11 @@ async function importDatasetFile() {
       return;
     }
     const name = PathUtils.filename(path).replace(/\.[^.]+$/, "");
-    const meta = await saveDataset(name, parsed);
-    clearRankCache();
-    refreshDatasetList();
+    const meta =
+      kind === "csv" && parsed.name.startsWith("ShowJCR ")
+        ? await saveShowJCRDataset(parsed)
+        : await saveDataset(name, parsed);
+    datasetsChanged();
     alertUser(
       getString("pref-dataset-import"),
       getString("pref-dataset-import-done", {
@@ -596,6 +637,9 @@ export async function onPrefsCommand(
       break;
     case "config-import":
       await importConfiguration();
+      break;
+    case "dataset-showjcr":
+      await updateShowJCR();
       break;
     case "dataset-import":
       await importDatasetFile();

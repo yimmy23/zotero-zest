@@ -26,6 +26,7 @@ const button = () => row()?.querySelector("button");
 const badges = () => [
   ...(body()?.querySelectorAll(".zest-info-ranks > .zest-rank-badge") || []),
 ];
+const isXRBadge = (el) => /\bxr\b/i.test(el.title);
 const items = [];
 const copies = [];
 const copy = Zotero.Utilities.Internal.copyTextToClipboard;
@@ -119,7 +120,7 @@ try {
   );
   check(
     "defaultOnlyXRInPanel",
-    badges().some((el) => /XR|新锐/.test(el.textContent)) &&
+    badges().some(isXRBadge) &&
       !badges().some((el) => /CAS|中科院/.test(el.textContent)),
     badges()
       .map((el) => el.textContent)
@@ -142,7 +143,7 @@ try {
     badges().some(
       (el) =>
         /CAS|中科院/.test(el.textContent) && /historical|历史/.test(el.title),
-    ) && !badges().some((el) => /XR|新锐/.test(el.textContent)),
+    ) && !badges().some(isXRBadge),
   );
   await paint([{ ...xr, value: "N/A" }, cas, jcr]);
   check(
@@ -158,7 +159,7 @@ try {
   await paint();
   check(
     "explicitBothSchemesInPanel",
-    badges().some((el) => /XR|新锐/.test(el.textContent)) &&
+    badges().some(isXRBadge) &&
       badges().some((el) => /CAS|中科院/.test(el.textContent)),
   );
   pref("rank.fields", "xr, sci, sciif");
@@ -166,7 +167,7 @@ try {
   await paint();
   check(
     "mapHiddenXRDoesNotReviveCAS",
-    !badges().some((el) => /XR|新锐|CAS|中科院/.test(el.textContent)),
+    !badges().some((el) => isXRBadge(el) || /CAS|中科院/.test(el.textContent)),
   );
   await paint([xr, cas]);
   check("apiDoesNotReviveHiddenXR", addon.api.journalRanks(item).length === 0);

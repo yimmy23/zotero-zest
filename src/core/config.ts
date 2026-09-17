@@ -336,6 +336,7 @@ export class ConfigStore {
   private path = "";
   private loaded = false;
   private writeTimer?: number;
+  private writeQueue = Promise.resolve();
   private listeners = new Set<() => void>();
 
   async init() {
@@ -442,10 +443,17 @@ export class ConfigStore {
       }
       return;
     }
-    await Zotero.File.putContentsAsync(
-      this.path,
-      JSON.stringify(this.data, null, 1),
+    const contents = JSON.stringify(this.data, null, 1);
+    const write = this.writeQueue.then(() =>
+      Zotero.File.putContentsAsync(this.path, contents),
     );
+    // A slow background write must finish before a newer flush; a failed
+    // write still rejects its caller but must not block subsequent attempts.
+    this.writeQueue = write.then(
+      () => undefined,
+      () => undefined,
+    );
+    await write;
   }
 
   async shutdown() {

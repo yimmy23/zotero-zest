@@ -750,20 +750,6 @@
         aria-labelledby="zest-pref-if-field-label"
         id="zest-pref-if-field"
       ></html:input>
-      <html:label
-        data-l10n-id="pref-if-max"
-        style="margin-inline-start: 12px"
-        id="zest-pref-if-max-label"
-        for="zest-pref-if-max"
-      ></html:label>
-      <html:input
-        type="number"
-        min="1"
-        max="100"
-        preference="if.max"
-        aria-labelledby="zest-pref-if-max-label"
-        id="zest-pref-if-max"
-      ></html:input>
     </hbox>
     <hbox align="center">
       <html:label
@@ -777,38 +763,18 @@
         id="zest-pref-if-style"
       >
         <menupopup>
-          <menuitem value="heat" data-l10n-id="pref-if-style-heat" />
-          <menuitem value="bar" data-l10n-id="pref-if-style-bar" />
+          <menuitem
+            value="percentile"
+            data-l10n-id="pref-if-style-percentile"
+          />
           <menuitem value="none" data-l10n-id="pref-if-style-none" />
         </menupopup>
       </menulist>
     </hbox>
-    <checkbox preference="if.info" data-l10n-id="pref-if-info" native="true" />
-    <hbox align="center">
-      <html:label
-        data-l10n-id="pref-if-color"
-        id="zest-pref-if-color-label"
-        for="zest-pref-if-color"
-      ></html:label>
-      <html:input
-        type="color"
-        preference="if.color"
-        class="zest-pref-autocolor"
-        aria-labelledby="zest-pref-if-color-label"
-        id="zest-pref-if-color"
-      ></html:input>
-      <button
-        data-l10n-id="pref-color-auto"
-        data-zest-pref="if.color"
-        oncommand="
-          Zotero.__addonInstance__.hooks.onPrefsEvent('color-auto', {
-            window,
-            pref: 'if.color',
-          })
-        "
-        native="true"
-      />
-    </hbox>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-if-percentile-hint"
+    ></description>
   </groupbox>
 
   <groupbox data-zest-pref-task="advanced">
@@ -823,6 +789,27 @@
         "
       />
     </hbox>
+    <hbox align="center">
+      <button
+        id="zest-pref-showjcr"
+        data-l10n-id="pref-showjcr-download"
+        oncommand="
+          Zotero.__addonInstance__.hooks.onPrefsEvent('dataset-showjcr', {
+            window,
+          })
+        "
+      />
+    </hbox>
+    <description
+      id="zest-pref-showjcr-status"
+      role="status"
+      aria-live="polite"
+      class="zest-pref-hint"
+    ></description>
+    <description
+      class="zest-pref-hint"
+      data-l10n-id="pref-showjcr-hint"
+    ></description>
     <vbox id="zest-pref-datasets" class="zest-pref-list"></vbox>
     <description
       class="zest-pref-hint"

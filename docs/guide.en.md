@@ -134,7 +134,8 @@ clearing reading records also changes the calculated statistics.
 3. For easyScholar, enter your key, click **Save**, then **Test**.
 4. Select papers in the library, right-click and choose
    **Zest → Refresh journal data for the selected items**.
-5. Hover over a badge or IF value to inspect its field and source.
+5. Hover over a badge to check its field and source. Select the item to inspect
+   JCR metrics in the Zest side pane.
 
 Automatic lookups are **off by default**. Enable
 **Z → Look journal data up online (ranks / impact factor)**, or the equivalent
@@ -154,7 +155,7 @@ The services provide different data:
 **OpenAlex's two-year mean citedness is not a Journal Impact Factor.** Enabling
 OpenAlex does not supply XinRui, CAS or JCR data. Those fields need a suitable
 local dataset or easyScholar response. The **IF column can fall back to this
-OpenAlex metric**, so inspect its tooltip before interpreting a number as IF.
+OpenAlex metric**, so inspect JCR details in the Zest side pane before interpreting a number as IF.
 Check the data source and its reporting year when using metrics; a cache refresh
 does not guarantee a newer annual ranking exists.
 
@@ -174,8 +175,8 @@ The default **Fields** value is `xr, sci, sciif`:
 
 In the English interface, the default display puts JCR first, then the
 XinRui/CAS slot, then IF. In the Chinese interface, the XinRui/CAS slot comes
-first. Each system keeps its own label and source; a CAS value is not relabelled
-as XinRui.
+first, and XinRui badges omit the “新锐” prefix to save space. The underlying
+source remains unchanged; historical CAS badges retain their CAS label.
 
 To request a different order or both systems explicitly, enter a custom list,
 for example `sciUp, xr, sciif`. **Field mapping** can rename fields or rewrite
@@ -187,10 +188,76 @@ Keep **Text colour** set to **Auto** for native theme text on a tinted badge
 background. Automatic text mode limits background opacity to 0.25 for
 legibility; an explicit custom text colour allows the configured opacity up to 1.
 
+### Read IF and category percentiles
+
+Choose **Show as → IF above JCR percentile** in settings. The IF number is
+centred above a marker whose position shows the JIF percentile for the same
+metric year and subject category; farther right means a higher percentile.
+P90 means the 90th percentile. A single-category marker at P90 or above gains
+an outline. The thin grey line is the 0–100 scale; a thicker grey segment spans
+multiple categories from lowest to highest percentile. **Number only** is also
+available.
+
+Select a paper to see the **Source section in the Zest side pane**:
+
+- The journal name, IF and quartile badges remain visible. IF and quartile are
+  shown once, without repeating them in the details.
+- JCR details start collapsed. The summary shows the year and category count,
+  for example **JCR 2025 · 2 categories**.
+- Click the summary to expand all categories. Each category has a compact
+  two-column layout: **Rank**, such as **17/321**, and **Percentile**, such as
+  **94.9**. Percentile is the journal's position within that category, not a
+  percentage of its IF.
+- Click again to collapse. Zest keeps your open or closed choice as you select
+  other papers in the same window.
+
+The data source and calculation method are explained in
+**Zest Settings → Local Journal Datasets**. The IF column does not add a hover
+popup.
+
+Without valid percentile data, only the number appears. Q1–Q4, XinRui and CAS
+zones cannot determine an exact JIF percentile. Five-year IF and OpenAlex metrics
+do not inherit standard JIF percentiles. easyScholar remains available for IF
+and JCR quartiles; the public API documentation and responses checked so far do
+not provide the required percentiles, metric years or per-category ranks. Use
+ShowJCR rank data or import explicit percentiles as described below.
+
+### Download or update ShowJCR data
+
+1. Open **Zest Settings → Local Journal Datasets → Download / update ShowJCR**.
+   Clicking this button downloads the supported JCR CSV from the third-party
+   [ShowJCR repository](https://github.com/hitfyd/ShowJCR).
+2. After a successful download, the data applies immediately, is stored locally
+   and works offline. You do not need to refresh journal data again.
+3. Click the same button when you want to update. A successful update replaces
+   the existing ShowJCR dataset without adding a duplicate; a failed download,
+   invalid file or save failure keeps the previous usable dataset.
+
+Zest downloads this data only when you click the button; it does not check for
+updates in the background. The button uses a verified, fixed snapshot of
+JCR2025 (ShowJCR commit `c8da202c`); clicking again downloads that same snapshot.
+A newer annual table requires a plugin update or manual CSV import. You can
+download the original ShowJCR JCR CSV yourself and select **Import dataset…**:
+Zest recognises that format without requiring you to rename its columns.
+
+ShowJCR supplies category ranks. The source and percentile calculation method
+appear in the ShowJCR settings hint. Zest uses `100 × (N − r + 0.5) / N`, where `r` and `N` are the
+CSV's supplied category rank and total. It preserves tied ranks as supplied,
+without reordering journals, substituting average ranks or deriving a
+percentile from Q1–Q4. The metric year comes from the `IF(YYYY)` header
+(`IF(2025)` in the supported file), not its download date.
+
+The graphic covers all of a journal's categories. If any category lacks a
+valid rank, including `N/A`, or IF is not an exact number, such as `<0.1`, Zest
+does not draw a percentile graphic from that record.
+
 ### Import a local journal dataset
 
-1. Prepare a CSV with a header row, or JSON containing a row array. JSON can
-   also use an object with `name` and `rows`.
+1. Prepare a CSV with the headers described below, or JSON containing a row
+   array. JSON can also use an object with `name` and `rows`. For Excel, arrange
+   the columns first and save as UTF-8 CSV. Zest does not directly import XLSX.
+   Apart from the supported ShowJCR CSV above, raw JCR exports must be arranged
+   into this format before importing.
 2. Give each row a journal `name` and/or ISSN identifiers. Separate `pISSN`
    and `eISSN` columns are supported; both are treated as identifiers.
 3. Put ranking values in other columns, such as `xr`, `sciUp`, `sci` or `sciif`.
@@ -198,6 +265,44 @@ legibility; an explicit custom text colour allows the configured opacity up to 1
 4. Choose **Zest Settings → Local Journal Datasets → Import dataset…**.
 5. Add any custom field names to **Journal Ranking → Fields**, refresh journal
    data for a matching paper, then inspect its badges.
+
+All journal names, identifiers and values in these examples are fictional.
+For a single-category percentile, supply `sciif`, `jcrYear`, `jcrCategory` and
+`jifPercentile`; `jcrRank` is optional:
+
+```csv
+name,issn,sciif,jcrYear,jcrCategory,jifPercentile,jcrRank
+Example Journal,1234-5678,8.1,2025,Oncology,91.2,20/222
+```
+
+`jcrYear` is the **JIF metric year**, not the release, download or import year.
+Use the supplied percentile on a 0–100 scale, such as `91.2`, not `0.912`.
+These metadata fields do not need to be added to **Journal Ranking → Fields**.
+
+Use one row per journal. For multiple categories, use JSON `jcr.categories`
+instead of repeating CSV rows:
+
+```json
+[
+  {
+    "name": "Example Journal",
+    "issn": "1234-5678",
+    "sciif": 8.1,
+    "jcr": {
+      "year": 2025,
+      "impactFactor": 8.1,
+      "categories": [
+        { "name": "Oncology", "percentile": 91.2, "rank": "20/222" },
+        { "name": "Immunology", "percentile": 78.4, "rank": "40/183" }
+      ]
+    }
+  }
+]
+```
+
+`jcr.impactFactor` must match the row's `sciif`. The IF and category percentiles
+must describe the same metric year and source. Missing years, categories or
+percentiles, or a mismatched IF, leave the percentile graphic hidden.
 
 Keep the original dataset file for backup. Configuration export carries its
 metadata, not the dataset rows. Removing a dataset from Zest does not edit your
@@ -478,8 +583,8 @@ Check the item's publication title, ISSN and DOI, your enabled sources, and
 the easyScholar key if that source is needed. Select the paper and run
 **Refresh journal data for the selected items**. An enabled source cannot
 return a field it does not carry. The IF column can fall back to OpenAlex's
-two-year mean citedness; that value is not JCR IF. Hover over it to check the
-field and source.
+two-year mean citedness; that value is not JCR IF. Select the item to check that
+fallback's field and source in the Zest side pane.
 
 Journal matching tolerates common case, spacing and punctuation differences,
 plus a small set of verified title aliases. It does not remove arbitrary
