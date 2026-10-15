@@ -198,6 +198,7 @@ export type FluentMessageId =
   | 'matrix-copy-md'
   | 'matrix-count'
   | 'matrix-empty'
+  | 'matrix-empty-current-hint'
   | 'matrix-empty-filter'
   | 'matrix-empty-filter-hint'
   | 'matrix-empty-hint'

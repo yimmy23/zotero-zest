@@ -556,6 +556,7 @@ matrix-empty-filter = 没有匹配的标注
 matrix-empty-filter-hint = 尝试调整关键词或清除筛选。
 matrix-empty = 此范围内还没有标注
 matrix-empty-hint = 选择含标注的文献或附件后刷新，也可以切换到当前视图。
+matrix-empty-current-hint = 当前文献没有可用的 Zotero 标注。添加标注后点击“刷新”。
 matrix-untitled = 未命名文献
 matrix-filter-item = 只看这篇文献的标注
 matrix-filter-tag = 按标签筛选：{ $tag }

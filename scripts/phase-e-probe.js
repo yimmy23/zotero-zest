@@ -214,6 +214,59 @@ if (matrixRows.length) {
   );
 }
 
+/* ---------- matrix: empty scopes do not advertise unusable choices ---------- */
+{
+  const frame = doc.createElementNS("http://www.w3.org/1999/xhtml", "iframe");
+  frame.style.cssText = "position:fixed;left:-10000px;width:360px;height:600px";
+  frame.src = "chrome://zest/content/panel.xhtml";
+  doc.documentElement.append(frame);
+  let controller;
+  try {
+    for (let i = 0; i < 80; i++) {
+      if (
+        frame.contentWindow?.location.href === frame.src &&
+        frame.contentDocument?.readyState === "complete"
+      )
+        break;
+      await delay(25);
+    }
+    controller = dev.matrix.mountMatrix(frame.contentWindow, win, {
+      allowViewScope: false,
+      getItems: () => [],
+    });
+    const matrixDoc = frame.contentDocument;
+    for (
+      let i = 0;
+      i < 80 &&
+      matrixDoc
+        .querySelector(".zest-matrix-list")
+        ?.getAttribute("aria-busy") !== "false";
+      i++
+    )
+      await delay(25);
+    check(
+      "matrix.emptyScopeDisablesUnavailableFilters",
+      ["item", "type", "color", "tag", "sort"].every(
+        (key) => matrixDoc.querySelector(`.zest-matrix-${key}`)?.disabled,
+      ),
+    );
+    const hint = addon.data.locale.current.formatMessagesSync([
+      { id: "zest-matrix-empty-current-hint" },
+    ])[0]?.value;
+    check(
+      "matrix.readerEmptyHintMatchesAvailableScope",
+      !!hint &&
+        matrixDoc.querySelector(".zest-matrix-empty p")?.textContent === hint &&
+        matrixDoc.querySelector(".zest-matrix-scope")?.disabled,
+    );
+  } catch (error) {
+    check("matrix.emptyScopeProbeCompleted", false, String(error));
+  } finally {
+    controller?.dispose();
+    frame.remove();
+  }
+}
+
 /* ---------- statistics: read-only aggregation and bounded title lookup ---------- */
 const statsEntries = [...dev.readingStore.entries()];
 const statsEncode = (entries) =>

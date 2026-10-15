@@ -15,7 +15,7 @@ const oldLocale = addon.data.locale.current;
 const oldRequested = [...Services.locale.requestedLocales];
 const hadTheme = Services.prefs.prefHasUserValue("ui.systemUsesDarkTheme");
 const oldTheme = Services.prefs.getIntPref("ui.systemUsesDarkTheme", 0);
-let matrix, stats;
+let matrix, stats, frame, embedded;
 async function windowFor(selector) {
   for (let i = 0; i < 80; i++) {
     const win = [...Services.wm.getEnumerator("")].find((w) =>
@@ -26,10 +26,10 @@ async function windowFor(selector) {
   }
   throw Error("window did not open: " + selector);
 }
-async function settled() {
+async function settled(win = matrix) {
   for (let i = 0; i < 80; i++) {
     if (
-      matrix.document
+      win.document
         .querySelector(".zest-matrix-list")
         ?.getAttribute("aria-busy") === "false"
     )
@@ -38,8 +38,15 @@ async function settled() {
   }
   throw Error("matrix did not settle");
 }
+function popupWindow(win) {
+  // Gecko creates HTML-select popups in the owning chrome window, including
+  // when the select itself lives in a sidebar iframe.
+  return win.browsingContext.topChromeWindow;
+}
 async function openPopup(win, select, name) {
+  const chromeWin = popupWindow(win);
   for (let i = 0; i < 60 && !win.document.hasFocus(); i++) {
+    chromeWin.focus();
     win.focus();
     await delay(50);
   }
@@ -57,12 +64,12 @@ async function openPopup(win, select, name) {
   }
   let popup;
   for (let i = 0; i < 30; i++) {
-    popup = win.document.querySelector("#ContentSelectDropdownPopup");
+    popup = chromeWin.document.querySelector("#ContentSelectDropdownPopup");
     if (popup?.state === "open") break;
     await delay(30);
   }
   check(name + " native popup opens", popup?.state === "open");
-  const style = win.getComputedStyle(popup);
+  const style = chromeWin.getComputedStyle(popup);
   const rect = popup.getOuterScreenRect();
   check(
     name + " native popup has surface and bounds",
@@ -79,12 +86,33 @@ async function openPopup(win, select, name) {
 }
 async function closePopup(win, select, popup, name) {
   popup.hidePopup();
-  await delay(100);
+  // Zotero's main-window popup patch fades menus for 200 ms. Wait for the
+  // actual native dismissal before inspecting state or removing an iframe.
+  for (let i = 0; i < 60; i++) {
+    if (popup.state === "closed" && !select.matches(":open")) break;
+    await delay(25);
+  }
+  const menulist = popupWindow(win).document.querySelector(
+    "#ContentSelectDropdown",
+  );
+  const state = {
+    popup: popup.state,
+    selectOpen: select.matches(":open"),
+    menuHidden: menulist.hidden,
+    hiddenAttribute: menulist.getAttribute("hidden"),
+    menuDisplay: popupWindow(win).getComputedStyle(menulist).display,
+    selectValue: select.value,
+    selectedIndex: select.selectedIndex,
+    selectFocused: win.document.activeElement === select,
+    documentFocused: win.document.hasFocus(),
+  };
+  const dismissed =
+    state.popup === "closed" && !state.selectOpen && state.menuHidden;
   check(
-    name + " dismisses without residue",
-    popup.state === "closed" &&
-      !select.matches(":open") &&
-      win.document.querySelector("#ContentSelectDropdown").hidden,
+    name +
+      " dismisses without residue" +
+      (dismissed ? "" : " " + JSON.stringify(state)),
+    dismissed,
   );
 }
 try {
@@ -112,6 +140,14 @@ try {
         for (const select of selects) {
           select.scrollIntoView({ block: "nearest" });
           const name = `${lang} ${dark ? "dark" : "light"} ${width} ${select.className}`;
+          if (select.disabled) {
+            check(
+              name + " unavailable choices disabled",
+              select.options.length === 1 ||
+                select.classList.contains("zest-matrix-sort"),
+            );
+            continue;
+          }
           const original = select.value;
           const popup = await openPopup(matrix, select, name);
           // Use the real XUL popup activation path, not a synthetic change.
@@ -138,6 +174,109 @@ try {
       }
     }
   }
+  // The issue was reported in the sidebar. A standalone-only popup check
+  // misses Gecko's different chrome owner for HTML iframe documents.
+  frame = host.document.createElementNS(
+    "http://www.w3.org/1999/xhtml",
+    "iframe",
+  );
+  frame.style.cssText =
+    "position:fixed;inset:40px 10px 10px auto;width:380px;z-index:2147483647;border:0";
+  frame.src = "chrome://zest/content/panel.xhtml";
+  host.document.documentElement.append(frame);
+  for (let i = 0; i < 100; i++) {
+    if (
+      frame.contentWindow?.location.href === frame.src &&
+      frame.contentDocument?.readyState === "complete"
+    )
+      break;
+    await delay(40);
+  }
+  check(
+    "embedded matrix host loaded",
+    frame.contentDocument?.readyState === "complete",
+  );
+  const fixtures = [0, 1].map((index) => {
+    const id = 900000001 + index * 10;
+    const attachment = {
+      id,
+      key: `MXTEST0${index}`,
+      libraryID: Zotero.Libraries.userLibraryID,
+      isRegularItem: () => false,
+      isAttachment: () => true,
+      isAnnotation: () => false,
+      getField: () => `Selector fixture ${index}`,
+      getAnnotations: () =>
+        [0, 1].map((mark) => ({
+          id: id + mark + 1,
+          key: `MXANN0${index}${mark}`,
+          parentItemID: id,
+          libraryID: Zotero.Libraries.userLibraryID,
+          isAnnotation: () => true,
+          annotationText: `Fixture ${index} mark ${mark}`,
+          annotationComment: mark ? "Comment" : "",
+          annotationType: mark ? "underline" : "highlight",
+          annotationColor: mark ? "#a28ae5" : "#ffd400",
+          annotationPageLabel: String(mark + 1),
+          annotationPosition: JSON.stringify({ pageIndex: mark }),
+          getTags: () => [{ tag: mark ? "Results" : "Methods" }],
+        })),
+    };
+    return attachment;
+  });
+  const embeddedWin = frame.contentWindow;
+  embedded = dev.matrix.mountMatrix(embeddedWin, host, {
+    allowViewScope: true,
+    getItems: () => fixtures,
+  });
+  await settled(embeddedWin);
+  embeddedWin.document.querySelector(".zest-matrix-filter-toggle").click();
+  for (const dark of [false, true]) {
+    Services.prefs.setIntPref("ui.systemUsesDarkTheme", dark ? 1 : 0);
+    await delay(100);
+    for (const select of embeddedWin.document.querySelectorAll(
+      ".zest-matrix select",
+    )) {
+      select.scrollIntoView({ block: "nearest" });
+      const name = `embedded ${dark ? "dark" : "light"} ${select.className}`;
+      check(name + " has choices", select.options.length > 1);
+      const original = select.value;
+      const index = select.selectedIndex === 0 ? 1 : 0;
+      const expected = select.options[index].value;
+      const popup = await openPopup(embeddedWin, select, name);
+      popup.activateItem(popup.querySelectorAll("menuitem")[index]);
+      for (let i = 0; i < 30 && select.value !== expected; i++) await delay(40);
+      await settled(embeddedWin);
+      check(
+        name + " selection reaches HTML control",
+        select.value === expected,
+      );
+      await closePopup(embeddedWin, select, popup, name);
+      if (
+        ["item", "type", "color", "tag"].some((key) =>
+          select.classList.contains(`zest-matrix-${key}`),
+        )
+      ) {
+        check(
+          name + " filters actual rows",
+          embeddedWin.document.querySelectorAll(".zest-matrix-row").length ===
+            2,
+        );
+      }
+      embeddedWin.document.querySelector(".zest-matrix-reset").click();
+      select.value = original;
+      select.dispatchEvent(new embeddedWin.Event("change", { bubbles: true }));
+      await settled(embeddedWin);
+      check(
+        name + " reset restores fixture rows",
+        embeddedWin.document.querySelectorAll(".zest-matrix-row").length === 4,
+      );
+    }
+  }
+  embedded.dispose();
+  embedded = undefined;
+  frame.remove();
+  frame = undefined;
   dev.stats.openStatsDialog(host);
   stats = await windowFor(".zest-stats");
   for (const dark of [false, true]) {
@@ -160,6 +299,8 @@ try {
   );
   return report;
 } finally {
+  embedded?.dispose();
+  frame?.remove();
   matrix?.close();
   stats?.close();
   Services.locale.requestedLocales = oldRequested;
