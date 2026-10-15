@@ -717,6 +717,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
         select.append(option);
       }
       select.value = state.filters[key];
+      select.disabled = options[key].length === 0;
     }
   }
 
@@ -761,6 +762,7 @@ function renderState(state: MatrixState, body: HTMLElement) {
       copyMD.disabled =
         state.loading || exporting || !visible.length;
     refresh.disabled = state.loading;
+    sort.disabled = state.loading || state.rows.length < 2;
     list.setAttribute("aria-busy", String(state.loading));
     list.textContent = "";
     const pages = Math.max(1, Math.ceil(visible.length / pageSize));
@@ -791,7 +793,9 @@ function renderState(state: MatrixState, body: HTMLElement) {
             label(
               state.rows.length
                 ? "matrix-empty-filter-hint"
-                : "matrix-empty-hint",
+                : allowViewScope
+                  ? "matrix-empty-hint"
+                  : "matrix-empty-current-hint",
             ),
           ),
         );

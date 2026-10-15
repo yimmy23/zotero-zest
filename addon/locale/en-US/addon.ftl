@@ -556,6 +556,7 @@ matrix-empty-filter = No matching annotations
 matrix-empty-filter-hint = Try another query or reset your filters.
 matrix-empty = No annotations in this scope
 matrix-empty-hint = Select papers or attachments with annotations and refresh, or switch to the current view.
+matrix-empty-current-hint = No Zotero annotations are available for the current item. Add annotations, then click Refresh.
 matrix-untitled = Untitled paper
 matrix-filter-item = Filter to this paper
 matrix-filter-tag = Filter by tag: { $tag }

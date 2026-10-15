@@ -303,15 +303,32 @@ try {
         menu.left >= 0 && menu.right <= w.innerWidth,
       );
       exportDetails.open = false;
-      d.querySelector(".zest-matrix-filter-toggle").click();
-      const heights = [...d.querySelectorAll(".zest-matrix-field select")].map(
-        (n) => n.getBoundingClientRect().height,
-      );
-      check(
-        lang + " " + width + " consistent filter controls",
-        Math.max(...heights) - Math.min(...heights) <= 1,
-      );
-      d.querySelector(".zest-matrix-filter-toggle").click();
+      const filters = d.querySelector(".zest-matrix-filters");
+      const toggle = d.querySelector(".zest-matrix-filter-toggle");
+      const wasHidden = filters.hidden;
+      if (wasHidden) toggle.click();
+      try {
+        // The four data filters share dimensions; sorting is deliberately a
+        // compact secondary control. Hidden controls must never pass as zeroes.
+        const heights = ["item", "type", "color", "tag"].map(
+          (key) =>
+            d.querySelector(`.zest-matrix-${key}`).getBoundingClientRect()
+              .height,
+        );
+        check(
+          lang + " " + width + " consistent visible filter controls",
+          !filters.hidden &&
+            heights.every((height) => height > 0) &&
+            Math.max(...heights) - Math.min(...heights) <= 1,
+        );
+        check(
+          lang + " " + width + " compact sort control visible",
+          d.querySelector(".zest-matrix-sort").getBoundingClientRect().height >
+            0,
+        );
+      } finally {
+        if (filters.hidden !== wasHidden) toggle.click();
+      }
       if (width === 480) await shot("narrow-" + lang, true);
       d.documentElement.style.fontSize = "";
     }

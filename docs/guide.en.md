@@ -419,6 +419,11 @@ Search supports space-separated terms, `|` for alternatives, `-word` to exclude
 a term and quotes for a phrase. Use **Reset** to clear filters, and **Refresh**
 after changing the source selection or annotations.
 
+Filters without available values are disabled. **0 / 0 annotations** means
+there are no available annotations in the source scope; add Zotero annotations
+and click **Refresh**. The reader sidebar stays on **This paper**. To compare
+papers, open the matrix from the library and choose **Current view**.
+
 Copying or exporting the matrix includes **all matching annotations**, not just
 the visible result page, with source links. Individual **Copy** buttons include
 the full annotation text and comment even when the preview is collapsed.

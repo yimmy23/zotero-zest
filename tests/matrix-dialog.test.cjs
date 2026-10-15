@@ -1423,3 +1423,89 @@ test("a cancelled file picker while hidden does not repaint and restores actions
   assert.equal(app.loads.length, 1);
   assert.equal(app.writes.length, 0);
 });
+
+test("empty annotation scopes disable unavailable filters and refresh restores choices", async () => {
+  const app = setup({ rows: [] });
+  app.openMatrix(app.host);
+  await settle();
+  const selectors = ["item", "type", "color", "tag", "sort"];
+  const disabled = (expected) => {
+    for (const key of selectors)
+      assert.equal(
+        find(app.win, `.zest-matrix-${key}`).disabled,
+        expected,
+        key,
+      );
+  };
+  disabled(true);
+  assert.equal(
+    find(app.win, ".zest-matrix-empty h2").textContent,
+    "matrix-empty",
+  );
+  assert.equal(
+    find(app.win, ".zest-matrix-empty p").textContent,
+    "matrix-empty-hint",
+  );
+  app.host.viewItems = [{ rows: [row(1), row(2)] }];
+  find(app.win, ".zest-matrix-refresh").click();
+  await settle();
+  disabled(false);
+  change(app.win, ".zest-matrix-tag", "Methods");
+  assert.equal(rendered(app.win).length, 1);
+  app.host.viewItems = [];
+  find(app.win, ".zest-matrix-refresh").click();
+  await settle();
+  disabled(true);
+  assert.equal(find(app.win, ".zest-matrix-tag").value, "");
+  assert.equal(rendered(app.win).length, 0);
+});
+
+test("a single available tag remains selectable when other annotations are untagged", async () => {
+  const app = setup({ rows: [row(1), row(2, { tags: [] })] });
+  app.openMatrix(app.host);
+  await settle();
+  const tag = find(app.win, ".zest-matrix-tag");
+  assert.equal(tag.disabled, false);
+  change(app.win, ".zest-matrix-tag", "Methods");
+  assert.equal(rendered(app.win).length, 1);
+  find(app.win, ".zest-matrix-reset").click();
+  assert.equal(rendered(app.win).length, 2);
+});
+
+test("a zero-result search keeps existing filters and sorting usable", async () => {
+  const app = setup();
+  app.openMatrix(app.host);
+  await settle();
+  const search = find(app.win, ".zest-matrix-search");
+  search.value = "does-not-exist";
+  search.dispatch("input");
+  app.win.flushTimers();
+  assert.equal(rendered(app.win).length, 0);
+  for (const key of ["item", "type", "color", "tag", "sort"])
+    assert.equal(find(app.win, `.zest-matrix-${key}`).disabled, false, key);
+  assert.equal(
+    find(app.win, ".zest-matrix-empty p").textContent,
+    "matrix-empty-filter-hint",
+  );
+  change(app.win, ".zest-matrix-tag", "Methods");
+  find(app.win, ".zest-matrix-reset").click();
+  assert.equal(rendered(app.win).length, 2);
+});
+
+test("empty reader and reader pop-out hints never offer an unavailable library scope", async () => {
+  const app = setup({ rows: [] });
+  const frame = windowFixture();
+  const source = { allowViewScope: false, getItems: () => [] };
+  const mount = app.mountMatrix(frame, app.host, source);
+  app.openMatrix(app.host, source);
+  await settle();
+  for (const win of [frame, app.win]) {
+    assert.equal(find(win, ".zest-matrix-scope").disabled, true);
+    assert.equal(
+      find(win, ".zest-matrix-empty p").textContent,
+      "matrix-empty-current-hint",
+    );
+  }
+  mount.dispose();
+  app.closeMatrix();
+});
